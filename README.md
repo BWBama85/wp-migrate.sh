@@ -1,13 +1,14 @@
 # wp-migrate.sh
 
-`wp-migrate.sh` pushes a WordPress site's `wp-content` directory and database export from a source server to a destination server. It is designed to be run from the WordPress root on the source host and coordinates the entire workflow, including maintenance mode, database handling, file sync, and cache clearing.
+`wp-migrate.sh` pushes a WordPress site's `wp-content` directory and database export from a source server to a destination server. It is designed to be run from the WordPress root on the source host and coordinates the entire workflow, including maintenance mode, database handling, file sync, and cache maintenance.
 
 ## Features
 - Verifies WordPress installations on both source and destination before proceeding.
-- Enables maintenance mode on both sides during a real migration to minimise downtime.
+- Enables maintenance mode on both sides during a real migration to minimise downtime (skip the source with `--no-maint-source`).
 - Exports the database, transfers it to the destination, and imports it by default (disable with `--no-import-db`; gzipped dumps are decompressed automatically).
-- Syncs `wp-content` with `rsync --ignore-existing` while skipping common cache directories.
-- Optionally clears popular caches (Object Cache Pro, Redis, WP Rocket, LiteSpeed Cache, etc.) on the destination.
+- Creates a timestamped backup of the destination `wp-content` directory before replacing it.
+- Syncs the entire `wp-content` tree with rsync archive mode; files on the destination are overwritten and there are no built-in excludes.
+- Optionally flushes the destination Object Cache Pro/Redis cache when `wp redis` is available.
 - Supports a comprehensive dry-run mode that previews every step without mutating either server.
 
 ## Requirements
@@ -28,10 +29,10 @@ Common examples:
   ```bash
   ./wp-migrate.sh --dest-host wp@dest --dest-root /var/www/site
   ```
-- Dry run with an additional rsync exclude:
+- Dry run with an additional rsync option (e.g., exclude a directory):
   ```bash
   ./wp-migrate.sh --dest-host wp@dest --dest-root /var/www/site \
-    --dry-run --extra-exclude 'uploads/large-folders/'
+    --dry-run --rsync-opt '--exclude=uploads/large-folders/'
   ```
 - Migrate but skip importing the database on the destination:
   ```bash
@@ -46,10 +47,7 @@ Common examples:
 | `--no-import-db` | Skip importing the transferred SQL dump on the destination (manually import later; decompress first if the file ends in `.gz`). |
 | `--no-gzip` | Skip gzipping the database dump before transfer. |
 | `--no-maint-source` | Leave the source site out of maintenance mode during the migration. |
-| `--no-cache-clear` | Disable automatic cache clearing on the destination. |
-| `--no-transients` | Skip deleting transients on the destination. |
 | `--rsync-opt <opt>` | Append an additional rsync option (can be passed multiple times). |
-| `--extra-exclude <pattern>` | Add extra rsync exclude patterns (repeat as needed). |
 | `--ssh-opt <opt>` | Append an extra SSH option (repeatable; options are safely quoted). |
 | `--help` | Print usage information and exit. |
 
@@ -60,8 +58,8 @@ Common examples:
 4. **Database Step**:
    - Real run: Exports the source DB (optionally gzipped), stores it in `db-dumps/`, creates the destination `db-imports` directory, transfers the dump, and imports it by default (gzipped files are expanded on the destination first; use `--no-import-db` to skip).
    - Dry run: Logs the planned export, transfer, and import without creating `db-dumps/` or touching the destination.
-5. **File Sync**: Builds rsync options (including `--ignore-existing`, `--links`, and default cache excludes) and syncs `wp-content` from source to destination. Dry runs leverage `rsync --dry-run --itemize-changes`.
-6. **Post Tasks**: Optionally clears caches on the destination using `wp` CLI commands. Dry runs skip execution and log intent.
+5. **File Sync**: Builds rsync options (archive mode, compression, link preservation, no ownership/permission changes) and syncs `wp-content` from source to destination. Dry runs leverage `rsync --dry-run --itemize-changes`.
+6. **Post Tasks**: Flushes the destination Object Cache Pro cache via `wp redis flush` when the command exists. Dry runs skip execution and log intent.
 7. **Cleanup**: Disables maintenance mode (real runs only) and logs final status as well as the dump location or future import instructions when imports are skipped.
 
 ## Directories and Logging
@@ -69,10 +67,10 @@ Common examples:
 - Dry runs do **not** create or modify directories; logging is routed to `/dev/null` to ensure a zero-impact preview.
 
 ## Safety Characteristics
-- Rsync never deletes remote files (`--ignore-existing` with no `--delete`).
-- Ownership and permissions are left untouched (`--no-perms --no-owner --no-group`).
-- Maintenance mode calls are best-effort and swallowed on failure to avoid aborting the migration.
-- Cache clearing is attempted but non-blocking; failures simply log and continue.
+- A timestamped backup of the destination `wp-content` directory is created before files are overwritten.
+- Rsync runs without `--delete`, so unmatched files on the destination remain in place, and remote ownership/permissions are untouched (`--no-perms --no-owner --no-group`).
+- Maintenance commands run under `set -e`; if enabling or disabling maintenance fails the script aborts to prevent partial migrations.
+- Cache flushing is attempted but non-blocking; failures are logged and the run continues.
 
 ## Troubleshooting
 - Ensure `wp` runs correctly on both hosts; authentication or environment issues will surface during the verification step.
