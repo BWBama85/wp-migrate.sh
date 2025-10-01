@@ -49,6 +49,21 @@ MAINT_REMOTE_ACTIVE=false
 MAINT_REMOTE_HOST=""
 MAINT_REMOTE_ROOT=""
 REDIS_FLUSH_AVAILABLE=false
+SOURCE_HOME_URL=""
+SOURCE_SITE_URL=""
+DEST_HOME_URL=""
+DEST_SITE_URL=""
+SOURCE_DISPLAY_URL=""
+DEST_DISPLAY_URL=""
+SOURCE_HOSTNAME=""
+DEST_HOSTNAME=""
+DEST_HOME_OVERRIDE=""
+DEST_SITE_OVERRIDE=""
+DEST_DOMAIN_OVERRIDE=""
+DEST_DOMAIN_CANON=""
+SEARCH_REPLACE_ARGS=()
+SEARCH_REPLACE_FLAGS=(--skip-columns=guid --report-changed-only)
+URL_ALIGNMENT_REQUIRED=false
 
 # -------------
 # CLI & Helpers
@@ -102,6 +117,61 @@ wp_remote_has_command() {
     return 0
   fi
   return 1
+}
+
+add_search_replace_pair() {
+  local source_value="$1" dest_value="$2"
+
+  [[ -z "$source_value" || -z "$dest_value" ]] && return 0
+  [[ "$source_value" == "$dest_value" ]] && return 0
+
+  local idx
+  for ((idx=0; idx<${#SEARCH_REPLACE_ARGS[@]}; idx+=2)); do
+    if [[ "${SEARCH_REPLACE_ARGS[idx]}" == "$source_value" && "${SEARCH_REPLACE_ARGS[idx+1]}" == "$dest_value" ]]; then
+      return 0
+    fi
+  done
+
+  SEARCH_REPLACE_ARGS+=("$source_value" "$dest_value")
+}
+
+json_escape_slashes() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\//\\/}"
+  printf '%s' "$value"
+}
+
+url_host_only() {
+  local value="$1"
+  [[ -z "$value" ]] && return 0
+  value="$(printf '%s\n' "$value" | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##; s#^//##; s#/.*$##')"
+  printf '%s' "$value"
+}
+
+add_url_alignment_variations() {
+  local source_value="$1" dest_value="$2"
+  [[ -z "$source_value" || -z "$dest_value" ]] && return 0
+
+  add_search_replace_pair "$source_value" "$dest_value"
+
+  local source_trimmed="$source_value" dest_trimmed="$dest_value"
+  [[ "$source_trimmed" == */ ]] && source_trimmed="${source_trimmed%/}"
+  [[ "$dest_trimmed" == */ ]] && dest_trimmed="${dest_trimmed%/}"
+
+  add_search_replace_pair "$source_trimmed" "$dest_trimmed"
+  add_search_replace_pair "${source_trimmed}/" "${dest_trimmed}/"
+
+  local source_json dest_json
+  source_json="$(json_escape_slashes "$source_value")"
+  dest_json="$(json_escape_slashes "$dest_value")"
+  add_search_replace_pair "$source_json" "$dest_json"
+
+  local source_trim_json dest_trim_json
+  source_trim_json="$(json_escape_slashes "$source_trimmed")"
+  dest_trim_json="$(json_escape_slashes "$dest_trimmed")"
+  add_search_replace_pair "$source_trim_json" "$dest_trim_json"
+  add_search_replace_pair "${source_trim_json}\/" "${dest_trim_json}\/"
 }
 
 cleanup_ssh_control() {
@@ -242,6 +312,9 @@ Options:
   --no-import-db            Skip importing the DB on destination after transfer
   --no-gzip                 Don't gzip the DB dump (default is gzip on)
   --no-maint-source         Skip enabling maintenance mode on the source site
+  --dest-domain '<host>'    Override destination domain (assigns https://<host> to home/site URLs unless other overrides supplied)
+  --dest-home-url '<url>'   Force the destination home URL used for replacements
+  --dest-site-url '<url>'   Force the destination site URL used for replacements
   --rsync-opt '<opt>'       Add an rsync option (can be repeated)
   --ssh-opt '<opt>'         Add an SSH -o option (e.g., ProxyJump=bastion). Can be repeated.
   --help                    Show this help
@@ -275,10 +348,32 @@ while [[ $# -gt 0 ]]; do
         SSH_OPTS+=("-o" "$val")
       fi
       ;;
+    --dest-home-url)
+      DEST_HOME_OVERRIDE="${2:-}"; shift 2
+      [[ -n "$DEST_HOME_OVERRIDE" ]] || err "--dest-home-url requires a value (e.g., https://staging.example.com)"
+      ;;
+    --dest-site-url)
+      DEST_SITE_OVERRIDE="${2:-}"; shift 2
+      [[ -n "$DEST_SITE_OVERRIDE" ]] || err "--dest-site-url requires a value (e.g., https://staging.example.com)"
+      ;;
+    --dest-domain)
+      DEST_DOMAIN_OVERRIDE="${2:-}"; shift 2
+      [[ -n "$DEST_DOMAIN_OVERRIDE" ]] || err "--dest-domain requires a hostname or URL"
+      ;;
     --help|-h) print_usage; exit 0 ;;
     *) err "Unknown argument: $1 (see --help)";;
   esac
 done
+
+if [[ -n "$DEST_DOMAIN_OVERRIDE" ]]; then
+  if [[ "$DEST_DOMAIN_OVERRIDE" == *"://"* ]]; then
+    DEST_DOMAIN_CANON="$DEST_DOMAIN_OVERRIDE"
+  else
+    DEST_DOMAIN_CANON="https://$DEST_DOMAIN_OVERRIDE"
+  fi
+  [[ -z "$DEST_HOME_OVERRIDE" ]] && DEST_HOME_OVERRIDE="$DEST_DOMAIN_CANON"
+  [[ -z "$DEST_SITE_OVERRIDE" ]] && DEST_SITE_OVERRIDE="$DEST_DOMAIN_CANON"
+fi
 
 # ----------
 # Preflight
@@ -314,6 +409,67 @@ SOURCE_DB_PREFIX="$(wp_local db prefix)"
 DEST_DB_PREFIX="$(wp_remote "$DEST_HOST" "$DEST_ROOT" db prefix)"
 log "Source DB prefix: $SOURCE_DB_PREFIX"
 log "Dest   DB prefix: $DEST_DB_PREFIX"
+
+SOURCE_HOME_URL="$(wp_local eval "echo get_option(\"home\");")"
+SOURCE_SITE_URL="$(wp_local eval "echo get_option(\"siteurl\");")"
+DEST_HOME_URL="$(wp_remote "$DEST_HOST" "$DEST_ROOT" eval "echo get_option(\"home\");")"
+DEST_SITE_URL="$(wp_remote "$DEST_HOST" "$DEST_ROOT" eval "echo get_option(\"siteurl\");")"
+
+if [[ -n "$DEST_HOME_OVERRIDE" ]]; then
+  log "Using --dest-home-url override: $DEST_HOME_OVERRIDE"
+  DEST_HOME_URL="$DEST_HOME_OVERRIDE"
+fi
+if [[ -n "$DEST_SITE_OVERRIDE" ]]; then
+  log "Using --dest-site-url override: $DEST_SITE_OVERRIDE"
+  DEST_SITE_URL="$DEST_SITE_OVERRIDE"
+fi
+
+SOURCE_DISPLAY_URL="$SOURCE_HOME_URL"
+if [[ -z "$SOURCE_DISPLAY_URL" ]]; then
+  SOURCE_DISPLAY_URL="$SOURCE_SITE_URL"
+fi
+
+DEST_DISPLAY_URL="$DEST_HOME_URL"
+if [[ -z "$DEST_DISPLAY_URL" ]]; then
+  DEST_DISPLAY_URL="$DEST_SITE_URL"
+fi
+
+if [[ -n "$SOURCE_DISPLAY_URL" ]]; then
+  log "Source primary URL: $SOURCE_DISPLAY_URL"
+else
+  log "Source primary URL could not be determined."
+fi
+
+if [[ -n "$DEST_DISPLAY_URL" ]]; then
+  log "Dest   primary URL: $DEST_DISPLAY_URL"
+else
+  log "Dest   primary URL could not be determined."
+fi
+
+add_url_alignment_variations "$SOURCE_HOME_URL" "$DEST_HOME_URL"
+add_url_alignment_variations "$SOURCE_SITE_URL" "$DEST_SITE_URL"
+SOURCE_HOSTNAME="$(url_host_only "$SOURCE_DISPLAY_URL")"
+DEST_HOSTNAME="$(url_host_only "$DEST_DISPLAY_URL")"
+if [[ -n "$SOURCE_HOSTNAME" && -n "$DEST_HOSTNAME" ]]; then
+  add_url_alignment_variations "$SOURCE_HOSTNAME" "$DEST_HOSTNAME"
+  add_url_alignment_variations "//$SOURCE_HOSTNAME" "//$DEST_HOSTNAME"
+fi
+if [[ ${#SEARCH_REPLACE_ARGS[@]} -gt 0 ]]; then
+  URL_ALIGNMENT_REQUIRED=true
+  for ((idx=0; idx<${#SEARCH_REPLACE_ARGS[@]}; idx+=2)); do
+    log "Detected URL mismatch (align after import): ${SEARCH_REPLACE_ARGS[idx]} -> ${SEARCH_REPLACE_ARGS[idx+1]}"
+  done
+else
+  if [[ -n "$SOURCE_DISPLAY_URL" && -n "$DEST_DISPLAY_URL" ]]; then
+    log "Source and destination URLs already aligned."
+  else
+    log "Skipping URL alignment check: missing site URL on source or destination."
+  fi
+fi
+
+if wp_remote "$DEST_HOST" "$DEST_ROOT" core is-installed --network >/dev/null 2>&1; then
+  SEARCH_REPLACE_FLAGS+=(--network)
+fi
 
 if wp_remote_has_command "$DEST_HOST" "$DEST_ROOT" redis; then
   REDIS_FLUSH_AVAILABLE=true
@@ -380,6 +536,15 @@ if $DRY_RUN; then
       log "[dry-run] Destination table prefix differs ($DEST_DB_PREFIX -> $SOURCE_DB_PREFIX) but would remain unchanged because --no-import-db is set."
     fi
   fi
+  if $URL_ALIGNMENT_REQUIRED; then
+    if $IMPORT_DB; then
+      for ((idx=0; idx<${#SEARCH_REPLACE_ARGS[@]}; idx+=2)); do
+        log "[dry-run] Would run wp search-replace '${SEARCH_REPLACE_ARGS[idx]}' '${SEARCH_REPLACE_ARGS[idx+1]}' on destination."
+      done
+    else
+      log "[dry-run] Source and destination URLs differ but automatic alignment is skipped because --no-import-db is set."
+    fi
+  fi
 else
   mkdir -p "db-dumps"
   log "Exporting DB on source..."
@@ -425,8 +590,28 @@ else
       wp_remote "$DEST_HOST" "$DEST_ROOT" config set table_prefix "$SOURCE_DB_PREFIX" --type=variable
       DEST_DB_PREFIX="$SOURCE_DB_PREFIX"
     fi
+
+    if $URL_ALIGNMENT_REQUIRED; then
+      log "Aligning destination URLs via wp search-replace."
+      if ! wp_remote "$DEST_HOST" "$DEST_ROOT" search-replace "${SEARCH_REPLACE_ARGS[@]}" "${SEARCH_REPLACE_FLAGS[@]}"; then
+        log "WARNING: wp search-replace failed; destination URLs may still reference source values."
+      fi
+      if [[ -n "$DEST_HOME_URL" ]]; then
+        log "Ensuring destination home option remains: $DEST_HOME_URL"
+        wp_remote "$DEST_HOST" "$DEST_ROOT" option update home "$DEST_HOME_URL" >/dev/null
+      fi
+      if [[ -n "$DEST_SITE_URL" ]]; then
+        log "Ensuring destination siteurl option remains: $DEST_SITE_URL"
+        wp_remote "$DEST_HOST" "$DEST_ROOT" option update siteurl "$DEST_SITE_URL" >/dev/null
+      fi
+    fi
   else
     log "DB dump ready on destination (not imported): $DEST_IMPORT_DIR/$(basename "$DUMP_TO_SEND")"
+    if $URL_ALIGNMENT_REQUIRED; then
+      for ((idx=0; idx<${#SEARCH_REPLACE_ARGS[@]}; idx+=2)); do
+        log "NOTE: After importing manually, replace '${SEARCH_REPLACE_ARGS[idx]}' with '${SEARCH_REPLACE_ARGS[idx+1]}' on the destination database."
+      done
+    fi
   fi
 fi
 

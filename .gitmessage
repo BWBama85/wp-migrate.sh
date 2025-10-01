@@ -1,0 +1,7 @@
+type: short imperative summary
+
+# Types: feat, fix, chore, refactor, docs, test, build, ci
+# Keep the summary <= 72 characters, written in present tense.
+# Use the body when context is needed: wrap at 72 characters, describe motivations,
+# and explain the solution briefly.
+# Include footers like "Related: #123" or "Refs: feature/responsive-menus" as needed.
