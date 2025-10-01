@@ -6,6 +6,7 @@
 - Verifies WordPress installations on both source and destination before proceeding.
 - Enables maintenance mode on both sides during a real migration to minimise downtime (skip the source with `--no-maint-source`).
 - Exports the database, transfers it to the destination, and imports it by default (disable with `--no-import-db`; gzipped dumps are decompressed automatically).
+- Rewrites migrated URLs so the destination keeps its own domain via `wp search-replace` (skipped for dry runs or `--no-import-db`).
 - Creates a timestamped backup of the destination `wp-content` directory before replacing it.
 - Syncs the entire `wp-content` tree with rsync archive mode; files on the destination are overwritten and there are no built-in excludes.
 - Optionally flushes the destination Object Cache Pro/Redis cache when `wp redis` is available.
@@ -47,6 +48,9 @@ Common examples:
 | `--no-import-db` | Skip importing the transferred SQL dump on the destination (manually import later; decompress first if the file ends in `.gz`). |
 | `--no-gzip` | Skip gzipping the database dump before transfer. |
 | `--no-maint-source` | Leave the source site out of maintenance mode during the migration. |
+| `--dest-domain <host>` | Override detection by forcing the destination domain (defaults to `https://<host>` unless other overrides are supplied). |
+| `--dest-home-url <url>` | Force the destination `home` URL used for post-import replacements. |
+| `--dest-site-url <url>` | Force the destination `siteurl` used for post-import replacements. |
 | `--rsync-opt <opt>` | Append an additional rsync option (can be passed multiple times). |
 | `--ssh-opt <opt>` | Append an extra SSH option (repeatable; options are safely quoted). |
 | `--help` | Print usage information and exit. |
@@ -56,8 +60,8 @@ Common examples:
 2. **Discovery**: Determines source and destination `wp-content` paths and logs disk usage details.
 3. **Maintenance Mode**: Activates maintenance on both sides during a real migration (`wp maintenance-mode activate`). Dry runs only log what would happen.
 4. **Database Step**:
-   - Real run: Exports the source DB (optionally gzipped), stores it in `db-dumps/`, creates the destination `db-imports` directory, transfers the dump, and imports it by default (gzipped files are expanded on the destination first; use `--no-import-db` to skip).
-   - Dry run: Logs the planned export, transfer, and import without creating `db-dumps/` or touching the destination.
+   - Real run: Exports the source DB (optionally gzipped), stores it in `db-dumps/`, creates the destination `db-imports` directory, transfers the dump, and imports it by default (gzipped files are expanded on the destination first; use `--no-import-db` to skip). When domains differ, it aligns the destination database back to its original URL with `wp search-replace` and resets the `home`/`siteurl` options. Supply `--dest-domain`, `--dest-home-url`, or `--dest-site-url` if you need to override the detected destination values.
+   - Dry run: Logs the planned export, transfer, import, and any pending URL replacements without creating `db-dumps/` or touching the destination.
 5. **File Sync**: Builds rsync options (archive mode, compression, link preservation, no ownership/permission changes) and syncs `wp-content` from source to destination. Dry runs leverage `rsync --dry-run --itemize-changes`.
 6. **Post Tasks**: Flushes the destination Object Cache Pro cache via `wp redis flush` when the command exists. Dry runs skip execution and log intent.
 7. **Cleanup**: Disables maintenance mode (real runs only) and logs final status as well as the dump location or future import instructions when imports are skipped.
@@ -71,6 +75,16 @@ Common examples:
 - Rsync runs without `--delete`, so unmatched files on the destination remain in place, and remote ownership/permissions are untouched (`--no-perms --no-owner --no-group`).
 - Maintenance commands run under `set -e`; if enabling or disabling maintenance fails the script aborts to prevent partial migrations.
 - Cache flushing is attempted but non-blocking; failures are logged and the run continues.
+
+## Git Workflow
+Use the repo's Git helpers to keep changes small, reviewable, and easy to trace.
+
+1. Branching: start from `main` and create a descriptive branch such as `feature/<slug>` for enhancements or `fix/<slug>` for bug fixes.
+2. Commits: commit in small slices using the `.gitmessage` template. Run `git config commit.template .gitmessage` once per clone, then write messages as `type: short imperative summary` (e.g., `feat: add staging backup option`).
+3. Changelog: update `CHANGELOG.md` under the `[Unreleased]` section with every feature or fix.
+4. Review: open a pull request (even when working solo) and use the checklist in `.github/pull_request_template.md` to verify testing and documentation.
+5. Merging: keep `main` release-ready by merging with `git merge --no-ff` or by squashing after review; delete the feature branch once merged.
+6. Releases: tag meaningful milestones (e.g., `git tag v0.3.0`) and include a brief summary in the pull request or release notes.
 
 ## Troubleshooting
 - Ensure `wp` runs correctly on both hosts; authentication or environment issues will surface during the verification step.
