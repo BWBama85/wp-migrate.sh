@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Expanded automatic wp search-replace to cover protocol-relative, JSON-escaped, and trailing-slash variants of the domain, plus optional `--dest-domain`/`--dest-home-url`/`--dest-site-url` overrides when detection needs a hint.
 - Documented the Git workflow and provided supporting templates for commits and pull requests.
+- Added early SSH connectivity test to fail fast with helpful error messages when destination host is unreachable.
 
 ## [Pre-history]
 ### Added
