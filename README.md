@@ -15,7 +15,8 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - Exports the database, transfers it to the destination, and imports it by default (disable with `--no-import-db`; gzipped dumps are decompressed automatically).
 - Rewrites migrated URLs so the destination keeps its own domain via `wp search-replace` (skipped for dry runs or `--no-import-db`).
 - Creates a timestamped backup of the destination `wp-content` directory before replacing it.
-- Syncs the entire `wp-content` tree with rsync archive mode; files on the destination are overwritten and there are no built-in excludes.
+- Syncs the entire `wp-content` tree with rsync archive mode; files on the destination are overwritten.
+- **Excludes `object-cache.php`** to preserve destination caching infrastructure and prevent fatal errors from missing PHP extensions (Redis, Memcache, etc.).
 - Optionally flushes the destination Object Cache Pro/Redis cache when `wp redis` is available.
 - Supports a comprehensive dry-run mode that previews every step without mutating either server.
 
@@ -26,6 +27,7 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - Creates timestamped backups of both the destination database and wp-content before any destructive operations.
 - Automatically detects and aligns table prefix if the imported database uses a different prefix than the destination's `wp-config.php` (supports complex prefixes with underscores like `my_site_`, `wp_live_2024_`).
 - Automatically detects imported site URLs and performs search-replace to align with the destination site URLs.
+- **Removes `object-cache.php`** from imported archive to preserve destination caching infrastructure and prevent fatal errors from missing PHP extensions (Redis, Memcache, etc.).
 - Provides comprehensive rollback instructions with exact commands to restore both backups if needed.
 - Auto-cleanup of temporary extraction directory on success; kept on failure for debugging.
 - Supports dry-run mode to preview the import workflow without making any changes.
