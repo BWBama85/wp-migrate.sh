@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Expanded automatic wp search-replace to cover protocol-relative, JSON-escaped, and trailing-slash variants of the domain, plus optional `--dest-domain`/`--dest-home-url`/`--dest-site-url` overrides when detection needs a hint.
 - Documented the Git workflow and provided supporting templates for commits and pull requests.
+- Added comprehensive test suite (`test-wp-migrate.sh`) validating argument parsing, error handling, and code quality without requiring WordPress installations.
+- Added `--version` flag (short: `-v`) to display version information from git tags or CHANGELOG.md.
 - Added `--info=progress2` to rsync for real-time file transfer progress indicators during database and wp-content transfers.
+
+### Changed
+- Added ShellCheck disable directives for intentional client-side expansions in SSH commands to achieve zero ShellCheck warnings.
 
 ## [Pre-history]
 ### Added
