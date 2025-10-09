@@ -437,6 +437,17 @@ fi
 
 setup_ssh_control
 
+# Test SSH connectivity
+log "Testing SSH connection to $DEST_HOST..."
+if ! ssh_run "$DEST_HOST" "echo 'SSH connection successful'" >/dev/null 2>&1; then
+  err "Cannot connect to $DEST_HOST via SSH. Check:
+  - Host is reachable
+  - SSH key authentication is configured
+  - Firewall allows SSH connections
+  - Hostname/IP is correct"
+fi
+log "SSH connection to $DEST_HOST verified."
+
 # Verify WP installs
 log "Verifying SOURCE WordPress at: $PWD"
 wp_local core is-installed || err "Source WordPress not detected."

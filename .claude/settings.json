@@ -32,8 +32,18 @@
       "6. git add -A && git commit -m 'type: description'",
       "7. git push origin <branch-name>",
       "8. Open PR to main",
-      "9. After merge, delete feature branch locally and remotely"
+      "9. After merge, delete feature branch locally and remotely",
+      "10. IMPORTANT: If multiple PRs are open, immediately rebase other PRs on latest main after each merge to avoid conflicts"
     ],
+    "multiPrStrategy": {
+      "note": "When creating multiple independent PRs simultaneously:",
+      "options": [
+        "Option A (Current): Create all from main, but rebase each remaining PR after every merge",
+        "Option B (Stacking): Create each PR from previous feature branch (best for dependent features)",
+        "Option C (Batch): Merge all features into a develop branch first, then PR develop->main once"
+      ],
+      "recommendation": "For this project: Use Option A. After each PR merge, immediately update remaining PRs with 'git rebase main' or 'git merge main'"
+    },
     "branchTypes": {
       "feature/*": "New features - PR to main",
       "fix/*": "Bug fixes - PR to main",
