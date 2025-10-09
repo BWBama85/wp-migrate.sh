@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded automatic wp search-replace to cover protocol-relative, JSON-escaped, and trailing-slash variants of the domain, plus optional `--dest-domain`/`--dest-home-url`/`--dest-site-url` overrides when detection needs a hint.
 - Documented the Git workflow and provided supporting templates for commits and pull requests.
 
+### Changed
+- Added ShellCheck disable directives for intentional client-side expansions in SSH commands to achieve zero ShellCheck warnings.
+
 ## [Pre-history]
 ### Added
 - `wp-migrate.sh` initial script prior to adopting the tracked changelog.
