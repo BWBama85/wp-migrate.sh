@@ -930,6 +930,11 @@ RS_OPTS=( -a -h -z --info=stats2 --partial --links --prune-empty-dirs --no-perms
 $DRY_RUN || RS_OPTS+=( --info=progress2 )
 $DRY_RUN && RS_OPTS+=( -n --itemize-changes )
 
+# Exclude object-cache.php drop-in to prevent caching infrastructure incompatibility
+# Use root-anchored path (/) to only exclude wp-content/object-cache.php, not plugin files
+RS_OPTS+=( --exclude=/object-cache.php )
+log "Excluding object-cache.php drop-in from transfer (preserves destination caching setup)"
+
 # Extra rsync opts
 if [[ ${#EXTRA_RSYNC_OPTS[@]} -gt 0 ]]; then
   RS_OPTS+=( "${EXTRA_RSYNC_OPTS[@]}" )
@@ -1220,6 +1225,7 @@ if $DRY_RUN; then
   log "[dry-run] Would replace wp-content with archive contents"
   log "[dry-run]   Source: $DUPLICATOR_WP_CONTENT"
   log "[dry-run]   Destination: $DEST_WP_CONTENT"
+  log "[dry-run] Would exclude object-cache.php from archive (preserves destination caching setup)"
 else
   log "Replacing wp-content with archive contents..."
   log "  Source: ${DUPLICATOR_WP_CONTENT#"$DUPLICATOR_EXTRACT_DIR"/}"
@@ -1229,6 +1235,12 @@ else
   rm -rf "$DEST_WP_CONTENT"
   cp -a "$DUPLICATOR_WP_CONTENT" "$DEST_WP_CONTENT"
   log "wp-content replaced successfully"
+
+  # Remove object-cache.php from imported wp-content to prevent caching infrastructure incompatibility
+  if [[ -f "$DEST_WP_CONTENT/object-cache.php" ]]; then
+    log "Removing object-cache.php from imported wp-content (preserves destination caching setup)"
+    rm -f "$DEST_WP_CONTENT/object-cache.php"
+  fi
 fi
 
 # Phase 10: Flush cache if available
