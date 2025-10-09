@@ -694,6 +694,21 @@ else
   log "Migration complete."
   REMOTE_DUMP_NAME="$(basename "${DUMP_LOCAL}${GZIP_DB:+.gz}")"
   log "DB file on destination: $DEST_IMPORT_DIR/$REMOTE_DUMP_NAME"
+
+  # Log rollback instructions if backup exists
+  if [[ -n "$DST_WP_CONTENT_BACKUP" ]]; then
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "ROLLBACK INSTRUCTIONS (if needed):"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "To restore the previous wp-content on destination:"
+    log "  ssh $DEST_HOST \"rm -rf '$DST_WP_CONTENT' && mv '$DST_WP_CONTENT_BACKUP' '$DST_WP_CONTENT'\""
+    log ""
+    log "Backup location on destination: $DST_WP_CONTENT_BACKUP"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log ""
+  fi
+
   if ! $IMPORT_DB; then
     if $GZIP_DB; then
       REMOTE_SQL_NAME="${REMOTE_DUMP_NAME%.gz}"
