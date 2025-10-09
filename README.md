@@ -187,5 +187,10 @@ Use the repo's Git helpers to keep changes small, reviewable, and easy to trace.
 - Supply additional SSH options with repeated `--ssh-opt` flags (e.g., alternate ports or identities).
 - Install [ShellCheck](https://www.shellcheck.net/) to lint modifications; the current script is ShellCheck-clean.
 
+## Development
+This project was developed with assistance from AI coding tools ([Claude Code](https://claude.com/claude-code)). Contributions are welcome!
+
 ## License
-No explicit licence is provided. Adapt as needed for your environment.
+MIT License - see [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2025 BWBama85
