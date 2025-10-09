@@ -24,6 +24,7 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - Automatically extracts and detects database and wp-content from Duplicator `.zip` archives with smart directory scoring.
 - Pre-flight disk space validation ensures 3x archive size is available (archive + extraction + buffer).
 - Creates timestamped backups of both the destination database and wp-content before any destructive operations.
+- Automatically detects and aligns table prefix if the imported database uses a different prefix than the destination's `wp-config.php` (supports complex prefixes with underscores like `my_site_`, `wp_live_2024_`).
 - Automatically detects imported site URLs and performs search-replace to align with the destination site URLs.
 - Provides comprehensive rollback instructions with exact commands to restore both backups if needed.
 - Auto-cleanup of temporary extraction directory on success; kept on failure for debugging.
@@ -135,11 +136,12 @@ Common examples:
 7. **Backup Database**: Creates a timestamped gzipped backup of the current destination database in `db-backups/` before import.
 8. **Backup wp-content**: Creates a timestamped backup of the current destination wp-content directory before replacement.
 9. **Import Database**: Imports the database from the Duplicator archive.
-10. **URL Alignment**: Detects the imported site URLs, performs `wp search-replace` to align all URL references to the destination URLs (captured in step 2), and updates the `home`/`siteurl` options.
-11. **Replace wp-content**: Removes the existing wp-content directory and replaces it completely with the wp-content from the archive (1:1 copy).
-12. **Post Tasks**: Flushes the Object Cache Pro cache via `wp redis flush` when available.
-13. **Cleanup**: Disables maintenance mode and removes the temporary extraction directory on success (keeps it on failure for debugging).
-14. **Rollback Instructions**: Logs detailed rollback commands showing how to restore both the database and wp-content backups if needed.
+10. **Table Prefix Alignment**: Detects the table prefix from the imported database by verifying core WordPress tables (`options`, `posts`, `users`) exist with the same prefix. If the imported prefix differs from `wp-config.php`, automatically updates `wp-config.php` to match. Supports complex prefixes with underscores (e.g., `my_site_`, `wp_live_2024_`).
+11. **URL Alignment**: Detects the imported site URLs, performs `wp search-replace` to align all URL references to the destination URLs (captured in step 2), and updates the `home`/`siteurl` options.
+12. **Replace wp-content**: Removes the existing wp-content directory and replaces it completely with the wp-content from the archive (1:1 copy).
+13. **Post Tasks**: Flushes the Object Cache Pro cache via `wp redis flush` when available.
+14. **Cleanup**: Disables maintenance mode and removes the temporary extraction directory on success (keeps it on failure for debugging).
+15. **Rollback Instructions**: Logs detailed rollback commands showing how to restore both the database and wp-content backups if needed.
 
 ## Directories and Logging
 
