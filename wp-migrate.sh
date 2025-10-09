@@ -88,6 +88,7 @@ ssh_cmd_string() {
 # Run an arbitrary command over SSH (use array expansion)
 ssh_run() {
   local host="$1"; shift
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
   ssh "${SSH_OPTS[@]}" "$host" "$@"
 }
 
@@ -98,6 +99,7 @@ wp_remote() {
   printf -v root_quoted "%q" "$root"
   local cmd=(wp --skip-plugins --skip-themes "$@")
   printf -v cmd_quoted "%q " "${cmd[@]}"
+  # shellcheck disable=SC2029  # Intentional client-side expansion; variables are quoted via printf %q
   ssh "${SSH_OPTS[@]}" "$host" "bash -lc 'cd $root_quoted && ${cmd_quoted% }'"
 }
 
@@ -108,6 +110,7 @@ wp_remote_full() {
   printf -v root_quoted "%q" "$root"
   local cmd=(wp "$@")
   printf -v cmd_quoted "%q " "${cmd[@]}"
+  # shellcheck disable=SC2029  # Intentional client-side expansion; variables are quoted via printf %q
   ssh "${SSH_OPTS[@]}" "$host" "bash -lc 'cd $root_quoted && ${cmd_quoted% }'"
 }
 
