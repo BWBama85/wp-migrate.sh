@@ -890,6 +890,32 @@ else
     if [[ "$SOURCE_DB_PREFIX" != "$DEST_DB_PREFIX" ]]; then
       log "Updating destination table prefix: $DEST_DB_PREFIX -> $SOURCE_DB_PREFIX"
       wp_remote "$DEST_HOST" "$DEST_ROOT" config set table_prefix "$SOURCE_DB_PREFIX" --type=variable
+
+      # Verify the update worked (wp config set has bugs with values starting with underscores)
+      ACTUAL_PREFIX="$(wp_remote "$DEST_HOST" "$DEST_ROOT" db prefix 2>/dev/null || echo "")"
+      if [[ "$ACTUAL_PREFIX" != "$SOURCE_DB_PREFIX" ]]; then
+        log "WARNING: wp config set failed to write correct prefix (wrote '$ACTUAL_PREFIX' instead of '$SOURCE_DB_PREFIX')"
+        log "Falling back to direct wp-config.php edit via sed..."
+
+        # Fallback: Use sed to directly update wp-config.php on remote
+        # This handles edge cases like prefixes with leading underscores that wp config set mishandles
+        ssh_run "$DEST_HOST" "cd \"$DEST_ROOT\" && sed -i.bak \"s/^\(\\\$table_prefix[[:space:]]*=[[:space:]]*\)['\\\"][^'\\\"]*['\\\"];/\1'${SOURCE_DB_PREFIX}';/\" wp-config.php"
+
+        # Verify sed worked
+        ACTUAL_PREFIX="$(wp_remote "$DEST_HOST" "$DEST_ROOT" db prefix 2>/dev/null || echo "")"
+        if [[ "$ACTUAL_PREFIX" == "$SOURCE_DB_PREFIX" ]]; then
+          log "Table prefix updated successfully via sed"
+          ssh_run "$DEST_HOST" "cd \"$DEST_ROOT\" && rm -f wp-config.php.bak"
+        else
+          log "ERROR: Failed to update table prefix. Manual intervention required."
+          log "  Expected: $SOURCE_DB_PREFIX"
+          log "  Actual: $ACTUAL_PREFIX"
+          ssh_run "$DEST_HOST" "cd \"$DEST_ROOT\" && mv wp-config.php.bak wp-config.php 2>/dev/null"
+        fi
+      else
+        log "Table prefix updated successfully"
+      fi
+
       DEST_DB_PREFIX="$SOURCE_DB_PREFIX"
     fi
 
@@ -1181,7 +1207,33 @@ else
     if [[ "$IMPORTED_DB_PREFIX" != "$DEST_DB_PREFIX_BEFORE" ]]; then
       log "Updating wp-config.php table prefix: $DEST_DB_PREFIX_BEFORE -> $IMPORTED_DB_PREFIX"
       wp_local config set table_prefix "$IMPORTED_DB_PREFIX" --type=variable
-      log "Table prefix updated successfully"
+
+      # Verify the update worked (wp config set has bugs with values starting with underscores)
+      ACTUAL_PREFIX="$(wp_local db prefix 2>/dev/null || echo "")"
+      if [[ "$ACTUAL_PREFIX" != "$IMPORTED_DB_PREFIX" ]]; then
+        log "WARNING: wp config set failed to write correct prefix (wrote '$ACTUAL_PREFIX' instead of '$IMPORTED_DB_PREFIX')"
+        log "Falling back to direct wp-config.php edit via sed..."
+
+        # Fallback: Use sed to directly update wp-config.php
+        # This handles edge cases like prefixes with leading underscores that wp config set mishandles
+        if sed -i.bak "s/^\(\$table_prefix[[:space:]]*=[[:space:]]*\)['\"][^'\"]*['\"];/\1'${IMPORTED_DB_PREFIX}';/" wp-config.php; then
+          # Verify sed worked
+          ACTUAL_PREFIX="$(wp_local db prefix 2>/dev/null || echo "")"
+          if [[ "$ACTUAL_PREFIX" == "$IMPORTED_DB_PREFIX" ]]; then
+            log "Table prefix updated successfully via sed"
+            rm -f wp-config.php.bak
+          else
+            log "ERROR: Failed to update table prefix. Manual intervention required."
+            log "  Expected: $IMPORTED_DB_PREFIX"
+            log "  Actual: $ACTUAL_PREFIX"
+            mv wp-config.php.bak wp-config.php 2>/dev/null
+          fi
+        else
+          log "ERROR: sed command failed to update wp-config.php"
+        fi
+      else
+        log "Table prefix updated successfully"
+      fi
     else
       log "Table prefix matches wp-config.php; no update needed"
     fi
