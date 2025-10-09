@@ -1097,10 +1097,37 @@ fi
 # Phase 7: Import database
 if $DRY_RUN; then
   log "[dry-run] Would import database from: $(basename "$DUPLICATOR_DB_FILE")"
+  log "[dry-run] Would detect and align table prefix if needed"
 else
   log "Importing database from: $(basename "$DUPLICATOR_DB_FILE")"
+
+  # Get current destination prefix before import
+  DEST_DB_PREFIX_BEFORE="$(wp_local db prefix)"
+  log "Current wp-config.php table prefix: $DEST_DB_PREFIX_BEFORE"
+
+  # Import the database
   wp_local db import "$DUPLICATOR_DB_FILE"
   log "Database imported successfully"
+
+  # Detect the prefix from the imported database
+  # The imported tables will have their own prefix
+  IMPORTED_DB_PREFIX=$(wp_local db query "SHOW TABLES LIKE '%_options'" --skip-column-names 2>/dev/null | head -1 | sed 's/_options$//' | sed 's/^.*\///')
+
+  if [[ -n "$IMPORTED_DB_PREFIX" ]]; then
+    IMPORTED_DB_PREFIX="${IMPORTED_DB_PREFIX}_"
+    log "Detected imported database prefix: $IMPORTED_DB_PREFIX"
+
+    # If the imported prefix differs from wp-config.php, update wp-config.php
+    if [[ "$IMPORTED_DB_PREFIX" != "$DEST_DB_PREFIX_BEFORE" ]]; then
+      log "Updating wp-config.php table prefix: $DEST_DB_PREFIX_BEFORE -> $IMPORTED_DB_PREFIX"
+      wp_local config set table_prefix "$IMPORTED_DB_PREFIX" --type=variable
+      log "Table prefix updated successfully"
+    else
+      log "Table prefix matches wp-config.php; no update needed"
+    fi
+  else
+    log "WARNING: Could not detect table prefix from imported database; assuming it matches wp-config.php"
+  fi
 fi
 
 # Phase 8: Get imported URLs and perform search-replace
