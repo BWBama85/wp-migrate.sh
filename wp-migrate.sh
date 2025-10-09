@@ -26,8 +26,11 @@ set -Eeuo pipefail
 # -------------------
 # Defaults / Settings
 # -------------------
-DEST_HOST=""                 # REQUIRED: user@dest.example.com
-DEST_ROOT=""                 # REQUIRED: absolute WP root on destination (e.g., /var/www/site)
+DEST_HOST=""                 # REQUIRED (push mode): user@dest.example.com
+DEST_ROOT=""                 # REQUIRED (push mode): absolute WP root on destination (e.g., /var/www/site)
+DUPLICATOR_ARCHIVE=""        # REQUIRED (Duplicator mode): path to Duplicator .zip backup
+MIGRATION_MODE=""            # Detected: "push" or "duplicator"
+
 # Use a single-element -o form to avoid dangling -o errors if mis-expanded
 SSH_OPTS=(-oStrictHostKeyChecking=accept-new)
 SSH_CONTROL_ACTIVE=false
@@ -39,6 +42,13 @@ IMPORT_DB=true              # Automatically import DB on destination after trans
 GZIP_DB=true                # Compress DB dump during transfer
 MAINTENANCE_ALWAYS=true     # Always enable maintenance mode during migration
 MAINTENANCE_SOURCE=true     # Allow skipping maintenance mode on the source (--no-maint-source)
+
+# Duplicator mode variables
+DUPLICATOR_EXTRACT_DIR=""    # Temporary extraction directory
+DUPLICATOR_DB_FILE=""        # Detected database file path
+DUPLICATOR_WP_CONTENT=""     # Detected wp-content directory path
+ORIGINAL_DEST_HOME_URL=""    # Captured before import
+ORIGINAL_DEST_SITE_URL=""    # Captured before import
 
 LOG_DIR="./logs"
 LOG_FILE="/dev/null"
@@ -215,6 +225,14 @@ exit_cleanup() {
   set +e
   maintenance_cleanup
   cleanup_ssh_control
+  if [[ "$MIGRATION_MODE" == "duplicator" ]]; then
+    # Only cleanup on success; keep files on failure for debugging
+    if [[ $status -eq 0 ]]; then
+      cleanup_duplicator_temp
+    elif [[ -n "$DUPLICATOR_EXTRACT_DIR" && -d "$DUPLICATOR_EXTRACT_DIR" ]]; then
+      log "Keeping extraction directory for debugging: $DUPLICATOR_EXTRACT_DIR"
+    fi
+  fi
   set -e
   exit "$status"
 }
@@ -227,6 +245,147 @@ discover_wp_content_remote() {
   local host="$1" root="$2"
   # Use wp_remote so quoted args survive
   wp_remote "$host" "$root" eval 'echo WP_CONTENT_DIR;'
+}
+
+check_disk_space_for_duplicator() {
+  local archive_path="$1"
+  local archive_size_bytes
+  local available_bytes
+  local required_bytes
+
+  archive_size_bytes=$(stat -f%z "$archive_path" 2>/dev/null || stat -c%s "$archive_path" 2>/dev/null)
+  [[ -n "$archive_size_bytes" ]] || err "Unable to determine archive size: $archive_path"
+
+  # Need 3x archive size: 1x for archive, 1x for extraction, 1x buffer
+  required_bytes=$((archive_size_bytes * 3))
+
+  # Check available space in current directory
+  available_bytes=$(df -P . | awk 'NR==2 {print $4 * 1024}')
+
+  local archive_size_mb=$((archive_size_bytes / 1024 / 1024))
+  local required_mb=$((required_bytes / 1024 / 1024))
+  local available_mb=$((available_bytes / 1024 / 1024))
+
+  log "Disk space check:"
+  log "  Archive size: ${archive_size_mb}MB"
+  log "  Required: ${required_mb}MB (3x archive size)"
+  log "  Available: ${available_mb}MB"
+
+  if [[ $available_bytes -lt $required_bytes ]]; then
+    err "Insufficient disk space. Need ${required_mb}MB but only ${available_mb}MB available.
+Archive: ${archive_size_mb}MB
+Required: ${required_mb}MB (3x for archive + extraction + buffer)
+Available: ${available_mb}MB
+
+Free up space or move the archive to a location with more available space."
+  fi
+
+  log "Disk space check: PASSED"
+}
+
+extract_duplicator_archive() {
+  local archive_path="$1"
+
+  if $DRY_RUN; then
+    log "[dry-run] Would extract archive to temporary directory"
+    DUPLICATOR_EXTRACT_DIR="/tmp/wp-migrate-duplicator-XXXXXX-dryrun"
+    return 0
+  fi
+
+  DUPLICATOR_EXTRACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/wp-migrate-duplicator-XXXXXX")"
+  log "Extracting archive to: $DUPLICATOR_EXTRACT_DIR"
+
+  if ! unzip -q "$archive_path" -d "$DUPLICATOR_EXTRACT_DIR"; then
+    rm -rf "$DUPLICATOR_EXTRACT_DIR"
+    err "Failed to extract Duplicator archive: $archive_path"
+  fi
+
+  log "Archive extracted successfully"
+}
+
+find_duplicator_database() {
+  local extract_dir="$1"
+
+  if $DRY_RUN; then
+    log "[dry-run] Would search for database file: dup-installer/dup-database__*.sql"
+    DUPLICATOR_DB_FILE="$extract_dir/dup-installer/dup-database__example.sql"
+    return 0
+  fi
+
+  # Look for database file in dup-installer directory
+  local db_file
+  db_file=$(find "$extract_dir" -type f -path "*/dup-installer/dup-database__*.sql" | head -1)
+
+  if [[ -z "$db_file" ]]; then
+    err "Unable to locate database file in Duplicator archive.
+Expected path: dup-installer/dup-database__*.sql
+Archive extracted to: $extract_dir
+
+Please verify this is a valid Duplicator backup archive."
+  fi
+
+  DUPLICATOR_DB_FILE="$db_file"
+  log "Found database file: $(basename "$DUPLICATOR_DB_FILE")"
+}
+
+find_duplicator_wp_content() {
+  local extract_dir="$1"
+
+  if $DRY_RUN; then
+    log "[dry-run] Would auto-detect wp-content directory"
+    DUPLICATOR_WP_CONTENT="$extract_dir/wordpress/core/6.8.3/wp-content"
+    return 0
+  fi
+
+  # Find all wp-content directories
+  local candidates=()
+  while IFS= read -r -d '' dir; do
+    candidates+=("$dir")
+  done < <(find "$extract_dir" -type d -name "wp-content" -print0)
+
+  if [[ ${#candidates[@]} -eq 0 ]]; then
+    err "Unable to locate wp-content directory in Duplicator archive.
+Archive extracted to: $extract_dir
+
+Please verify this is a valid Duplicator backup archive."
+  fi
+
+  # Score each candidate by presence of standard subdirectories
+  local best_dir="" best_score=0
+  for dir in "${candidates[@]}"; do
+    local score=0
+    [[ -d "$dir/plugins" ]] && ((score++))
+    [[ -d "$dir/themes" ]] && ((score++))
+    [[ -d "$dir/uploads" ]] && ((score++))
+
+    if [[ $score -gt $best_score ]]; then
+      best_score=$score
+      best_dir="$dir"
+    fi
+  done
+
+  if [[ -z "$best_dir" ]]; then
+    log "WARNING: Found wp-content directories but none with standard subdirectories."
+    log "Using first candidate: ${candidates[0]}"
+    best_dir="${candidates[0]}"
+  fi
+
+  DUPLICATOR_WP_CONTENT="$best_dir"
+  log "Found wp-content directory: ${DUPLICATOR_WP_CONTENT#"$extract_dir"/}"
+  log "  Contains: plugins=$([ -d "$DUPLICATOR_WP_CONTENT/plugins" ] && echo "YES" || echo "NO") themes=$([ -d "$DUPLICATOR_WP_CONTENT/themes" ] && echo "YES" || echo "NO") uploads=$([ -d "$DUPLICATOR_WP_CONTENT/uploads" ] && echo "YES" || echo "NO")"
+}
+
+cleanup_duplicator_temp() {
+  [[ -z "$DUPLICATOR_EXTRACT_DIR" ]] && return 0
+  [[ ! -d "$DUPLICATOR_EXTRACT_DIR" ]] && return 0
+
+  if $DRY_RUN; then
+    log "[dry-run] Would remove temporary extraction directory"
+    return 0
+  fi
+
+  log "Cleaning up temporary extraction directory..."
+  rm -rf "$DUPLICATOR_EXTRACT_DIR"
 }
 
 backup_remote_wp_content() {
@@ -334,30 +493,44 @@ print_version() {
 
 print_usage() {
   cat <<USAGE
-Usage (run on SOURCE WP root):
+Usage:
+
+PUSH MODE (run on SOURCE WP root):
   $(basename "$0") --dest-host <user@host> --dest-root </abs/path> [options]
 
-Required:
+DUPLICATOR MODE (run on DESTINATION WP root):
+  $(basename "$0") --duplicator-archive </path/to/backup.zip> [options]
+
+Required (choose one mode):
   --dest-host <user@dest.example.com>
   --dest-root </absolute/path/to/destination/wp-root>
+      Push mode: migrate from current host to destination via SSH
+
+  --duplicator-archive </path/to/backup.zip>
+      Duplicator mode: import Duplicator backup archive to current host
+      (mutually exclusive with --dest-host)
 
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
   --import-db               (Deprecated) Explicitly import the DB on destination (default behavior)
   --no-import-db            Skip importing the DB on destination after transfer
-  --no-gzip                 Don't gzip the DB dump (default is gzip on)
-  --no-maint-source         Skip enabling maintenance mode on the source site
-  --dest-domain '<host>'    Override destination domain (assigns https://<host> to home/site URLs unless other overrides supplied)
-  --dest-home-url '<url>'   Force the destination home URL used for replacements
-  --dest-site-url '<url>'   Force the destination site URL used for replacements
-  --rsync-opt '<opt>'       Add an rsync option (can be repeated)
-  --ssh-opt '<opt>'         Add an SSH -o option (e.g., ProxyJump=bastion). Can be repeated.
+  --no-gzip                 Don't gzip the DB dump (default is gzip on, push mode only)
+  --no-maint-source         Skip enabling maintenance mode on the source site (push mode only)
+  --dest-domain '<host>'    Override destination domain (push mode only)
+  --dest-home-url '<url>'   Force the destination home URL used for replacements (push mode only)
+  --dest-site-url '<url>'   Force the destination site URL used for replacements (push mode only)
+  --rsync-opt '<opt>'       Add an rsync option (can be repeated, push mode only)
+  --ssh-opt '<opt>'         Add an SSH -o option (e.g., ProxyJump=bastion). Can be repeated. (push mode only)
   --version                 Show version information
   --help                    Show this help
 
-Examples:
+Examples (push mode):
   $(basename "$0") --dest-host wp@dest --dest-root /var/www/site
   $(basename "$0") --dest-host wp@dest --dest-root /var/www/site --no-import-db
+
+Examples (Duplicator mode):
+  $(basename "$0") --duplicator-archive /path/to/backup_20251009.zip
+  $(basename "$0") --duplicator-archive /backups/site.zip --dry-run
 USAGE
 }
 
@@ -368,6 +541,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dest-host) DEST_HOST="${2:-}"; shift 2 ;;
     --dest-root) DEST_ROOT="${2:-}"; shift 2 ;;
+    --duplicator-archive) DUPLICATOR_ARCHIVE="${2:-}"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     --import-db) IMPORT_DB=true; shift ;;
     --no-import-db) IMPORT_DB=false; shift ;;
@@ -414,46 +588,124 @@ if [[ -n "$DEST_DOMAIN_OVERRIDE" ]]; then
   [[ -z "$DEST_SITE_OVERRIDE" ]] && DEST_SITE_OVERRIDE="$DEST_DOMAIN_CANON"
 fi
 
+# --------------------
+# Detect migration mode
+# --------------------
+if [[ -n "$DUPLICATOR_ARCHIVE" && ( -n "$DEST_HOST" || -n "$DEST_ROOT" ) ]]; then
+  err "--duplicator-archive is mutually exclusive with --dest-host/--dest-root.
+Choose one mode:
+  Push mode: --dest-host and --dest-root
+  Duplicator mode: --duplicator-archive"
+fi
+
+if [[ -n "$DUPLICATOR_ARCHIVE" ]]; then
+  MIGRATION_MODE="duplicator"
+elif [[ -n "$DEST_HOST" || -n "$DEST_ROOT" ]]; then
+  MIGRATION_MODE="push"
+else
+  err "No migration mode specified. Choose one:
+  Push mode: --dest-host <user@host> --dest-root </path>
+  Duplicator mode: --duplicator-archive </path/to/backup.zip>
+Run --help for more information."
+fi
+
 # ----------
 # Preflight
 # ----------
-[[ -f "./wp-config.php" ]] || err "Run this from the SOURCE WordPress root (wp-config.php not found)."
-[[ -n "$DEST_HOST" && -n "$DEST_ROOT" ]] || err "--dest-host and --dest-root are required."
+[[ -f "./wp-config.php" ]] || err "Run this from a WordPress root directory (wp-config.php not found)."
+
+if [[ "$MIGRATION_MODE" == "push" ]]; then
+  [[ -n "$DEST_HOST" && -n "$DEST_ROOT" ]] || err "Push mode requires both --dest-host and --dest-root."
+elif [[ "$MIGRATION_MODE" == "duplicator" ]]; then
+  [[ -n "$DUPLICATOR_ARCHIVE" ]] || err "Duplicator mode requires --duplicator-archive."
+
+  # Validate Duplicator archive
+  [[ -f "$DUPLICATOR_ARCHIVE" ]] || err "Duplicator archive not found: $DUPLICATOR_ARCHIVE"
+
+  # Check if it's a zip file
+  if ! file -b "$DUPLICATOR_ARCHIVE" 2>/dev/null | grep -qi "zip"; then
+    err "Duplicator archive must be a ZIP file (got: $DUPLICATOR_ARCHIVE)"
+  fi
+
+  # Validate push-mode-only flags aren't used in Duplicator mode
+  if [[ -n "$DEST_HOME_OVERRIDE" || -n "$DEST_SITE_OVERRIDE" || -n "$DEST_DOMAIN_OVERRIDE" ]]; then
+    err "--dest-home-url, --dest-site-url, and --dest-domain are only valid in push mode."
+  fi
+  if [[ ${#EXTRA_RSYNC_OPTS[@]} -gt 0 ]]; then
+    err "--rsync-opt is only valid in push mode."
+  fi
+  if ! $MAINTENANCE_SOURCE; then
+    err "--no-maint-source is only valid in push mode."
+  fi
+  if ! $GZIP_DB; then
+    err "--no-gzip is only valid in push mode."
+  fi
+  if [[ ${#SSH_OPTS[@]} -gt 1 ]]; then  # More than default -oStrictHostKeyChecking
+    err "--ssh-opt is only valid in push mode."
+  fi
+fi
 
 needs wp
-needs rsync
-needs ssh
-needs gzip
+
+if [[ "$MIGRATION_MODE" == "push" ]]; then
+  needs rsync
+  needs ssh
+  needs gzip
+elif [[ "$MIGRATION_MODE" == "duplicator" ]]; then
+  needs unzip
+  needs file
+fi
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 if $DRY_RUN; then
   LOG_FILE="/dev/null"
-  log "Starting push migration (dry-run preview; no log file will be written)."
+  if [[ "$MIGRATION_MODE" == "push" ]]; then
+    log "Starting push migration (dry-run preview; no log file will be written)."
+  else
+    log "Starting Duplicator import (dry-run preview; no log file will be written)."
+  fi
 else
   mkdir -p "$LOG_DIR"
-  LOG_FILE="$LOG_DIR/migrate-wpcontent-push-$STAMP.log"
-  log "Starting push migration. Log: $LOG_FILE"
+  if [[ "$MIGRATION_MODE" == "push" ]]; then
+    LOG_FILE="$LOG_DIR/migrate-wpcontent-push-$STAMP.log"
+    log "Starting push migration. Log: $LOG_FILE"
+  else
+    LOG_FILE="$LOG_DIR/migrate-duplicator-import-$STAMP.log"
+    log "Starting Duplicator import. Log: $LOG_FILE"
+  fi
 fi
 
-setup_ssh_control
+if [[ "$MIGRATION_MODE" == "push" ]]; then
+  setup_ssh_control
 
-# Test SSH connectivity
-log "Testing SSH connection to $DEST_HOST..."
-if ! ssh_run "$DEST_HOST" "echo 'SSH connection successful'" >/dev/null 2>&1; then
-  err "Cannot connect to $DEST_HOST via SSH. Check:
+  # Test SSH connectivity
+  log "Testing SSH connection to $DEST_HOST..."
+  if ! ssh_run "$DEST_HOST" "echo 'SSH connection successful'" >/dev/null 2>&1; then
+    err "Cannot connect to $DEST_HOST via SSH. Check:
   - Host is reachable
   - SSH key authentication is configured
   - Firewall allows SSH connections
   - Hostname/IP is correct"
+  fi
+  log "SSH connection to $DEST_HOST verified."
 fi
-log "SSH connection to $DEST_HOST verified."
 
 # Verify WP installs
-log "Verifying SOURCE WordPress at: $PWD"
-wp_local core is-installed || err "Source WordPress not detected."
+if [[ "$MIGRATION_MODE" == "push" ]]; then
+  log "Verifying SOURCE WordPress at: $PWD"
+  wp_local core is-installed || err "Source WordPress not detected."
 
-log "Verifying DEST WordPress at: $DEST_HOST:$DEST_ROOT"
-wp_remote "$DEST_HOST" "$DEST_ROOT" core is-installed || err "Destination WordPress not detected."
+  log "Verifying DEST WordPress at: $DEST_HOST:$DEST_ROOT"
+  wp_remote "$DEST_HOST" "$DEST_ROOT" core is-installed || err "Destination WordPress not detected."
+elif [[ "$MIGRATION_MODE" == "duplicator" ]]; then
+  log "Verifying DEST WordPress at: $PWD"
+  wp_local core is-installed || err "Destination WordPress not detected."
+fi
+
+# ==================================================================================
+# PUSH MODE WORKFLOW
+# ==================================================================================
+if [[ "$MIGRATION_MODE" == "push" ]]; then
 
 SOURCE_DB_PREFIX="$(wp_local db prefix)"
 DEST_DB_PREFIX="$(wp_remote "$DEST_HOST" "$DEST_ROOT" db prefix)"
@@ -779,4 +1031,185 @@ else
   else
     log "Skipping Object Cache Pro cache flush; wp redis command not available."
   fi
+fi
+
+# End of push mode workflow
+fi
+
+# ==================================================================================
+# DUPLICATOR MODE WORKFLOW
+# ==================================================================================
+if [[ "$MIGRATION_MODE" == "duplicator" ]]; then
+
+log "Archive: $DUPLICATOR_ARCHIVE"
+
+# Phase 0: Capture destination URLs BEFORE any operations
+log "Capturing current destination URLs..."
+ORIGINAL_DEST_HOME_URL="$(wp_local option get home)"
+ORIGINAL_DEST_SITE_URL="$(wp_local option get siteurl)"
+log "Current site home: $ORIGINAL_DEST_HOME_URL"
+log "Current site URL: $ORIGINAL_DEST_SITE_URL"
+
+# Phase 1: Disk space check
+check_disk_space_for_duplicator "$DUPLICATOR_ARCHIVE"
+
+# Phase 2: Extract archive
+extract_duplicator_archive "$DUPLICATOR_ARCHIVE"
+
+# Phase 3: Discover database and wp-content
+find_duplicator_database "$DUPLICATOR_EXTRACT_DIR"
+find_duplicator_wp_content "$DUPLICATOR_EXTRACT_DIR"
+
+# Phase 4: Enable maintenance mode
+log "Enabling maintenance mode on destination..."
+if $DRY_RUN; then
+  log "[dry-run] Would enable maintenance mode on destination."
+else
+  wp_local maintenance-mode activate >/dev/null || err "Failed to enable maintenance mode"
+  MAINT_LOCAL_ACTIVE=true
+fi
+
+# Phase 5: Backup current database
+if $DRY_RUN; then
+  log "[dry-run] Would backup current database to: db-backups/pre-duplicator-backup_${STAMP}.sql.gz"
+else
+  mkdir -p "db-backups"
+  BACKUP_DB_FILE="db-backups/pre-duplicator-backup_${STAMP}.sql.gz"
+  log "Backing up current database to: $BACKUP_DB_FILE"
+  wp_local db export - | gzip > "$BACKUP_DB_FILE"
+  log "Database backup created: $BACKUP_DB_FILE"
+fi
+
+# Phase 6: Backup current wp-content
+DEST_WP_CONTENT="$(discover_wp_content_local)"
+log "Destination WP_CONTENT_DIR: $DEST_WP_CONTENT"
+
+if $DRY_RUN; then
+  DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
+  log "[dry-run] Would backup current wp-content to: $DEST_WP_CONTENT_BACKUP"
+else
+  DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
+  log "Backing up current wp-content to: $DEST_WP_CONTENT_BACKUP"
+  cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"
+  log "wp-content backup created: $DEST_WP_CONTENT_BACKUP"
+fi
+
+# Phase 7: Import database
+if $DRY_RUN; then
+  log "[dry-run] Would import database from: $(basename "$DUPLICATOR_DB_FILE")"
+else
+  log "Importing database from: $(basename "$DUPLICATOR_DB_FILE")"
+  wp_local db import "$DUPLICATOR_DB_FILE"
+  log "Database imported successfully"
+fi
+
+# Phase 8: Get imported URLs and perform search-replace
+if $DRY_RUN; then
+  log "[dry-run] Would detect imported URLs and replace with destination URLs"
+  log "[dry-run]   Replace: <imported-home-url> -> $ORIGINAL_DEST_HOME_URL"
+  log "[dry-run]   Replace: <imported-site-url> -> $ORIGINAL_DEST_SITE_URL"
+else
+  log "Detecting imported URLs..."
+  IMPORTED_HOME_URL="$(wp_local option get home)"
+  IMPORTED_SITE_URL="$(wp_local option get siteurl)"
+  log "Imported home URL: $IMPORTED_HOME_URL"
+  log "Imported site URL: $IMPORTED_SITE_URL"
+
+  if [[ "$IMPORTED_HOME_URL" != "$ORIGINAL_DEST_HOME_URL" || "$IMPORTED_SITE_URL" != "$ORIGINAL_DEST_SITE_URL" ]]; then
+    log "Aligning URLs to destination via wp search-replace..."
+
+    # Build search-replace arguments
+    SEARCH_REPLACE_ARGS=()
+    add_url_alignment_variations "$IMPORTED_HOME_URL" "$ORIGINAL_DEST_HOME_URL"
+    add_url_alignment_variations "$IMPORTED_SITE_URL" "$ORIGINAL_DEST_SITE_URL"
+
+    IMPORTED_HOSTNAME="$(url_host_only "$IMPORTED_HOME_URL")"
+    DEST_HOSTNAME="$(url_host_only "$ORIGINAL_DEST_HOME_URL")"
+    if [[ -n "$IMPORTED_HOSTNAME" && -n "$DEST_HOSTNAME" ]]; then
+      add_url_alignment_variations "$IMPORTED_HOSTNAME" "$DEST_HOSTNAME"
+      add_url_alignment_variations "//$IMPORTED_HOSTNAME" "//$DEST_HOSTNAME"
+    fi
+
+    # Check for multisite
+    if wp_local core is-installed --network >/dev/null 2>&1; then
+      SEARCH_REPLACE_FLAGS+=(--network)
+    fi
+
+    # Perform search-replace
+    if ! wp_local search-replace "${SEARCH_REPLACE_ARGS[@]}" "${SEARCH_REPLACE_FLAGS[@]}"; then
+      log "WARNING: wp search-replace failed; some URLs may still reference the imported site."
+    fi
+
+    # Ensure destination URLs are set correctly
+    log "Ensuring destination URLs are set correctly..."
+    wp_local option update home "$ORIGINAL_DEST_HOME_URL" >/dev/null
+    wp_local option update siteurl "$ORIGINAL_DEST_SITE_URL" >/dev/null
+  else
+    log "Imported URLs match destination URLs; no replacement needed."
+  fi
+fi
+
+# Phase 9: Replace wp-content
+if $DRY_RUN; then
+  log "[dry-run] Would replace wp-content with archive contents"
+  log "[dry-run]   Source: $DUPLICATOR_WP_CONTENT"
+  log "[dry-run]   Destination: $DEST_WP_CONTENT"
+else
+  log "Replacing wp-content with archive contents..."
+  log "  Source: ${DUPLICATOR_WP_CONTENT#"$DUPLICATOR_EXTRACT_DIR"/}"
+  log "  Destination: $DEST_WP_CONTENT"
+
+  # Remove existing wp-content and replace
+  rm -rf "$DEST_WP_CONTENT"
+  cp -a "$DUPLICATOR_WP_CONTENT" "$DEST_WP_CONTENT"
+  log "wp-content replaced successfully"
+fi
+
+# Phase 10: Flush cache if available
+if wp_local cli has-command redis >/dev/null 2>&1; then
+  if $DRY_RUN; then
+    log "[dry-run] Would flush Object Cache Pro cache via: wp redis flush"
+  else
+    log "Flushing Object Cache Pro cache..."
+    if ! wp_local redis flush; then
+      log "WARNING: Failed to flush Object Cache Pro cache via wp redis flush."
+    fi
+  fi
+else
+  log "Skipping Object Cache Pro cache flush; wp redis command not available."
+fi
+
+# Phase 11: Disable maintenance mode
+log "Disabling maintenance mode..."
+if $DRY_RUN; then
+  log "[dry-run] Would disable maintenance mode on destination."
+else
+  wp_local maintenance-mode deactivate >/dev/null || log "WARNING: Failed to disable maintenance mode"
+  MAINT_LOCAL_ACTIVE=false
+fi
+
+# Phase 12: Report completion and rollback instructions
+if $DRY_RUN; then
+  log "[dry-run] Duplicator import preview complete."
+else
+  log "Duplicator import complete."
+  log ""
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log "ROLLBACK INSTRUCTIONS (if needed):"
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log "1. Restore database:"
+  log "   wp db import <(gunzip -c $BACKUP_DB_FILE)"
+  log ""
+  log "2. Restore wp-content:"
+  log "   rm -rf $DEST_WP_CONTENT"
+  log "   mv $DEST_WP_CONTENT_BACKUP $DEST_WP_CONTENT"
+  log ""
+  log "Backups created:"
+  log "  Database: $BACKUP_DB_FILE"
+  log "  wp-content: $DEST_WP_CONTENT_BACKUP"
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log ""
+fi
+
+# End of Duplicator mode workflow
 fi

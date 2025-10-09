@@ -1,0 +1,31 @@
+# Test/Sample Files
+*.zip
+*.gz
+*.tar
+*.tar.gz
+*.sql
+
+# Duplicator backup samples for testing
+test-backups/
+sample-backups/
+*.daf
+
+# Logs
+logs/
+*.log
+
+# Database dumps
+db-dumps/
+db-imports/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
