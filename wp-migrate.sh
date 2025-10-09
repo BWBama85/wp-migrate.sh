@@ -100,6 +100,7 @@ ssh_cmd_string() {
 # Run an arbitrary command over SSH (use array expansion)
 ssh_run() {
   local host="$1"; shift
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
   ssh "${SSH_OPTS[@]}" "$host" "$@"
 }
 
@@ -110,6 +111,7 @@ wp_remote() {
   printf -v root_quoted "%q" "$root"
   local cmd=(wp --skip-plugins --skip-themes "$@")
   printf -v cmd_quoted "%q " "${cmd[@]}"
+  # shellcheck disable=SC2029  # Intentional client-side expansion; variables are quoted via printf %q
   ssh "${SSH_OPTS[@]}" "$host" "bash -lc 'cd $root_quoted && ${cmd_quoted% }'"
 }
 
@@ -120,6 +122,7 @@ wp_remote_full() {
   printf -v root_quoted "%q" "$root"
   local cmd=(wp "$@")
   printf -v cmd_quoted "%q " "${cmd[@]}"
+  # shellcheck disable=SC2029  # Intentional client-side expansion; variables are quoted via printf %q
   ssh "${SSH_OPTS[@]}" "$host" "bash -lc 'cd $root_quoted && ${cmd_quoted% }'"
 }
 
@@ -309,6 +312,26 @@ maintenance_cleanup() {
   $had_failure && return 1 || return 0
 }
 
+print_version() {
+  local version="unknown"
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  # Try to get version from git tag
+  if command -v git >/dev/null 2>&1 && [[ -d "$script_dir/.git" ]]; then
+    version=$(git -C "$script_dir" describe --tags --always 2>/dev/null || echo "unknown")
+  fi
+
+  # If no git tag, try to extract from CHANGELOG.md
+  if [[ "$version" == "unknown" && -f "$script_dir/CHANGELOG.md" ]]; then
+    # Look for the first version heading like ## [X.Y.Z]
+    version=$(grep -m 1 "^## \[" "$script_dir/CHANGELOG.md" | sed -E 's/^## \[([^]]+)\].*/\1/' || echo "unknown")
+    [[ "$version" == "Unreleased" ]] && version="dev (unreleased)"
+  fi
+
+  printf "wp-migrate.sh version %s\n" "$version"
+}
+
 print_usage() {
   cat <<USAGE
 Usage (run on SOURCE WP root):
@@ -329,6 +352,7 @@ Options:
   --dest-site-url '<url>'   Force the destination site URL used for replacements
   --rsync-opt '<opt>'       Add an rsync option (can be repeated)
   --ssh-opt '<opt>'         Add an SSH -o option (e.g., ProxyJump=bastion). Can be repeated.
+  --version                 Show version information
   --help                    Show this help
 
 Examples:
@@ -374,6 +398,7 @@ while [[ $# -gt 0 ]]; do
       DEST_DOMAIN_OVERRIDE="${2:-}"; shift 2
       [[ -n "$DEST_DOMAIN_OVERRIDE" ]] || err "--dest-domain requires a hostname or URL"
       ;;
+    --version|-v) print_version; exit 0 ;;
     --help|-h) print_usage; exit 0 ;;
     *) err "Unknown argument: $1 (see --help)";;
   esac

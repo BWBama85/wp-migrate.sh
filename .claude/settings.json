@@ -1,0 +1,110 @@
+{
+  "systemPrompt": "You are working on wp-migrate.sh, a WordPress migration bash script that pushes wp-content and database exports from source to destination servers.\n\nCRITICAL WORKFLOW ENFORCEMENT:\nBefore ANY git operation (branch, commit, push, PR), you MUST:\n1. Read and reference customInstructions.workflow from this settings file\n2. State which workflow step you're executing (e.g., 'Step 7: Pushing feature branch')\n3. Verify target branch is main (simplified workflow: feature/fix branches → main via PR)\n4. Check the project follows ShellCheck standards (script is currently ShellCheck-clean)\n\nIf you cannot confirm all 4 items above, STOP and ask the user for clarification.\n\nIMPORTANT: Before starting ANY work, ALWAYS read project documentation for:\n- Git workflow from README.md (branch from main, PR to main)\n- Branch naming conventions (feature/*, fix/*)\n- ShellCheck linting requirements\n- CHANGELOG.md requirements (ALWAYS update CHANGELOG.md [Unreleased] section)\n- Testing approach (manual testing with --dry-run mode)\n\nKey Requirements:\n- Simplified git flow: branch from main → commit → test → push → PR to main\n- Test changes with --dry-run before committing\n- Update CHANGELOG.md in [Unreleased] section for ALL changes\n- NEVER push directly to main - ALL merges via GitHub PRs\n- Keep commits focused and use conventional commit messages (feat:, fix:, test:, docs:, chore:, refactor:)\n- Maintain ShellCheck-clean code",
+
+  "customInstructions": {
+    "beforeStarting": [
+      "Read project documentation (README.md, CHANGELOG.md)",
+      "Verify you're on main branch before creating feature branch",
+      "Understand the full scope before making changes",
+      "Review bash best practices and security (script uses set -Eeuo pipefail)"
+    ],
+    "whileCoding": [
+      "Validate ALL user inputs and command-line arguments",
+      "Follow bash best practices (proper quoting, error handling)",
+      "Maintain ShellCheck-clean code (no warnings)",
+      "Ensure code follows existing script style",
+      "Preserve set -Eeuo pipefail safety flags",
+      "Test with real WordPress installations when possible"
+    ],
+    "beforeCommitting": [
+      "Test script with --dry-run mode",
+      "Run shellcheck wp-migrate.sh (must pass with no warnings)",
+      "Update CHANGELOG.md in [Unreleased] section",
+      "Verify changes don't break existing functionality",
+      "Review code for security issues (SSH, file operations, DB handling)"
+    ],
+    "workflow": [
+      "1. git checkout main && git pull --rebase origin main",
+      "2. git checkout -b <type>/<descriptive-slug>",
+      "3. Make changes and test with --dry-run",
+      "4. Run shellcheck wp-migrate.sh",
+      "5. Update CHANGELOG.md [Unreleased] section",
+      "6. git add -A && git commit -m 'type: description'",
+      "7. git push origin <branch-name>",
+      "8. Open PR to main",
+      "9. After merge, delete feature branch locally and remotely"
+    ],
+    "branchTypes": {
+      "feature/*": "New features - PR to main",
+      "fix/*": "Bug fixes - PR to main",
+      "docs/*": "Documentation only - PR to main",
+      "chore/*": "Maintenance tasks - PR to main"
+    }
+  },
+
+  "projectContext": {
+    "stack": "Bash script (requires: wp-cli, rsync, ssh, gzip)",
+    "testing": "Manual testing with --dry-run flag + ShellCheck linting",
+    "deployment": "Direct usage - users download and run the script",
+    "branches": {
+      "main": "Production branch - all PRs target here, releases tagged from here"
+    },
+    "criticalFiles": [
+      "README.md - Complete documentation and usage",
+      "CHANGELOG.md - Keep a Changelog format",
+      "wp-migrate.sh - Main script",
+      ".gitmessage - Commit message template",
+      ".github/pull_request_template.md - PR checklist"
+    ],
+    "testCommand": "shellcheck wp-migrate.sh && ./wp-migrate.sh --help"
+  },
+
+  "prTargetValidation": {
+    "description": "Simplified workflow - all PRs target main",
+    "rules": {
+      "feature/*": "main",
+      "fix/*": "main",
+      "chore/*": "main",
+      "docs/*": "main"
+    },
+    "forbidden": [
+      "Direct pushes to main (always use PRs)"
+    ]
+  },
+
+  "autoPrompts": {
+    "description": "Automatic prompts after merge confirmations",
+    "onMainMerge": "✅ PR merged to main successfully\n✅ Branch cleaned up\n\n🔍 Next Steps:\n- Consider tagging a release if this is a significant change (git tag vX.X.X)\n- Update CHANGELOG.md to move [Unreleased] items to [X.X.X] for releases\n- Script is now available for users to download\n\nWould you like me to:\n1. Create a version tag and update CHANGELOG for release?\n2. Continue with more changes?"
+  },
+
+  "securityChecklist": {
+    "beforeEveryCommit": [
+      "Input validation: Are command-line arguments properly validated?",
+      "Command injection: Are SSH/rsync/wp commands properly quoted?",
+      "Path traversal: Are file paths validated and sanitized?",
+      "Error handling: Does the script abort on errors (set -e)?",
+      "Sensitive data: Are credentials handled securely (no hardcoded passwords)?",
+      "Dry-run safety: Does --dry-run truly prevent destructive operations?"
+    ]
+  },
+
+  "commitMessageConventions": {
+    "format": "<type>: <description>",
+    "types": {
+      "feat": "New feature",
+      "fix": "Bug fix",
+      "docs": "Documentation changes",
+      "test": "Adding or updating tests",
+      "refactor": "Code refactoring",
+      "chore": "Maintenance tasks",
+      "perf": "Performance improvements",
+      "style": "Code style changes (formatting, etc.)"
+    },
+    "examples": [
+      "feat: add --no-gzip option for database dumps",
+      "fix: prevent maintenance mode failure when wp-cli not found",
+      "docs: clarify rsync behavior in README",
+      "refactor: extract database export to separate function"
+    ]
+  }
+}
