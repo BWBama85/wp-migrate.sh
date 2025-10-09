@@ -1110,22 +1110,50 @@ else
   log "Database imported successfully"
 
   # Detect the prefix from the imported database
-  # Look for the core WordPress options table (must end exactly in 'options', not like 'wp_statistics_options')
-  # We check multiple core tables to be sure we find the real WordPress prefix
+  # Strategy: Find a prefix that exists for ALL core WordPress tables (options, posts, users)
+  # This ensures we identify the actual WordPress prefix, not plugin tables like wp_statistics_options
   IMPORTED_DB_PREFIX=""
 
-  # Try to find core WordPress tables that end exactly in these names (no extra text between prefix and table name)
-  for table_suffix in "options" "posts" "users"; do
-    # Get all tables, then filter for ones ending exactly with the suffix (prefix immediately followed by suffix)
-    table_name=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | grep -E "^[^_]+_${table_suffix}$" | head -1)
+  # Get all tables from the database
+  all_tables=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null)
 
-    if [[ -n "$table_name" ]]; then
-      # Extract prefix by removing the suffix
-      IMPORTED_DB_PREFIX="${table_name%_"${table_suffix}"}_"
-      log "Detected imported database prefix: $IMPORTED_DB_PREFIX (from table: $table_name)"
-      break
-    fi
-  done
+  if [[ -n "$all_tables" ]]; then
+    # Define core WordPress table suffixes that must all exist
+    core_suffixes=("options" "posts" "users")
+
+    # Extract all potential prefixes by looking at tables ending in "options"
+    # A table like "wp_options" gives prefix "wp_", "my_site_options" gives "my_site_"
+    while IFS= read -r table; do
+      # Check if this table ends with "_options"
+      if [[ "$table" == *_options ]]; then
+        # Extract the potential prefix (everything before "_options")
+        potential_prefix="${table%_options}_"
+
+        # Skip obvious plugin tables (have text between what looks like a prefix and "options")
+        # e.g., "wp_statistics_options" has "statistics_options" after "wp_"
+        # We want to find cases where prefix + suffix = tablename for CORE tables
+
+        # Verify this prefix exists for ALL core WordPress tables
+        prefix_valid=true
+        for suffix in "${core_suffixes[@]}"; do
+          expected_table="${potential_prefix}${suffix}"
+          # Check if this expected core table exists in our table list
+          if ! echo "$all_tables" | grep -q "^${expected_table}$"; then
+            prefix_valid=false
+            break
+          fi
+        done
+
+        # If all core tables exist with this prefix, we found it
+        if $prefix_valid; then
+          IMPORTED_DB_PREFIX="$potential_prefix"
+          log "Detected imported database prefix: $IMPORTED_DB_PREFIX"
+          log "  Verified core tables: ${IMPORTED_DB_PREFIX}options, ${IMPORTED_DB_PREFIX}posts, ${IMPORTED_DB_PREFIX}users"
+          break
+        fi
+      fi
+    done <<< "$all_tables"
+  fi
 
   if [[ -n "$IMPORTED_DB_PREFIX" ]]; then
     # If the imported prefix differs from wp-config.php, update wp-config.php
