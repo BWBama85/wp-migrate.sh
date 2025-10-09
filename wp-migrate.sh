@@ -1110,13 +1110,24 @@ else
   log "Database imported successfully"
 
   # Detect the prefix from the imported database
-  # The imported tables will have their own prefix
-  IMPORTED_DB_PREFIX=$(wp_local db query "SHOW TABLES LIKE '%_options'" --skip-column-names 2>/dev/null | head -1 | sed 's/_options$//' | sed 's/^.*\///')
+  # Look for the core WordPress options table (must end exactly in 'options', not like 'wp_statistics_options')
+  # We check multiple core tables to be sure we find the real WordPress prefix
+  IMPORTED_DB_PREFIX=""
+
+  # Try to find core WordPress tables that end exactly in these names (no extra text between prefix and table name)
+  for table_suffix in "options" "posts" "users"; do
+    # Get all tables, then filter for ones ending exactly with the suffix (prefix immediately followed by suffix)
+    table_name=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | grep -E "^[^_]+_${table_suffix}$" | head -1)
+
+    if [[ -n "$table_name" ]]; then
+      # Extract prefix by removing the suffix
+      IMPORTED_DB_PREFIX="${table_name%_"${table_suffix}"}_"
+      log "Detected imported database prefix: $IMPORTED_DB_PREFIX (from table: $table_name)"
+      break
+    fi
+  done
 
   if [[ -n "$IMPORTED_DB_PREFIX" ]]; then
-    IMPORTED_DB_PREFIX="${IMPORTED_DB_PREFIX}_"
-    log "Detected imported database prefix: $IMPORTED_DB_PREFIX"
-
     # If the imported prefix differs from wp-config.php, update wp-config.php
     if [[ "$IMPORTED_DB_PREFIX" != "$DEST_DB_PREFIX_BEFORE" ]]; then
       log "Updating wp-config.php table prefix: $DEST_DB_PREFIX_BEFORE -> $IMPORTED_DB_PREFIX"

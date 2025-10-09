@@ -17,6 +17,7 @@ logs/
 # Database dumps
 db-dumps/
 db-imports/
+db-backups/
 
 # Temporary files
 tmp/
