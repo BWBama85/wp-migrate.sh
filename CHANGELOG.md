@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2025-10-09
+### Fixed
+- Fixed table prefix update in wp-config.php for both push and Duplicator modes. Added verification after `wp config set` and automatic fallback to sed when WP-CLI fails to write prefixes with leading underscores (e.g., `__wp_` incorrectly written as `wp_`). Affects edge case prefixes but ensures correct wp-config.php updates in all cases.
+
 ## [1.1.4] - 2025-10-09
 ### Fixed
 - Fixed URL search-replace in both push and Duplicator modes by running separate `wp search-replace` commands for each old/new URL pair. Previously passed all pairs in one command, causing WP-CLI to interpret extra arguments as table names and fail with "Couldn't find any tables matching" error.
