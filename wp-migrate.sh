@@ -1101,6 +1101,7 @@ fi
 
 # Phase 7: Import database
 if $DRY_RUN; then
+  log "[dry-run] Would reset database to clean state"
   log "[dry-run] Would import database from: $(basename "$DUPLICATOR_DB_FILE")"
   log "[dry-run] Would detect and align table prefix if needed"
 else
@@ -1109,6 +1110,11 @@ else
   # Get current destination prefix before import
   DEST_DB_PREFIX_BEFORE="$(wp_local db prefix)"
   log "Current wp-config.php table prefix: $DEST_DB_PREFIX_BEFORE"
+
+  # Reset database to clean state to prevent duplicate key errors
+  log "Resetting database to clean state..."
+  wp_local db reset --yes
+  log "Database reset complete"
 
   # Import the database
   wp_local db import "$DUPLICATOR_DB_FILE"
