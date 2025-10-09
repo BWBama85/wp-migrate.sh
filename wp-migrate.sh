@@ -71,6 +71,18 @@ URL_ALIGNMENT_REQUIRED=false
 err() { printf "ERROR: %s\n" "$*" >&2; exit 1; }
 needs() { command -v "$1" >/dev/null 2>&1 || err "Missing dependency: $1"; }
 
+validate_url() {
+  local url="$1" flag_name="$2"
+  # Basic URL validation: must start with http:// or https://
+  if [[ ! "$url" =~ ^https?:// ]]; then
+    err "$flag_name must be a valid URL starting with http:// or https:// (got: $url)"
+  fi
+  # Ensure URL has a domain part after protocol
+  if [[ ! "$url" =~ ^https?://[^/]+ ]]; then
+    err "$flag_name must include a domain name (got: $url)"
+  fi
+}
+
 log() {
   printf "%s %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE"
 }
@@ -351,10 +363,12 @@ while [[ $# -gt 0 ]]; do
     --dest-home-url)
       DEST_HOME_OVERRIDE="${2:-}"; shift 2
       [[ -n "$DEST_HOME_OVERRIDE" ]] || err "--dest-home-url requires a value (e.g., https://staging.example.com)"
+      validate_url "$DEST_HOME_OVERRIDE" "--dest-home-url"
       ;;
     --dest-site-url)
       DEST_SITE_OVERRIDE="${2:-}"; shift 2
       [[ -n "$DEST_SITE_OVERRIDE" ]] || err "--dest-site-url requires a value (e.g., https://staging.example.com)"
+      validate_url "$DEST_SITE_OVERRIDE" "--dest-site-url"
       ;;
     --dest-domain)
       DEST_DOMAIN_OVERRIDE="${2:-}"; shift 2
