@@ -354,9 +354,9 @@ Please verify this is a valid Duplicator backup archive."
   local best_dir="" best_score=0
   for dir in "${candidates[@]}"; do
     local score=0
-    [[ -d "$dir/plugins" ]] && ((score++))
-    [[ -d "$dir/themes" ]] && ((score++))
-    [[ -d "$dir/uploads" ]] && ((score++))
+    [[ -d "$dir/plugins" ]] && score=$((score + 1))
+    [[ -d "$dir/themes" ]] && score=$((score + 1))
+    [[ -d "$dir/uploads" ]] && score=$((score + 1))
 
     if [[ $score -gt $best_score ]]; then
       best_score=$score
