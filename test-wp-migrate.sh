@@ -49,15 +49,22 @@ fi
 # Test: Missing required arguments
 # -------------------------------------------------------------------
 test_header "Test: Missing required arguments"
-# Create a temporary wp-config.php to bypass the WordPress root check
-touch wp-config.php.test-temp
 output=$($SCRIPT 2>&1 || true)
+# Script should check for missing mode first (before wp-config.php check)
+if echo "$output" | grep -q "No migration mode specified"; then
+  pass "Validates migration mode is specified"
+else
+  fail "Should check for migration mode" "$output"
+fi
+
+# Test that wp-config.php check comes after mode check
+touch wp-config.php.test-temp
+output=$($SCRIPT --duplicator-archive /fake.zip 2>&1 || true)
 rm -f wp-config.php.test-temp
-# Script should check for wp-config.php first (which will fail), so we test that instead
 if echo "$output" | grep -q "wp-config.php not found"; then
   pass "Validates WordPress root exists"
 else
-  fail "Should check for wp-config.php"
+  fail "Should check for wp-config.php" "$output"
 fi
 
 # -------------------------------------------------------------------

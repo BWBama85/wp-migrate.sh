@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-10-09
+### Added
+- Added Duplicator archive import mode via `--duplicator-archive` flag for importing Duplicator WordPress backup archives without requiring SSH access to the source server.
+- Automatic extraction and detection of database and wp-content from Duplicator .zip archives with smart directory scoring.
+- Pre-flight disk space validation ensuring 3x archive size is available (archive + extraction + buffer).
+- Automatic backup of both destination database and wp-content before any destructive operations in Duplicator mode.
+- URL detection and search-replace automatically aligns imported site URLs to match the destination site.
+- Comprehensive rollback instructions showing exact commands to restore both database and wp-content backups.
+- Auto-cleanup of temporary extraction directory on success, kept on failure for debugging.
+- Mutually exclusive mode detection prevents conflicting flag combinations between push and Duplicator modes.
+
 ## [1.0.0] - 2025-10-09
 ### Added
 - Expanded automatic wp search-replace to cover protocol-relative, JSON-escaped, and trailing-slash variants of the domain, plus optional `--dest-domain`/`--dest-home-url`/`--dest-site-url` overrides when detection needs a hint.
