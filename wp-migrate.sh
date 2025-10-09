@@ -894,10 +894,20 @@ else
     fi
 
     if $URL_ALIGNMENT_REQUIRED; then
-      log "Aligning destination URLs via wp search-replace."
-      if ! wp_remote "$DEST_HOST" "$DEST_ROOT" search-replace "${SEARCH_REPLACE_ARGS[@]}" "${SEARCH_REPLACE_FLAGS[@]}"; then
-        log "WARNING: wp search-replace failed; destination URLs may still reference source values."
-      fi
+      log "Aligning destination URLs via wp search-replace..."
+      log "Running $((${#SEARCH_REPLACE_ARGS[@]}/2)) search-replace operations"
+
+      # Run search-replace for each old/new pair separately
+      # wp search-replace only accepts ONE pair per command
+      for ((i=0; i<${#SEARCH_REPLACE_ARGS[@]}; i+=2)); do
+        old="${SEARCH_REPLACE_ARGS[i]}"
+        new="${SEARCH_REPLACE_ARGS[i+1]}"
+        log "  Replacing: $old -> $new"
+        if ! wp_remote "$DEST_HOST" "$DEST_ROOT" search-replace "$old" "$new" "${SEARCH_REPLACE_FLAGS[@]}"; then
+          log "  WARNING: search-replace failed for: $old -> $new"
+        fi
+      done
+
       if [[ -n "$DEST_HOME_URL" ]]; then
         log "Ensuring destination home option remains: $DEST_HOME_URL"
         wp_remote "$DEST_HOST" "$DEST_ROOT" option update home "$DEST_HOME_URL" >/dev/null
@@ -1213,9 +1223,18 @@ else
     fi
 
     # Perform search-replace
-    if ! wp_local search-replace "${SEARCH_REPLACE_ARGS[@]}" "${SEARCH_REPLACE_FLAGS[@]}"; then
-      log "WARNING: wp search-replace failed; some URLs may still reference the imported site."
-    fi
+    log "Running $((${#SEARCH_REPLACE_ARGS[@]}/2)) search-replace operations..."
+
+    # Run search-replace for each old/new pair separately
+    # wp search-replace only accepts ONE pair per command
+    for ((i=0; i<${#SEARCH_REPLACE_ARGS[@]}; i+=2)); do
+      old="${SEARCH_REPLACE_ARGS[i]}"
+      new="${SEARCH_REPLACE_ARGS[i+1]}"
+      log "  Replacing: $old -> $new"
+      if ! wp_local search-replace "$old" "$new" "${SEARCH_REPLACE_FLAGS[@]}"; then
+        log "  WARNING: search-replace failed for: $old -> $new"
+      fi
+    done
 
     # Ensure destination URLs are set correctly
     log "Ensuring destination URLs are set correctly..."
