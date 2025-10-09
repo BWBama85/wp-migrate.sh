@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added URL format validation for `--dest-home-url` and `--dest-site-url` options to catch invalid URLs early.
 - Added early SSH connectivity test to fail fast with helpful error messages when destination host is unreachable.
 - Added `--info=progress2` to rsync for real-time file transfer progress indicators during database and wp-content transfers.
+- Added rollback instructions logged at migration completion showing exact command to restore backup wp-content directory.
 
 ### Changed
 - Added ShellCheck disable directives for intentional client-side expansions in SSH commands to achieve zero ShellCheck warnings.
