@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented the Git workflow and provided supporting templates for commits and pull requests.
 - Added comprehensive test suite (`test-wp-migrate.sh`) validating argument parsing, error handling, and code quality without requiring WordPress installations.
 - Added `--version` flag (short: `-v`) to display version information from git tags or CHANGELOG.md.
+- Added URL format validation for `--dest-home-url` and `--dest-site-url` options to catch invalid URLs early.
 - Added `--info=progress2` to rsync for real-time file transfer progress indicators during database and wp-content transfers.
 
 ### Changed
