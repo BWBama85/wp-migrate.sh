@@ -930,9 +930,10 @@ RS_OPTS=( -a -h -z --info=stats2 --partial --links --prune-empty-dirs --no-perms
 $DRY_RUN || RS_OPTS+=( --info=progress2 )
 $DRY_RUN && RS_OPTS+=( -n --itemize-changes )
 
-# Exclude object-cache.php to prevent caching infrastructure incompatibility
-RS_OPTS+=( --exclude=object-cache.php )
-log "Excluding object-cache.php from transfer (preserves destination caching setup)"
+# Exclude object-cache.php drop-in to prevent caching infrastructure incompatibility
+# Use root-anchored path (/) to only exclude wp-content/object-cache.php, not plugin files
+RS_OPTS+=( --exclude=/object-cache.php )
+log "Excluding object-cache.php drop-in from transfer (preserves destination caching setup)"
 
 # Extra rsync opts
 if [[ ${#EXTRA_RSYNC_OPTS[@]} -gt 0 ]]; then
