@@ -437,6 +437,17 @@ fi
 
 setup_ssh_control
 
+# Test SSH connectivity
+log "Testing SSH connection to $DEST_HOST..."
+if ! ssh_run "$DEST_HOST" "echo 'SSH connection successful'" >/dev/null 2>&1; then
+  err "Cannot connect to $DEST_HOST via SSH. Check:
+  - Host is reachable
+  - SSH key authentication is configured
+  - Firewall allows SSH connections
+  - Hostname/IP is correct"
+fi
+log "SSH connection to $DEST_HOST verified."
+
 # Verify WP installs
 log "Verifying SOURCE WordPress at: $PWD"
 wp_local core is-installed || err "Source WordPress not detected."
@@ -601,7 +612,7 @@ else
 
   log "Transferring DB dump to destination..."
   ssh_cmd_db="$(ssh_cmd_string)"
-  rsync -ah --info=stats2 --partial -e "$ssh_cmd_db" \
+  rsync -ah --info=stats2 --info=progress2 --partial -e "$ssh_cmd_db" \
     "$DUMP_TO_SEND" "$DEST_HOST":"$DEST_IMPORT_DIR"/ | tee -a "$LOG_FILE"
 
   if $IMPORT_DB; then
@@ -663,6 +674,8 @@ DST_WP_CONTENT_BACKUP="$(backup_remote_wp_content "$DEST_HOST" "$DST_WP_CONTENT"
 # Build rsync options
 # ---------------------
 RS_OPTS=( -a -h -z --info=stats2 --partial --links --prune-empty-dirs --no-perms --no-owner --no-group )
+# Add progress indicator for real runs (shows current file being transferred)
+$DRY_RUN || RS_OPTS+=( --info=progress2 )
 $DRY_RUN && RS_OPTS+=( -n --itemize-changes )
 
 # Extra rsync opts
