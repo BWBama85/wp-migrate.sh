@@ -1317,16 +1317,13 @@ else
   log "  Source: ${DUPLICATOR_WP_CONTENT#"$DUPLICATOR_EXTRACT_DIR"/}"
   log "  Destination: $DEST_WP_CONTENT"
 
-  # Remove existing wp-content and replace
-  rm -rf "$DEST_WP_CONTENT"
-  cp -a "$DUPLICATOR_WP_CONTENT" "$DEST_WP_CONTENT"
-  log "wp-content replaced successfully"
-
-  # Remove object-cache.php from imported wp-content to prevent caching infrastructure incompatibility
-  if [[ -f "$DEST_WP_CONTENT/object-cache.php" ]]; then
-    log "Removing object-cache.php from imported wp-content (preserves destination caching setup)"
-    rm -f "$DEST_WP_CONTENT/object-cache.php"
-  fi
+  # Use rsync to replace wp-content, which handles protected files gracefully
+  # --delete removes files in destination not in source
+  # --ignore-errors continues even if some files can't be deleted (e.g., protected mu-plugins)
+  # --exclude=object-cache.php preserves destination caching setup
+  rsync -a --delete --ignore-errors --exclude=object-cache.php \
+    "$DUPLICATOR_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE"
+  log "wp-content replaced successfully (object-cache.php excluded to preserve destination caching)"
 fi
 
 # Phase 10: Flush cache if available
