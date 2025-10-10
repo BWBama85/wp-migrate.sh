@@ -1327,11 +1327,11 @@ else
   RSYNC_EXCLUDES=(--exclude=object-cache.php)
 
   if $STELLARSITES_MODE; then
-    # StellarSites mode: Exclude mu-plugins directory from sync
-    # rsync will NOT delete excluded directories even with --delete
-    # (as long as we don't use --delete-excluded)
-    RSYNC_EXCLUDES+=(--exclude=mu-plugins/)
-    log "StellarSites mode: Preserving destination mu-plugins directory"
+    # StellarSites mode: Exclude mu-plugins directory AND loader file
+    # Managed hosts ship mu-plugins.php to bootstrap their protected mu-plugins
+    # Must exclude both the directory and the loader, or --delete will remove the loader
+    RSYNC_EXCLUDES+=(--exclude=mu-plugins/ --exclude=mu-plugins.php)
+    log "StellarSites mode: Preserving destination mu-plugins directory and loader"
   fi
 
   # Sync wp-content from archive to destination
