@@ -1324,13 +1324,16 @@ else
   # Build rsync command with appropriate options
   # Always use --delete to ensure destination matches archive (removes stale files)
   RSYNC_OPTS=(-a --delete)
-  RSYNC_EXCLUDES=(--exclude=object-cache.php)
+
+  # Use root-anchored exclusions (leading /) to only match files at wp-content root
+  # Without /, rsync would exclude these filenames at ANY depth (e.g., plugins/foo/object-cache.php)
+  RSYNC_EXCLUDES=(--exclude=/object-cache.php)
 
   if $STELLARSITES_MODE; then
-    # StellarSites mode: Exclude mu-plugins directory AND loader file
+    # StellarSites mode: Exclude mu-plugins directory AND loader file (both at root)
     # Managed hosts ship mu-plugins.php to bootstrap their protected mu-plugins
     # Must exclude both the directory and the loader, or --delete will remove the loader
-    RSYNC_EXCLUDES+=(--exclude=mu-plugins/ --exclude=mu-plugins.php)
+    RSYNC_EXCLUDES+=(--exclude=/mu-plugins/ --exclude=/mu-plugins.php)
     log "StellarSites mode: Preserving destination mu-plugins directory and loader"
   fi
 
