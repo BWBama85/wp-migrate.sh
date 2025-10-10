@@ -98,6 +98,19 @@ log() {
   printf "%s %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE"
 }
 
+log_warning() {
+  # Yellow text for warnings (non-critical issues that don't stop migration)
+  local yellow='\033[1;33m'
+  local reset='\033[0m'
+  if [[ -t 1 ]]; then
+    # Terminal supports colors
+    printf "%s ${yellow}WARNING:${reset} %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE"
+  else
+    # No color support, just prefix with WARNING:
+    printf "%s WARNING: %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE"
+  fi
+}
+
 wp_local() { wp --path="$PWD" "$@"; }
 
 # Build a safe "ssh ..." string for rsync -e
@@ -224,7 +237,8 @@ exit_cleanup() {
   local status=$?
   trap - EXIT
   set +e
-  maintenance_cleanup
+  # Maintenance cleanup is non-critical - don't let it affect exit status
+  maintenance_cleanup || true
   cleanup_ssh_control
   if [[ "$MIGRATION_MODE" == "duplicator" ]]; then
     # Only cleanup on success; keep files on failure for debugging
@@ -386,7 +400,9 @@ cleanup_duplicator_temp() {
   fi
 
   log "Cleaning up temporary extraction directory..."
-  rm -rf "$DUPLICATOR_EXTRACT_DIR"
+  if ! rm -rf "$DUPLICATOR_EXTRACT_DIR" 2>/dev/null; then
+    log_warning "Failed to remove temporary extraction directory: $DUPLICATOR_EXTRACT_DIR. You may need to manually delete it."
+  fi
 }
 
 backup_remote_wp_content() {
@@ -458,14 +474,14 @@ maintenance_cleanup() {
   if $MAINT_REMOTE_ACTIVE && [[ -n "$MAINT_REMOTE_HOST" && -n "$MAINT_REMOTE_ROOT" ]]; then
     if ! maint_remote "$MAINT_REMOTE_HOST" "$MAINT_REMOTE_ROOT" off; then
       had_failure=true
-      log "WARNING: Failed to disable maintenance mode on destination during cleanup."
+      log_warning "Failed to disable maintenance mode on destination during cleanup. You may need to manually remove the .maintenance file."
     fi
   fi
 
   if $MAINT_LOCAL_ACTIVE; then
     if ! maint_local off; then
       had_failure=true
-      log "WARNING: Failed to disable maintenance mode on source during cleanup."
+      log_warning "Failed to disable maintenance mode on source during cleanup. You may need to manually remove the .maintenance file."
     fi
   fi
 
@@ -1080,7 +1096,7 @@ else
   if $REDIS_FLUSH_AVAILABLE; then
     log "Flushing Object Cache Pro cache on destination..."
     if ! wp_remote_full "$DEST_HOST" "$DEST_ROOT" redis flush; then
-      log "WARNING: Failed to flush Object Cache Pro cache via wp redis flush."
+      log_warning "Failed to flush Object Cache Pro cache via wp redis flush. Cache may be stale."
     fi
   else
     log "Skipping Object Cache Pro cache flush; wp redis command not available."
@@ -1399,7 +1415,7 @@ if wp_local cli has-command redis >/dev/null 2>&1; then
   else
     log "Flushing Object Cache Pro cache..."
     if ! wp_local redis flush; then
-      log "WARNING: Failed to flush Object Cache Pro cache via wp redis flush."
+      log_warning "Failed to flush Object Cache Pro cache via wp redis flush. Cache may be stale."
     fi
   fi
 else
