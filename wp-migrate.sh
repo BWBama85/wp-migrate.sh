@@ -1162,8 +1162,55 @@ else
 
   # Reset database to clean state to prevent duplicate key errors
   log "Resetting database to clean state..."
-  wp_local db reset --yes
-  log "Database reset complete"
+
+  # Count tables before reset
+  tables_before=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+  log "  Tables before reset: $tables_before"
+
+  # Attempt reset - allow failure without aborting script (set -e)
+  # Run command and capture exit code before set -e can abort
+  wp_local db reset --yes 2>&1 | tee -a "$LOG_FILE" || reset_exit_code=$?
+
+  # If not set (command succeeded), set to 0
+  : "${reset_exit_code:=0}"
+
+  if [[ $reset_exit_code -ne 0 ]]; then
+    log "WARNING: wp db reset command failed (exit code: $reset_exit_code)"
+    log "This may indicate WP-CLI issues or permissions problems"
+    log "Will attempt manual table drop..."
+  fi
+
+  # Verify reset actually worked by checking table count
+  # This catches both: command failures AND silent failures where command succeeds but tables remain
+  tables_after=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+  log "  Tables after reset: $tables_after"
+
+  if [[ $tables_after -gt 0 ]]; then
+    log "Database reset incomplete - $tables_after tables still exist"
+    log "Attempting manual table drop..."
+
+    # Manual fallback: Get list of tables and drop each one
+    # Use process substitution to avoid subshell issues with while-read
+    while IFS= read -r table; do
+      if [[ -n "$table" ]]; then
+        log "  Dropping table: $table"
+        wp_local db query "DROP TABLE IF EXISTS \`$table\`" 2>/dev/null || {
+          log "    WARNING: Could not drop $table"
+        }
+      fi
+    done < <(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null)
+
+    # Verify again
+    tables_final=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+    if [[ $tables_final -gt 0 ]]; then
+      log "ERROR: Could not reset database. $tables_final tables remain."
+      log "Please manually reset the database or check database permissions."
+      exit 1
+    fi
+    log "Manual table drop successful"
+  fi
+
+  log "Database reset complete (all tables dropped)"
 
   # Import the database
   wp_local db import "$DUPLICATOR_DB_FILE"
