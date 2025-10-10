@@ -102,12 +102,20 @@ log_warning() {
   # Yellow text for warnings (non-critical issues that don't stop migration)
   local yellow='\033[1;33m'
   local reset='\033[0m'
+  local timestamp
+  local plain_msg
+  timestamp="$(date '+%F %T')"
+  plain_msg="$timestamp WARNING: $*"
+
+  # Always write plain text to log file
+  printf "%s\n" "$plain_msg" >> "$LOG_FILE"
+
+  # Write colored output to terminal if interactive
   if [[ -t 1 ]]; then
-    # Terminal supports colors
-    printf "%s ${yellow}WARNING:${reset} %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE"
+    printf "%s ${yellow}WARNING:${reset} %s\n" "$timestamp" "$*"
   else
-    # No color support, just prefix with WARNING:
-    printf "%s WARNING: %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE"
+    # Non-interactive, just echo the plain message
+    printf "%s\n" "$plain_msg"
   fi
 }
 
