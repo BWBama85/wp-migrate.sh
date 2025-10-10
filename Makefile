@@ -37,7 +37,7 @@ build: test
 	@cp dist/wp-migrate.sh ./wp-migrate.sh
 	@echo "✓ Built: dist/wp-migrate.sh"
 	@echo "✓ Copied: ./wp-migrate.sh (repo root)"
-	@sha256sum wp-migrate.sh > wp-migrate.sh.sha256
+	@shasum -a 256 wp-migrate.sh > wp-migrate.sh.sha256
 	@echo "✓ Checksum: wp-migrate.sh.sha256"
 	@echo ""
 	@echo "Build complete! Users can download:"
