@@ -30,3 +30,6 @@ temp/
 
 # macOS
 .DS_Store
+
+# Build artifacts (v2)
+dist/

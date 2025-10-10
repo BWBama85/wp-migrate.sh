@@ -1,10 +1,30 @@
 {
-  "systemPrompt": "You are working on wp-migrate.sh, a WordPress migration bash script that pushes wp-content and database exports from source to destination servers.\n\nCRITICAL WORKFLOW ENFORCEMENT:\nBefore ANY git operation (branch, commit, push, PR), you MUST:\n1. Read and reference customInstructions.workflow from this settings file\n2. State which workflow step you're executing (e.g., 'Step 7: Pushing feature branch')\n3. Verify target branch is main (simplified workflow: feature/fix branches → main via PR)\n4. Check the project follows ShellCheck standards (script is currently ShellCheck-clean)\n\nIf you cannot confirm all 4 items above, STOP and ask the user for clarification.\n\nIMPORTANT: Before starting ANY work, ALWAYS read project documentation for:\n- Git workflow from README.md (branch from main, PR to main)\n- Branch naming conventions (feature/*, fix/*)\n- ShellCheck linting requirements\n- CHANGELOG.md requirements (ALWAYS update CHANGELOG.md [Unreleased] section)\n- Testing approach (manual testing with --dry-run mode)\n\nKey Requirements:\n- Simplified git flow: branch from main → commit → test → push → PR to main\n- Test changes with --dry-run before committing\n- Update CHANGELOG.md in [Unreleased] section for ALL changes\n- NEVER push directly to main - ALL merges via GitHub PRs\n- Keep commits focused and use conventional commit messages (feat:, fix:, test:, docs:, chore:, refactor:)\n- Maintain ShellCheck-clean code",
+  "systemPrompt": "You are working on wp-migrate.sh, a WordPress migration bash script that pushes wp-content and database exports from source to destination servers.\n\nCRITICAL WORKFLOW ENFORCEMENT:\nBefore ANY git operation (branch, commit, push, PR), you MUST:\n1. Ask the user: 'Are you working on v1.x.x maintenance (main) or v2.0.0 development (v2)?'\n2. Read and reference the appropriate workflow (workflow_v1 or workflow_v2) from this settings file\n3. State which workflow step you're executing (e.g., 'V1 Step 7: Pushing feature branch to main')\n4. Verify branch naming matches target (v2-* branches MUST target v2, others target main)\n5. Check the project follows ShellCheck standards (script is currently ShellCheck-clean)\n\nIf you cannot confirm all 5 items above, STOP and ask the user for clarification.\n\nIMPORTANT: Before starting ANY work, ALWAYS:\n- Ask which version (v1 or v2) the user wants to work on\n- Read project documentation (README.md, CHANGELOG.md)\n- Understand the full scope before making changes\n- Follow the correct workflow for the target version\n\nKey Requirements:\n- v1 work: branch from main → PR to main (production stable)\n- v2 work: branch from v2 → PR to v2 (major refactor, NOT ready for production)\n- NEVER merge v2-* branches directly to main\n- NEVER push directly to main or v2 - ALL merges via GitHub PRs\n- Update CHANGELOG.md in [Unreleased] section for ALL changes (both v1 and v2)\n- Maintain ShellCheck-clean code\n- Use conventional commit messages (feat:, fix:, test:, docs:, chore:, refactor:)",
+
+  "versionContext": {
+    "description": "ALWAYS ask user at session start: 'Working on v1 or v2?'",
+    "v1": {
+      "branch": "main",
+      "purpose": "Production stable releases (v1.x.x)",
+      "status": "Active maintenance - bug fixes and minor features only",
+      "releases": "Tagged and released immediately after merge",
+      "userFacing": true
+    },
+    "v2": {
+      "branch": "v2",
+      "purpose": "Major refactor: modularize codebase, add build system",
+      "status": "Development in progress - NOT production ready",
+      "releases": "No releases until v2 branch merges to main",
+      "userFacing": false,
+      "warning": "v2-* branches must NEVER be merged directly to main"
+    }
+  },
 
   "customInstructions": {
     "beforeStarting": [
+      "🚨 CRITICAL: Ask user 'Are you working on v1 (main) or v2 (v2 branch)?'",
       "Read project documentation (README.md, CHANGELOG.md)",
-      "Verify you're on main branch before creating feature branch",
+      "Verify you're on the correct branch (main for v1, v2 for v2)",
       "Understand the full scope before making changes",
       "Review bash best practices and security (script uses set -Eeuo pipefail)"
     ],
@@ -17,38 +37,83 @@
       "Test with real WordPress installations when possible"
     ],
     "beforeCommitting": [
+      "Confirm you're on the correct workflow (v1 or v2)",
       "Test script with --dry-run mode",
       "Run shellcheck wp-migrate.sh (must pass with no warnings)",
       "Update CHANGELOG.md in [Unreleased] section",
       "Verify changes don't break existing functionality",
       "Review code for security issues (SSH, file operations, DB handling)"
     ],
-    "workflow": [
-      "1. git checkout main && git pull --rebase origin main",
-      "2. git checkout -b <type>/<descriptive-slug>",
-      "3. Make changes and test with --dry-run",
-      "4. Run shellcheck wp-migrate.sh",
-      "5. Update CHANGELOG.md [Unreleased] section",
-      "6. git add -A && git commit -m 'type: description'",
-      "7. git push origin <branch-name>",
-      "8. Open PR to main",
-      "9. After merge, delete feature branch locally and remotely",
-      "10. IMPORTANT: If multiple PRs are open, immediately rebase other PRs on latest main after each merge to avoid conflicts"
-    ],
+
+    "workflow_v1": {
+      "description": "For v1.x.x maintenance - bug fixes and minor features",
+      "baseBranch": "main",
+      "steps": [
+        "1. git checkout main && git pull --rebase origin main",
+        "2. git checkout -b <type>/<descriptive-slug>  (e.g., fix/url-validation)",
+        "3. Make changes and test with --dry-run",
+        "4. Run shellcheck wp-migrate.sh",
+        "5. Update CHANGELOG.md [Unreleased] section",
+        "6. git add -A && git commit -m 'type: description'",
+        "7. git push origin <branch-name>",
+        "8. Open PR to main (TARGET: main, NOT v2)",
+        "9. After merge, delete feature branch locally and remotely",
+        "10. User decides if release is needed (you ask, don't assume)"
+      ],
+      "branchPrefixes": ["fix/", "feature/", "chore/", "docs/"],
+      "prTarget": "main",
+      "examples": [
+        "fix/maintenance-mode-cleanup → PR to main → v1.1.9 release",
+        "feature/add-retry-logic → PR to main → v1.2.0 release"
+      ]
+    },
+
+    "workflow_v2": {
+      "description": "For v2.0.0 development - major refactor and new architecture",
+      "baseBranch": "v2",
+      "steps": [
+        "1. git checkout v2 && git pull --rebase origin v2",
+        "2. git checkout -b v2-<type>/<descriptive-slug>  (e.g., v2-feature/modularize)",
+        "3. Make changes and test with --dry-run (if applicable)",
+        "4. Run shellcheck on affected files",
+        "5. Update CHANGELOG.md [Unreleased] section (note it's for v2)",
+        "6. git add -A && git commit -m 'type: description'",
+        "7. git push origin <branch-name>",
+        "8. Open PR to v2 branch (TARGET: v2, NOT main) ⚠️",
+        "9. After merge, delete feature branch locally and remotely",
+        "10. NO releases until v2 branch is complete and merged to main"
+      ],
+      "branchPrefixes": ["v2-feature/", "v2-fix/", "v2-chore/", "v2-refactor/", "v2-test/"],
+      "prTarget": "v2",
+      "warning": "⚠️ NEVER create PR from v2-* branches to main. Always target v2 branch.",
+      "examples": [
+        "v2-feature/modularize-core → PR to v2 (NOT main)",
+        "v2-refactor/build-system → PR to v2 (NOT main)",
+        "v2-fix/shellcheck-errors → PR to v2 (NOT main)"
+      ]
+    },
+
     "multiPrStrategy": {
       "note": "When creating multiple independent PRs simultaneously:",
-      "options": [
-        "Option A (Current): Create all from main, but rebase each remaining PR after every merge",
-        "Option B (Stacking): Create each PR from previous feature branch (best for dependent features)",
-        "Option C (Batch): Merge all features into a develop branch first, then PR develop->main once"
-      ],
-      "recommendation": "For this project: Use Option A. After each PR merge, immediately update remaining PRs with 'git rebase main' or 'git merge main'"
+      "v1_strategy": "Create all from main, but rebase each remaining PR after every merge to main",
+      "v2_strategy": "Create all from v2, but rebase each remaining PR after every merge to v2",
+      "cross_version": "Keep v1 and v2 PRs completely separate. Do NOT merge v2 work into v1."
     },
+
     "branchTypes": {
-      "feature/*": "New features - PR to main",
-      "fix/*": "Bug fixes - PR to main",
-      "docs/*": "Documentation only - PR to main",
-      "chore/*": "Maintenance tasks - PR to main"
+      "v1_branches": {
+        "feature/*": "New features for v1.x.x - PR to main",
+        "fix/*": "Bug fixes for v1.x.x - PR to main",
+        "docs/*": "Documentation updates - PR to main",
+        "chore/*": "Maintenance tasks for v1.x.x - PR to main"
+      },
+      "v2_branches": {
+        "v2-feature/*": "New features for v2.0.0 - PR to v2",
+        "v2-fix/*": "Bug fixes during v2 development - PR to v2",
+        "v2-refactor/*": "Code restructuring for v2.0.0 - PR to v2",
+        "v2-chore/*": "Maintenance tasks for v2.0.0 - PR to v2",
+        "v2-test/*": "Testing infrastructure for v2.0.0 - PR to v2"
+      }
     }
   },
 
@@ -57,12 +122,24 @@
     "testing": "Manual testing with --dry-run flag + ShellCheck linting",
     "deployment": "Direct usage - users download and run the script",
     "branches": {
-      "main": "Production branch - all PRs target here, releases tagged from here"
+      "main": {
+        "purpose": "Production stable (v1.x.x releases)",
+        "protection": "All merges via PR",
+        "releases": "Immediate - tag after merge",
+        "acceptsFrom": ["fix/*", "feature/*", "chore/*", "docs/*"]
+      },
+      "v2": {
+        "purpose": "Development branch for v2.0.0 major refactor",
+        "protection": "All merges via PR",
+        "releases": "None until v2 merges to main",
+        "acceptsFrom": ["v2-feature/*", "v2-fix/*", "v2-refactor/*", "v2-chore/*", "v2-test/*"],
+        "warning": "⚠️ This branch will NOT merge to main until v2.0.0 is complete"
+      }
     },
     "criticalFiles": [
       "README.md - Complete documentation and usage",
-      "CHANGELOG.md - Keep a Changelog format",
-      "wp-migrate.sh - Main script",
+      "CHANGELOG.md - Keep a Changelog format (track both v1 and v2 changes)",
+      "wp-migrate.sh - Main script (v1 on main, v2 on v2 branch)",
       ".gitmessage - Commit message template",
       ".github/pull_request_template.md - PR checklist"
     ],
@@ -70,21 +147,38 @@
   },
 
   "prTargetValidation": {
-    "description": "Simplified workflow - all PRs target main",
+    "description": "Dual-branch workflow - validate PR targets carefully",
     "rules": {
-      "feature/*": "main",
       "fix/*": "main",
+      "feature/*": "main",
       "chore/*": "main",
-      "docs/*": "main"
+      "docs/*": "main",
+      "v2-feature/*": "v2",
+      "v2-fix/*": "v2",
+      "v2-refactor/*": "v2",
+      "v2-chore/*": "v2",
+      "v2-test/*": "v2"
     },
     "forbidden": [
-      "Direct pushes to main (always use PRs)"
-    ]
+      "Direct pushes to main (always use PRs)",
+      "Direct pushes to v2 (always use PRs)",
+      "PRs from v2-* branches to main (MUST target v2 branch)",
+      "PRs from non-v2 branches to v2 (MUST target main)"
+    ],
+    "validation": {
+      "beforeCreatingPR": [
+        "Check branch name prefix",
+        "Verify target branch matches prefix (v2-* → v2, others → main)",
+        "Confirm with user if uncertain",
+        "State target branch explicitly: 'Creating PR from fix/bug to main' or 'Creating PR from v2-feature/x to v2'"
+      ]
+    }
   },
 
   "autoPrompts": {
     "description": "Automatic prompts after merge confirmations",
-    "onMainMerge": "✅ PR merged to main successfully\n✅ Branch cleaned up\n\n🔍 Next Steps:\n- Consider tagging a release if this is a significant change (git tag vX.X.X)\n- Update CHANGELOG.md to move [Unreleased] items to [X.X.X] for releases\n- Script is now available for users to download\n\nWould you like me to:\n1. Create a version tag and update CHANGELOG for release?\n2. Continue with more changes?"
+    "onMainMerge": "✅ PR merged to main successfully (v1.x.x)\n✅ Branch cleaned up\n\n🔍 Next Steps:\n- This is a v1 change - should I create a release tag?\n- Update CHANGELOG.md to move [Unreleased] items to [X.X.X] for releases\n- Script is now available for users to download\n\nWould you like me to create a version tag and update CHANGELOG for release?",
+    "onV2Merge": "✅ PR merged to v2 successfully (v2.0.0 development)\n✅ Branch cleaned up\n\n🔍 Status:\n- This is v2 development work - NOT yet released to users\n- v2 branch continues development\n- NO release tags created (v2 is still in progress)\n\nContinue with more v2 work or switch to v1 maintenance?"
   },
 
   "securityChecklist": {
@@ -110,11 +204,32 @@
       "perf": "Performance improvements",
       "style": "Code style changes (formatting, etc.)"
     },
-    "examples": [
-      "feat: add --no-gzip option for database dumps",
-      "fix: prevent maintenance mode failure when wp-cli not found",
-      "docs: clarify rsync behavior in README",
-      "refactor: extract database export to separate function"
+    "examples": {
+      "v1": [
+        "fix: prevent maintenance mode failure when wp-cli not found",
+        "feat: add --retry flag for network operations",
+        "docs: clarify --stellarsites flag usage"
+      ],
+      "v2": [
+        "refactor: split wp-migrate.sh into modular source files",
+        "feat: add Makefile build system",
+        "test: add bats-core unit tests for core functions"
+      ]
+    }
+  },
+
+  "safetyReminders": {
+    "beforeEveryGitOperation": [
+      "🚨 Did you ask the user: v1 or v2?",
+      "🚨 Does the branch name match the target? (v2-* → v2, others → main)",
+      "🚨 Are you following the correct workflow (workflow_v1 or workflow_v2)?",
+      "🚨 Will this PR target the correct branch?"
+    ],
+    "commonMistakes": [
+      "❌ Creating PR from v2-feature/* to main (should be to v2)",
+      "❌ Creating PR from fix/* to v2 (should be to main)",
+      "❌ Forgetting to ask user which version they're working on",
+      "❌ Using wrong branch prefix (fix/* when should be v2-fix/*)"
     ]
   }
 }
