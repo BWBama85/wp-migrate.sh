@@ -1167,16 +1167,20 @@ else
   tables_before=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
   log "  Tables before reset: $tables_before"
 
-  # Attempt reset
-  wp_local db reset --yes
+  # Attempt reset - allow failure without aborting script (set -e)
+  if ! wp_local db reset --yes 2>&1 | tee -a "$LOG_FILE"; then
+    log "WARNING: wp db reset command failed (exit code: $?)"
+    log "This may indicate WP-CLI issues or permissions problems"
+    log "Will attempt manual table drop..."
+  fi
 
   # Verify reset actually worked by checking table count
+  # This catches both: command failures AND silent failures where command succeeds but tables remain
   tables_after=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
   log "  Tables after reset: $tables_after"
 
   if [[ $tables_after -gt 0 ]]; then
-    log "ERROR: Database reset failed - $tables_after tables still exist"
-    log "This may indicate WP-CLI issues on this environment"
+    log "Database reset incomplete - $tables_after tables still exist"
     log "Attempting manual table drop..."
 
     # Manual fallback: Get list of tables and drop each one
