@@ -1322,20 +1322,20 @@ else
   log "  Destination: $DEST_WP_CONTENT"
 
   # Build rsync command with appropriate options
-  RSYNC_OPTS=(-a)
+  # Always use --delete to ensure destination matches archive (removes stale files)
+  RSYNC_OPTS=(-a --delete)
   RSYNC_EXCLUDES=(--exclude=object-cache.php)
 
   if $STELLARSITES_MODE; then
-    # StellarSites mode: Don't delete existing files, and exclude mu-plugins directory
-    # This preserves protected mu-plugins while syncing everything else from the archive
+    # StellarSites mode: Exclude mu-plugins directory from sync
+    # rsync will NOT delete excluded directories even with --delete
+    # (as long as we don't use --delete-excluded)
     RSYNC_EXCLUDES+=(--exclude=mu-plugins/)
-    log "StellarSites mode: Preserving destination mu-plugins (syncing without --delete)"
-  else
-    # Normal mode: Clean sync with --delete to remove old destination files
-    RSYNC_OPTS+=(--delete)
+    log "StellarSites mode: Preserving destination mu-plugins directory"
   fi
 
   # Sync wp-content from archive to destination
+  # Excluded items (mu-plugins, object-cache.php) are preserved in destination
   rsync "${RSYNC_OPTS[@]}" "${RSYNC_EXCLUDES[@]}" \
     "$DUPLICATOR_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE"
 
