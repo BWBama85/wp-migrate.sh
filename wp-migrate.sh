@@ -1162,8 +1162,39 @@ else
 
   # Reset database to clean state to prevent duplicate key errors
   log "Resetting database to clean state..."
+
+  # Count tables before reset
+  tables_before=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+  log "  Tables before reset: $tables_before"
+
+  # Attempt reset
   wp_local db reset --yes
-  log "Database reset complete"
+
+  # Verify reset actually worked by checking table count
+  tables_after=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+  log "  Tables after reset: $tables_after"
+
+  if [[ $tables_after -gt 0 ]]; then
+    log "ERROR: Database reset failed - $tables_after tables still exist"
+    log "This may indicate insufficient database permissions or WP-CLI issues"
+    log "Attempting manual table drop..."
+
+    # Manual fallback: drop each table individually
+    wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | while read -r table; do
+      log "  Dropping table: $table"
+      wp_local db query "DROP TABLE IF EXISTS \`$table\`" 2>/dev/null || log "    WARNING: Could not drop $table"
+    done
+
+    # Verify again
+    tables_final=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+    if [[ $tables_final -gt 0 ]]; then
+      log "ERROR: Could not reset database. $tables_final tables remain."
+      log "Please manually reset the database or check database permissions."
+      exit 1
+    fi
+  fi
+
+  log "Database reset complete (all tables dropped)"
 
   # Import the database
   wp_local db import "$DUPLICATOR_DB_FILE"
