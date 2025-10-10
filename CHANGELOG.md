@@ -6,8 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Fixed
-- Fixed wp-content replacement in Duplicator mode to handle protected/immutable files (e.g., StellarSites' mu-plugins directory). Changed from `rm -rf` + `cp` to `rsync --delete --ignore-errors` which gracefully skips files that can't be deleted and continues syncing everything else.
+### Added
+- Added `--stellarsites` flag for Duplicator mode to handle managed hosts with protected mu-plugins directories. When enabled, syncs wp-content without `--delete` flag and excludes `mu-plugins/` directory, preserving protected host files while migrating everything else.
 
 ## [1.1.5] - 2025-10-09
 ### Fixed

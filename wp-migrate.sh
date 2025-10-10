@@ -42,6 +42,7 @@ IMPORT_DB=true              # Automatically import DB on destination after trans
 GZIP_DB=true                # Compress DB dump during transfer
 MAINTENANCE_ALWAYS=true     # Always enable maintenance mode during migration
 MAINTENANCE_SOURCE=true     # Allow skipping maintenance mode on the source (--no-maint-source)
+STELLARSITES_MODE=false     # Enable StellarSites compatibility (preserves protected mu-plugins)
 
 # Duplicator mode variables
 DUPLICATOR_EXTRACT_DIR=""    # Temporary extraction directory
@@ -516,6 +517,7 @@ Options:
   --no-import-db            Skip importing the DB on destination after transfer
   --no-gzip                 Don't gzip the DB dump (default is gzip on, push mode only)
   --no-maint-source         Skip enabling maintenance mode on the source site (push mode only)
+  --stellarsites            Enable StellarSites compatibility mode (preserves protected mu-plugins, Duplicator mode only)
   --dest-domain '<host>'    Override destination domain (push mode only)
   --dest-home-url '<url>'   Force the destination home URL used for replacements (push mode only)
   --dest-site-url '<url>'   Force the destination site URL used for replacements (push mode only)
@@ -531,6 +533,7 @@ Examples (push mode):
 Examples (Duplicator mode):
   $(basename "$0") --duplicator-archive /path/to/backup_20251009.zip
   $(basename "$0") --duplicator-archive /backups/site.zip --dry-run
+  $(basename "$0") --duplicator-archive /backups/site.zip --stellarsites
 USAGE
 }
 
@@ -547,6 +550,7 @@ while [[ $# -gt 0 ]]; do
     --no-import-db) IMPORT_DB=false; shift ;;
     --no-gzip) GZIP_DB=false; shift ;;
     --no-maint-source) MAINTENANCE_SOURCE=false; shift ;;
+    --stellarsites) STELLARSITES_MODE=true; shift ;;
     --rsync-opt) EXTRA_RSYNC_OPTS+=("${2:-}"); shift 2 ;;
     --ssh-opt)
       val="${2:-}"; shift 2
@@ -1317,21 +1321,25 @@ else
   log "  Source: ${DUPLICATOR_WP_CONTENT#"$DUPLICATOR_EXTRACT_DIR"/}"
   log "  Destination: $DEST_WP_CONTENT"
 
-  # Use rsync to replace wp-content, which handles protected files gracefully
-  # --delete removes files in destination not in source
-  # --ignore-errors continues even if some files can't be deleted (e.g., protected mu-plugins)
-  # --exclude=object-cache.php preserves destination caching setup
-  # Exit code 23 (partial transfer) is acceptable when dealing with protected files
-  rsync -a --delete --ignore-errors --exclude=object-cache.php \
-    "$DUPLICATOR_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE" || {
-    rsync_exit=$?
-    if [[ $rsync_exit -ne 23 ]]; then
-      log "ERROR: rsync failed with exit code $rsync_exit"
-      exit "$rsync_exit"
-    fi
-    log "Note: Some files could not be overwritten (exit code 23) - likely protected host files"
-  }
-  log "wp-content replaced successfully (object-cache.php excluded to preserve destination caching)"
+  # Build rsync command with appropriate options
+  RSYNC_OPTS=(-a)
+  RSYNC_EXCLUDES=(--exclude=object-cache.php)
+
+  if $STELLARSITES_MODE; then
+    # StellarSites mode: Don't delete existing files, and exclude mu-plugins directory
+    # This preserves protected mu-plugins while syncing everything else from the archive
+    RSYNC_EXCLUDES+=(--exclude=mu-plugins/)
+    log "StellarSites mode: Preserving destination mu-plugins (syncing without --delete)"
+  else
+    # Normal mode: Clean sync with --delete to remove old destination files
+    RSYNC_OPTS+=(--delete)
+  fi
+
+  # Sync wp-content from archive to destination
+  rsync "${RSYNC_OPTS[@]}" "${RSYNC_EXCLUDES[@]}" \
+    "$DUPLICATOR_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE"
+
+  log "wp-content synced successfully (object-cache.php excluded to preserve destination caching)"
 fi
 
 # Phase 10: Flush cache if available
