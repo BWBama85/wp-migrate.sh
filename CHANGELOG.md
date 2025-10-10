@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Added `--stellarsites` flag for Duplicator mode to handle managed hosts with protected mu-plugins directories. When enabled, excludes `mu-plugins/` directory from rsync, preserving protected host mu-plugins while still using `--delete` to ensure a clean migration of all other wp-content files.
 
 ## [1.1.5] - 2025-10-09
 ### Fixed
