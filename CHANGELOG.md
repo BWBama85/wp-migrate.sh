@@ -6,8 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.1.7] - 2025-10-10
 ### Fixed
-- Fixed database reset verification in Duplicator mode. Now verifies that `wp db reset` actually dropped all tables and falls back to manual table dropping if it fails. Prevents silent failures where old tables remain after import, causing database pollution with multiple table prefix sets.
+- Fixed database reset verification in Duplicator mode. Now verifies that `wp db reset` actually dropped all tables and falls back to manual table dropping if it fails. Prevents silent failures where old tables remain after import, causing database pollution with multiple table prefix sets. Properly captures exit codes and handles both command failures and silent failures.
 
 ## [1.1.6] - 2025-10-10
 ### Added
