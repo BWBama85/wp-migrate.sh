@@ -1176,14 +1176,19 @@ else
 
   if [[ $tables_after -gt 0 ]]; then
     log "ERROR: Database reset failed - $tables_after tables still exist"
-    log "This may indicate insufficient database permissions or WP-CLI issues"
+    log "This may indicate WP-CLI issues on this environment"
     log "Attempting manual table drop..."
 
-    # Manual fallback: drop each table individually
-    wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | while read -r table; do
-      log "  Dropping table: $table"
-      wp_local db query "DROP TABLE IF EXISTS \`$table\`" 2>/dev/null || log "    WARNING: Could not drop $table"
-    done
+    # Manual fallback: Get list of tables and drop each one
+    # Use process substitution to avoid subshell issues with while-read
+    while IFS= read -r table; do
+      if [[ -n "$table" ]]; then
+        log "  Dropping table: $table"
+        wp_local db query "DROP TABLE IF EXISTS \`$table\`" 2>/dev/null || {
+          log "    WARNING: Could not drop $table"
+        }
+      fi
+    done < <(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null)
 
     # Verify again
     tables_final=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
@@ -1192,6 +1197,7 @@ else
       log "Please manually reset the database or check database permissions."
       exit 1
     fi
+    log "Manual table drop successful"
   fi
 
   log "Database reset complete (all tables dropped)"
