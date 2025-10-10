@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (v2.0.0 - Development)
+- **[v2 ONLY]** Modularized source code into `src/` directory structure for easier maintenance and code review. Script is now built from modular files using a Makefile. End users see no difference - still download a single `wp-migrate.sh` file. Development structure: `src/header.sh` (defaults), `src/lib/core.sh` (utilities), `src/lib/functions.sh` (all functions), `src/main.sh` (argument parsing and execution flow). Build with `make build` to generate `dist/wp-migrate.sh`.
+- **[v2 ONLY]** Added Makefile build system with targets: `make build` (concatenate source files), `make test` (run shellcheck), `make clean` (remove build artifacts). Developers work in modular `src/` files and run `make build` to update the single-file `wp-migrate.sh` at repo root.
+- **[v2 ONLY]** Added dual-branch workflow to `.claude/settings.json` with separate workflows for v1.x.x maintenance (main branch) and v2.0.0 development (v2 branch). Branch naming enforces target: `v2-*` branches must PR to v2, regular branches PR to main.
+
 ## [1.1.8] - 2025-10-10
 ### Fixed
 - Improved non-critical error handling to prevent script abortion during cleanup operations. Maintenance mode disable failures, temporary directory cleanup failures, and cache flush failures now log colored warnings (yellow) but allow the script to complete successfully. This prevents migration success from being blocked by non-essential cleanup tasks. Log files remain clean (no ANSI color codes) for readability and tooling compatibility.
