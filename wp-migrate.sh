@@ -1321,8 +1321,16 @@ else
   # --delete removes files in destination not in source
   # --ignore-errors continues even if some files can't be deleted (e.g., protected mu-plugins)
   # --exclude=object-cache.php preserves destination caching setup
+  # Exit code 23 (partial transfer) is acceptable when dealing with protected files
   rsync -a --delete --ignore-errors --exclude=object-cache.php \
-    "$DUPLICATOR_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE"
+    "$DUPLICATOR_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE" || {
+    rsync_exit=$?
+    if [[ $rsync_exit -ne 23 ]]; then
+      log "ERROR: rsync failed with exit code $rsync_exit"
+      exit "$rsync_exit"
+    fi
+    log "Note: Some files could not be overwritten (exit code 23) - likely protected host files"
+  }
   log "wp-content replaced successfully (object-cache.php excluded to preserve destination caching)"
 fi
 
