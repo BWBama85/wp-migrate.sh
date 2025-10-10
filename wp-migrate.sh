@@ -1168,8 +1168,14 @@ else
   log "  Tables before reset: $tables_before"
 
   # Attempt reset - allow failure without aborting script (set -e)
-  if ! wp_local db reset --yes 2>&1 | tee -a "$LOG_FILE"; then
-    log "WARNING: wp db reset command failed (exit code: $?)"
+  # Run command and capture exit code before set -e can abort
+  wp_local db reset --yes 2>&1 | tee -a "$LOG_FILE" || reset_exit_code=$?
+
+  # If not set (command succeeded), set to 0
+  : "${reset_exit_code:=0}"
+
+  if [[ $reset_exit_code -ne 0 ]]; then
+    log "WARNING: wp db reset command failed (exit code: $reset_exit_code)"
     log "This may indicate WP-CLI issues or permissions problems"
     log "Will attempt manual table drop..."
   fi
