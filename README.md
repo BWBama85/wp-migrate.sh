@@ -233,7 +233,7 @@ To prevent accidentally committing source changes without rebuilding, install th
 ln -s ../../.githooks/pre-commit .git/hooks/pre-commit
 ```
 
-This hook will block commits if you modify `src/` files without updating `wp-migrate.sh`.
+This hook will block commits if you modify `src/` files without updating both `wp-migrate.sh` and `wp-migrate.sh.sha256`.
 
 ### Makefile Targets
 
