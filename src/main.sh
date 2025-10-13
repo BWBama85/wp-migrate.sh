@@ -377,6 +377,7 @@ else
           log "  Expected: $SOURCE_DB_PREFIX"
           log "  Actual: $ACTUAL_PREFIX"
           ssh_run "$DEST_HOST" "cd \"$DEST_ROOT\" && mv wp-config.php.bak wp-config.php 2>/dev/null"
+          err "Cannot proceed with wrong table prefix in wp-config.php. Migration aborted."
         fi
       else
         log "Table prefix updated successfully"
@@ -748,9 +749,11 @@ else
             log "  Expected: $IMPORTED_DB_PREFIX"
             log "  Actual: $ACTUAL_PREFIX"
             mv wp-config.php.bak wp-config.php 2>/dev/null
+            err "Cannot proceed with wrong table prefix in wp-config.php. Migration aborted."
           fi
         else
           log "ERROR: sed command failed to update wp-config.php"
+          err "Cannot proceed with wrong table prefix in wp-config.php. Migration aborted."
         fi
       else
         log "Table prefix updated successfully"
@@ -759,7 +762,21 @@ else
       log "Table prefix matches wp-config.php; no update needed"
     fi
   else
-    log "WARNING: Could not detect table prefix from imported database; assuming it matches wp-config.php"
+    log "Could not detect table prefix by scanning tables; assuming it matches wp-config.php: $DEST_DB_PREFIX_BEFORE"
+    IMPORTED_DB_PREFIX="$DEST_DB_PREFIX_BEFORE"
+
+    # Verify the assumption by trying to read from options table
+    if ! wp_local db query "SELECT COUNT(*) FROM \`${IMPORTED_DB_PREFIX}options\`" --skip-column-names >/dev/null 2>&1; then
+      err "Table prefix detection failed and assumption was incorrect.
+
+Assumed prefix: $DEST_DB_PREFIX_BEFORE
+Could not find table: ${DEST_DB_PREFIX_BEFORE}options
+
+The imported database appears to be corrupt, incomplete, or uses a non-standard structure.
+Please verify this is a valid Duplicator backup archive."
+    fi
+
+    log "Verified: ${IMPORTED_DB_PREFIX}options table is accessible"
   fi
 fi
 
