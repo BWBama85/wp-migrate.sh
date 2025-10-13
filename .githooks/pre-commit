@@ -1,16 +1,33 @@
 #!/bin/bash
 
-# Pre-commit hook: Ensure wp-migrate.sh is rebuilt when src/ files change
-# This prevents committing source changes without updating the built file
+# Pre-commit hook: Ensure wp-migrate.sh and its checksum are rebuilt when src/ files change
+# This prevents committing source changes without updating the built file and checksum
 
 # Check if any src/ files are being committed
 if git diff --cached --name-only | grep -q "^src/"; then
+  missing_files=()
+
   # Check if wp-migrate.sh is also being committed
   if ! git diff --cached --name-only | grep -q "^wp-migrate.sh$"; then
+    missing_files+=("wp-migrate.sh")
+  fi
+
+  # Check if wp-migrate.sh.sha256 is also being committed
+  if ! git diff --cached --name-only | grep -q "^wp-migrate.sh.sha256$"; then
+    missing_files+=("wp-migrate.sh.sha256")
+  fi
+
+  # If any required files are missing, block the commit
+  if [ ${#missing_files[@]} -gt 0 ]; then
     echo ""
-    echo "❌ ERROR: You modified src/ but didn't update wp-migrate.sh"
+    echo "❌ ERROR: You modified src/ but didn't update all required files"
     echo ""
-    echo "The built file at repo root must be updated when source files change."
+    echo "Missing files:"
+    for file in "${missing_files[@]}"; do
+      echo "  - $file"
+    done
+    echo ""
+    echo "The built file and its checksum must be updated when source files change."
     echo ""
     echo "To fix this:"
     echo "  1. Run: make build"
