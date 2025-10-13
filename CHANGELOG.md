@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[v2 ONLY]** Added pre-commit git hook (`.githooks/pre-commit`) that prevents committing source changes without rebuilding `wp-migrate.sh` and `wp-migrate.sh.sha256`. Blocks commits if `src/` files are modified but either the built script or its checksum is not staged. Install with `ln -s ../../.githooks/pre-commit .git/hooks/pre-commit`.
 - **[v2 ONLY]** Expanded README Development section with detailed instructions for building from source, git hook setup, Makefile targets, and contribution guidelines for v2+ development.
 
+### Fixed (v2.0.0 - Development)
+- **[v2 ONLY]** Made table prefix update failures fatal to prevent silent migration failures. In both push and Duplicator modes, if both `wp config set` and sed fallback fail to update the table prefix in wp-config.php, the script now aborts with a clear error message instead of continuing with a broken configuration. Previously would log an error but continue, resulting in a "successful" migration with a non-functional site.
+- **[v2 ONLY]** Enhanced Duplicator mode prefix detection fallback logic. When table prefix detection fails (missing core tables), the script now verifies that the assumed prefix is correct by querying the options table before continuing. If verification fails, the script aborts with a detailed error message explaining possible causes (corrupt database, invalid archive). This prevents silent failures where the script continues with an incorrect prefix assumption.
+
 ## [1.1.8] - 2025-10-10
 ### Fixed
 - Improved non-critical error handling to prevent script abortion during cleanup operations. Maintenance mode disable failures, temporary directory cleanup failures, and cache flush failures now log colored warnings (yellow) but allow the script to complete successfully. This prevents migration success from being blocked by non-essential cleanup tasks. Log files remain clean (no ANSI color codes) for readability and tooling compatibility.
