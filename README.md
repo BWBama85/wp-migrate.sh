@@ -190,7 +190,67 @@ Use the repo's Git helpers to keep changes small, reviewable, and easy to trace.
 - Install [ShellCheck](https://www.shellcheck.net/) to lint modifications; the current script is ShellCheck-clean.
 
 ## Development
+
+### Source Code Structure (v2+)
+
+Starting with v2.0.0, the codebase uses a modular source structure for easier maintenance:
+
+```
+src/
+├── header.sh         # Shebang, defaults, variable declarations
+├── lib/
+│   ├── core.sh       # Core utilities (log, err, validate_url)
+│   └── functions.sh  # All other functions
+└── main.sh           # Argument parsing and main execution
+```
+
+The single-file `wp-migrate.sh` at the repo root is built from these modular source files.
+
+### Building from Source
+
+If you modify files in `src/`, you must rebuild the script:
+
+```bash
+# Install dependencies (macOS/Linux)
+# - shellcheck (linting)
+# - make (build system)
+
+# Build the single-file script
+make build
+
+# This will:
+# 1. Run shellcheck on the concatenated source
+# 2. Concatenate src/ files into dist/wp-migrate.sh
+# 3. Copy to ./wp-migrate.sh (repo root)
+# 4. Generate SHA256 checksum
+```
+
+### Git Hook Setup (Recommended)
+
+To prevent accidentally committing source changes without rebuilding, install the pre-commit hook:
+
+```bash
+ln -s ../../.githooks/pre-commit .git/hooks/pre-commit
+```
+
+This hook will block commits if you modify `src/` files without updating `wp-migrate.sh`.
+
+### Makefile Targets
+
+- `make build` - Build the single-file script from modular source
+- `make test` - Run shellcheck on the complete built script
+- `make clean` - Remove build artifacts (`dist/` directory)
+- `make help` - Show available targets
+
+### Contributing
+
 This project was developed with assistance from AI coding tools ([Claude Code](https://claude.com/claude-code)). Contributions are welcome!
+
+When contributing to v2+:
+1. Make changes in `src/` files (not `wp-migrate.sh` directly)
+2. Run `make build` to regenerate `wp-migrate.sh`
+3. Commit both the source files and built file
+4. Open a PR with your changes
 
 ## License
 MIT License - see [LICENSE](LICENSE) file for details.
