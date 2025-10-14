@@ -260,7 +260,14 @@ check_disk_space_for_archive() {
 
   log_verbose "Calculating archive size..."
   archive_size_bytes=$(stat -f%z "$archive_path" 2>/dev/null || stat -c%s "$archive_path" 2>/dev/null)
-  [[ -n "$archive_size_bytes" ]] || err "Unable to determine archive size: $archive_path"
+  [[ -n "$archive_size_bytes" ]] || err "Unable to determine archive size: $archive_path
+
+Next steps:
+  1. Verify file exists and is readable:
+       ls -lh \"$archive_path\"
+  2. Check file permissions:
+       stat \"$archive_path\"
+  3. Ensure you have read access to the file"
 
   # Need 3x archive size: 1x for archive, 1x for extraction, 1x buffer
   required_bytes=$((archive_size_bytes * 3))
@@ -282,12 +289,28 @@ check_disk_space_for_archive() {
   log "  Available: ${available_mb}MB"
 
   if [[ $available_bytes -lt $required_bytes ]]; then
-    err "Insufficient disk space. Need ${required_mb}MB but only ${available_mb}MB available.
-Archive: ${archive_size_mb}MB
-Required: ${required_mb}MB (3x for archive + extraction + buffer)
-Available: ${available_mb}MB
+    err "Insufficient disk space for archive extraction.
 
-Free up space or move the archive to a location with more available space."
+Archive size: ${archive_size_mb}MB
+Required space: ${required_mb}MB (3x archive size for safe extraction)
+Available space: ${available_mb}MB
+Shortfall: $((required_mb - available_mb))MB
+
+Why 3x? Archive extraction needs:
+  1. Original archive (${archive_size_mb}MB)
+  2. Extracted files (${archive_size_mb}MB)
+  3. Safety buffer (${archive_size_mb}MB)
+
+Next steps:
+  1. Free up disk space:
+       df -h .
+       # Delete old backups, logs, or temporary files
+  2. Move archive to a location with more space:
+       # Check space on other volumes/partitions
+       df -h
+  3. Use a smaller working directory (if archive is very large):
+       export TMPDIR=/path/to/large/volume
+  4. Clean up WordPress uploads or other large files temporarily"
   fi
 
   log "Disk space check: PASSED"
@@ -310,7 +333,28 @@ extract_archive_to_temp() {
     rm -rf "$ARCHIVE_EXTRACT_DIR"
     local format_name
     format_name=$(get_archive_format_name)
-    err "Failed to extract $format_name archive: $archive_path"
+    err "Failed to extract $format_name archive: $archive_path
+
+Possible causes:
+  • Archive file is corrupted
+  • Incorrect archive format (try --archive-type to force format)
+  • Insufficient disk space during extraction
+  • Missing extraction tools (unzip, tar, gzip)
+
+Next steps:
+  1. Verify archive integrity:
+       file \"$archive_path\"
+       # For ZIP: unzip -t \"$archive_path\"
+       # For tar.gz: tar -tzf \"$archive_path\" >/dev/null
+  2. Check available disk space:
+       df -h .
+  3. Verify extraction tools are installed:
+       which unzip tar gzip
+  4. Try extracting manually to see detailed error:
+       unzip -t \"$archive_path\"  # for ZIP
+       tar -xzf \"$archive_path\"  # for tar.gz
+  5. If format detection failed, specify type explicitly:
+       --archive-type duplicator  # or jetpack"
   fi
 
   log "Archive extracted successfully"
@@ -332,18 +376,40 @@ find_archive_database_file() {
     local format_name
     format_name=$(get_archive_format_name)
     err "Unable to locate database file in $format_name archive.
+
 Archive extracted to: $extract_dir
 
-Please verify this is a valid $format_name backup archive."
+Expected database file patterns for $format_name:
+$([ "$format_name" = "Duplicator" ] && echo "  • dup-installer/dup-database__*.sql")
+$([ "$format_name" = "Jetpack" ] && echo "  • *.sql or */database.sql")
+
+Next steps:
+  1. Inspect extracted archive contents:
+       ls -laR \"$extract_dir\"
+  2. Look for SQL files manually:
+       find \"$extract_dir\" -name \"*.sql\" -type f
+  3. Verify this is a complete $format_name backup (not partial)
+  4. If using wrong adapter, try specifying format:
+       --archive-type duplicator  # or jetpack
+  5. Check if archive was created correctly by backup plugin"
   fi
 
   if [[ -z "$db_file" ]]; then
     local format_name
     format_name=$(get_archive_format_name)
     err "Unable to locate database file in $format_name archive.
+
 Archive extracted to: $extract_dir
 
-Please verify this is a valid $format_name backup archive."
+Database file search returned empty result. This may indicate:
+  • Incomplete backup archive
+  • Corrupted archive structure
+  • Wrong archive adapter for this backup format
+
+Next steps:
+  1. Search for SQL files manually:
+       find \"$extract_dir\" -name \"*.sql\"
+  2. Verify archive completeness"
   fi
 
   ARCHIVE_DB_FILE="$db_file"
@@ -366,18 +432,42 @@ find_archive_wp_content_dir() {
     local format_name
     format_name=$(get_archive_format_name)
     err "Unable to locate wp-content directory in $format_name archive.
+
 Archive extracted to: $extract_dir
 
-Please verify this is a valid $format_name backup archive."
+wp-content should contain subdirectories like:
+  • plugins/
+  • themes/
+  • uploads/
+
+Next steps:
+  1. Inspect extracted archive structure:
+       ls -laR \"$extract_dir\"
+  2. Look for wp-content manually:
+       find \"$extract_dir\" -type d -name \"wp-content\"
+  3. Verify this is a complete WordPress backup
+  4. If backup only contains database, you may need to migrate wp-content separately:
+       # Use push mode to sync wp-content from another server
+  5. Check if archive was created correctly by backup plugin"
   fi
 
   if [[ -z "$wp_content_dir" ]]; then
     local format_name
     format_name=$(get_archive_format_name)
     err "Unable to locate wp-content directory in $format_name archive.
+
 Archive extracted to: $extract_dir
 
-Please verify this is a valid $format_name backup archive."
+wp-content directory search returned empty result. This may indicate:
+  • Database-only backup (no files included)
+  • Incomplete backup archive
+  • Non-standard WordPress directory structure
+
+Next steps:
+  1. Search for common WordPress directories:
+       find \"$extract_dir\" -type d -name \"plugins\" -o -name \"themes\" -o -name \"uploads\"
+  2. If this is a database-only backup, skip --archive mode and use push mode instead
+  3. Contact backup plugin support if structure is unexpected"
   fi
 
   ARCHIVE_WP_CONTENT="$wp_content_dir"
