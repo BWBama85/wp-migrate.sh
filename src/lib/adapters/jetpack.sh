@@ -51,9 +51,9 @@ adapter_jetpack_validate() {
 adapter_jetpack_extract() {
   local archive="$1" dest="$2"
 
-  # If already a directory, copy it
+  # If already a directory, copy it (include hidden files with trailing /.)
   if [[ -d "$archive" ]]; then
-    if ! cp -a "$archive"/* "$dest/" 2>/dev/null; then
+    if ! cp -a "$archive"/. "$dest"/ 2>/dev/null; then
       return 1
     fi
     return 0
@@ -170,9 +170,11 @@ adapter_jetpack_detect_prefix() {
 adapter_jetpack_consolidate_database() {
   local sql_dir="$1" output_file="$2"
 
-  # Find all SQL files and concatenate them
-  local sql_files
-  mapfile -t sql_files < <(find "$sql_dir" -type f -name "*.sql" 2>/dev/null | sort)
+  # Find all SQL files and concatenate them (Bash 3.2 compatible - no mapfile)
+  local sql_files=()
+  while IFS= read -r -d '' file; do
+    sql_files+=("$file")
+  done < <(find "$sql_dir" -type f -name "*.sql" -print0 2>/dev/null | sort -z)
 
   if [[ ${#sql_files[@]} -eq 0 ]]; then
     return 1
