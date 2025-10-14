@@ -14,6 +14,8 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --verbose) VERBOSE=true; shift ;;
+    --trace) TRACE_MODE=true; VERBOSE=true; shift ;;
     --import-db) IMPORT_DB=true; shift ;;
     --no-import-db) IMPORT_DB=false; shift ;;
     --no-gzip) GZIP_DB=false; shift ;;

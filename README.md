@@ -109,6 +109,8 @@ Common examples:
 | Flag | Description |
 | ---- | ----------- |
 | `--dry-run` | Preview the workflow without making changes. No files are created, maintenance mode is not toggled, caches are left untouched, and database operations are described rather than executed. Safe to run on production sites. |
+| `--verbose` | Show additional details during migration. Displays dependency checks, command construction, archive detection process, and other diagnostic information. Useful for understanding what the script is doing and troubleshooting issues. Can be combined with `--dry-run` to preview detailed workflow. |
+| `--trace` | Show every command before execution (implies `--verbose`). Displays exact commands (rsync, wp-cli, ssh, etc.) with all arguments before running them. Useful for debugging, filing bug reports, or manually reproducing operations. Output can be copied/pasted to run commands manually. |
 | `--help` | Print usage information and exit. |
 | `--version` | Show version information and exit. |
 

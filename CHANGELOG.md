@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Logging infrastructure**: Added `--verbose` and `--trace` flags for enhanced logging and debugging. `--verbose` shows additional details like dependency checks, command construction, and detection processes. `--trace` displays every command before execution with full arguments (implies `--verbose`). Foundation for upcoming verbose logging and improved error messages in subsequent releases.
+
 ## [2.1.1] - 2025-10-14
 
 **📚 Documentation-Only Release: Comprehensive Flag Documentation**

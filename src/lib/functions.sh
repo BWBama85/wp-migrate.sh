@@ -798,6 +798,8 @@ Required (choose one mode):
 
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
+  --verbose                 Show additional details (dependency checks, command construction, detection process)
+  --trace                   Show every command before execution (implies --verbose). Useful for debugging and reproducing issues.
   --import-db               (Deprecated) Explicitly import the DB on destination (default behavior)
   --no-import-db            Skip importing the DB on destination after transfer
   --no-gzip                 Don't gzip the DB dump (default is gzip on, push mode only)
