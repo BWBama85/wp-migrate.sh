@@ -159,7 +159,7 @@ Common examples:
 | Flag | Description |
 | ---- | ----------- |
 | `--preserve-dest-plugins` | Preserve destination plugins and themes that don't exist in the source. After wp-content sync, the script detects unique destination plugins/themes, restores them from backup, and automatically deactivates restored plugins (themes remain available but inactive). Useful for preserving host-specific plugins or custom configurations. Works in both push and archive modes. |
-| `--stellarsites` | Enable StellarSites managed hosting compatibility mode. Automatically enables `--preserve-dest-plugins` and handles protected mu-plugins directories that cannot be deleted (e.g., `mu-plugins/stellarsites-cloud`). Uses `rsync --delete --ignore-errors` to sync wp-content while skipping permission-denied files. Recommended for StellarSites and similar managed WordPress hosts with immutable system files. Works in both push and archive modes. |
+| `--stellarsites` | Enable StellarSites managed hosting compatibility mode. Automatically enables `--preserve-dest-plugins` and excludes the destination `mu-plugins/` directory and `mu-plugins.php` loader file from being overwritten during wp-content sync. Prevents conflicts with StellarSites' protected mu-plugins system (e.g., `mu-plugins/stellarsites-cloud`). Recommended for StellarSites and similar managed WordPress hosts that provide system-level mu-plugins. Works in both push and archive modes. |
 
 ## Workflow Overview
 
