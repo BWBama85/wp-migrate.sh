@@ -310,8 +310,16 @@ find_archive_database_file() {
   fi
 
   # Use the adapter's find database function
+  # Capture exit status to prevent set -e from killing script before error message
   local db_file
-  db_file=$(find_archive_database "$extract_dir")
+  if ! db_file=$(find_archive_database "$extract_dir"); then
+    local format_name
+    format_name=$(get_archive_format_name)
+    err "Unable to locate database file in $format_name archive.
+Archive extracted to: $extract_dir
+
+Please verify this is a valid $format_name backup archive."
+  fi
 
   if [[ -z "$db_file" ]]; then
     local format_name
@@ -336,8 +344,16 @@ find_archive_wp_content_dir() {
   fi
 
   # Use the adapter's find wp-content function
+  # Capture exit status to prevent set -e from killing script before error message
   local wp_content_dir
-  wp_content_dir=$(find_archive_wp_content "$extract_dir")
+  if ! wp_content_dir=$(find_archive_wp_content "$extract_dir"); then
+    local format_name
+    format_name=$(get_archive_format_name)
+    err "Unable to locate wp-content directory in $format_name archive.
+Archive extracted to: $extract_dir
+
+Please verify this is a valid $format_name backup archive."
+  fi
 
   if [[ -z "$wp_content_dir" ]]; then
     local format_name
