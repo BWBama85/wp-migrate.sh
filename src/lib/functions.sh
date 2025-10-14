@@ -1,4 +1,7 @@
-wp_local() { wp --path="$PWD" "$@"; }
+wp_local() {
+  log_trace "wp --path=\"$PWD\" $*"
+  wp --path="$PWD" "$@"
+}
 
 # ========================================
 # Archive Adapter System
@@ -29,12 +32,18 @@ detect_adapter() {
   local archive="$1"
   local adapter
 
+  log_verbose "Detecting archive format for: $(basename "$archive")"
+
   # Try each available adapter's validate function (already loaded in built script)
   for adapter in "${AVAILABLE_ADAPTERS[@]}"; do
+    log_verbose "  Testing: ${adapter} adapter..."
     # Call the adapter's validate function
     if "adapter_${adapter}_validate" "$archive" 2>/dev/null; then
+      log_verbose "    ✓ Matched ${adapter} format"
       echo "$adapter"
       return 0
+    else
+      log_verbose "    ✗ Not a ${adapter} archive"
     fi
   done
 
@@ -103,6 +112,7 @@ ssh_cmd_string() {
 # Run an arbitrary command over SSH (use array expansion)
 ssh_run() {
   local host="$1"; shift
+  log_trace "ssh ${SSH_OPTS[*]} $host $*"
   # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
   ssh "${SSH_OPTS[@]}" "$host" "$@"
 }
@@ -114,6 +124,7 @@ wp_remote() {
   printf -v root_quoted "%q" "$root"
   local cmd=(wp --skip-plugins --skip-themes "$@")
   printf -v cmd_quoted "%q " "${cmd[@]}"
+  log_trace "ssh ${SSH_OPTS[*]} $host \"bash -lc 'cd $root_quoted && ${cmd_quoted% }'\""
   # shellcheck disable=SC2029  # Intentional client-side expansion; variables are quoted via printf %q
   ssh "${SSH_OPTS[@]}" "$host" "bash -lc 'cd $root_quoted && ${cmd_quoted% }'"
 }
@@ -247,14 +258,19 @@ check_disk_space_for_archive() {
   local available_bytes
   local required_bytes
 
+  log_verbose "Calculating archive size..."
   archive_size_bytes=$(stat -f%z "$archive_path" 2>/dev/null || stat -c%s "$archive_path" 2>/dev/null)
   [[ -n "$archive_size_bytes" ]] || err "Unable to determine archive size: $archive_path"
 
   # Need 3x archive size: 1x for archive, 1x for extraction, 1x buffer
   required_bytes=$((archive_size_bytes * 3))
+  log_verbose "  Archive size: $archive_size_bytes bytes"
+  log_verbose "  Required space: $required_bytes bytes (3x multiplier for safe extraction)"
 
   # Check available space in current directory
+  log_verbose "Checking available disk space..."
   available_bytes=$(df -P . | awk 'NR==2 {print $4 * 1024}')
+  log_verbose "  Available: $available_bytes bytes"
 
   local archive_size_mb=$((archive_size_bytes / 1024 / 1024))
   local required_mb=$((required_bytes / 1024 / 1024))
@@ -798,6 +814,8 @@ Required (choose one mode):
 
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
+  --verbose                 Show additional details (dependency checks, command construction, detection process)
+  --trace                   Show every command before execution (implies --verbose). Useful for debugging and reproducing issues.
   --import-db               (Deprecated) Explicitly import the DB on destination (default behavior)
   --no-import-db            Skip importing the DB on destination after transfer
   --no-gzip                 Don't gzip the DB dump (default is gzip on, push mode only)

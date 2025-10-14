@@ -90,8 +90,24 @@ URL_ALIGNMENT_REQUIRED=false
 # Core Utilities
 # -------------
 
+# Verbosity control flags (set by argument parser)
+VERBOSE=false
+TRACE_MODE=false
+
 err() { printf "ERROR: %s\n" "$*" >&2; exit 1; }
-needs() { command -v "$1" >/dev/null 2>&1 || err "Missing dependency: $1"; }
+
+needs() {
+  local cmd="$1"
+  log_verbose "Checking for required dependency: $cmd"
+  if command -v "$cmd" >/dev/null 2>&1; then
+    local cmd_path
+    cmd_path=$(command -v "$cmd")
+    log_verbose "  ✓ Found: $cmd_path"
+    return 0
+  else
+    err "Missing dependency: $cmd"
+  fi
+}
 
 validate_url() {
   local url="$1" flag_name="$2"
@@ -127,6 +143,38 @@ log_warning() {
   else
     # Non-interactive, just echo the plain message
     printf "%s\n" "$plain_msg"
+  fi
+}
+
+log_verbose() {
+  # Only log if --verbose flag is set
+  # Uses same format as log() for consistency
+  if $VERBOSE; then
+    log "$@"
+  fi
+}
+
+log_trace() {
+  # Logs command execution traces when --trace flag is set
+  # Uses cyan color to distinguish from regular logs
+  if $TRACE_MODE; then
+    local cyan='\033[0;36m'
+    local reset='\033[0m'
+    local timestamp
+    local plain_msg
+    timestamp="$(date '+%F %T')"
+    plain_msg="$timestamp + $*"
+
+    # Always write plain text to log file
+    printf "%s\n" "$plain_msg" >> "$LOG_FILE"
+
+    # Write colored output to terminal if interactive
+    if [[ -t 1 ]]; then
+      printf "%s ${cyan}+${reset} %s\n" "$timestamp" "$*"
+    else
+      # Non-interactive, just echo the plain message
+      printf "%s\n" "$plain_msg"
+    fi
   fi
 }
 # -----------------------------
@@ -535,7 +583,10 @@ adapter_jetpack_get_name() {
 adapter_jetpack_get_dependencies() {
   echo "unzip tar file"
 }
-wp_local() { wp --path="$PWD" "$@"; }
+wp_local() {
+  log_trace "wp --path=\"$PWD\" $*"
+  wp --path="$PWD" "$@"
+}
 
 # ========================================
 # Archive Adapter System
@@ -566,12 +617,18 @@ detect_adapter() {
   local archive="$1"
   local adapter
 
+  log_verbose "Detecting archive format for: $(basename "$archive")"
+
   # Try each available adapter's validate function (already loaded in built script)
   for adapter in "${AVAILABLE_ADAPTERS[@]}"; do
+    log_verbose "  Testing: ${adapter} adapter..."
     # Call the adapter's validate function
     if "adapter_${adapter}_validate" "$archive" 2>/dev/null; then
+      log_verbose "    ✓ Matched ${adapter} format"
       echo "$adapter"
       return 0
+    else
+      log_verbose "    ✗ Not a ${adapter} archive"
     fi
   done
 
@@ -640,6 +697,7 @@ ssh_cmd_string() {
 # Run an arbitrary command over SSH (use array expansion)
 ssh_run() {
   local host="$1"; shift
+  log_trace "ssh ${SSH_OPTS[*]} $host $*"
   # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
   ssh "${SSH_OPTS[@]}" "$host" "$@"
 }
@@ -651,6 +709,7 @@ wp_remote() {
   printf -v root_quoted "%q" "$root"
   local cmd=(wp --skip-plugins --skip-themes "$@")
   printf -v cmd_quoted "%q " "${cmd[@]}"
+  log_trace "ssh ${SSH_OPTS[*]} $host \"bash -lc 'cd $root_quoted && ${cmd_quoted% }'\""
   # shellcheck disable=SC2029  # Intentional client-side expansion; variables are quoted via printf %q
   ssh "${SSH_OPTS[@]}" "$host" "bash -lc 'cd $root_quoted && ${cmd_quoted% }'"
 }
@@ -784,14 +843,19 @@ check_disk_space_for_archive() {
   local available_bytes
   local required_bytes
 
+  log_verbose "Calculating archive size..."
   archive_size_bytes=$(stat -f%z "$archive_path" 2>/dev/null || stat -c%s "$archive_path" 2>/dev/null)
   [[ -n "$archive_size_bytes" ]] || err "Unable to determine archive size: $archive_path"
 
   # Need 3x archive size: 1x for archive, 1x for extraction, 1x buffer
   required_bytes=$((archive_size_bytes * 3))
+  log_verbose "  Archive size: $archive_size_bytes bytes"
+  log_verbose "  Required space: $required_bytes bytes (3x multiplier for safe extraction)"
 
   # Check available space in current directory
+  log_verbose "Checking available disk space..."
   available_bytes=$(df -P . | awk 'NR==2 {print $4 * 1024}')
+  log_verbose "  Available: $available_bytes bytes"
 
   local archive_size_mb=$((archive_size_bytes / 1024 / 1024))
   local required_mb=$((required_bytes / 1024 / 1024))
@@ -1335,6 +1399,8 @@ Required (choose one mode):
 
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
+  --verbose                 Show additional details (dependency checks, command construction, detection process)
+  --trace                   Show every command before execution (implies --verbose). Useful for debugging and reproducing issues.
   --import-db               (Deprecated) Explicitly import the DB on destination (default behavior)
   --no-import-db            Skip importing the DB on destination after transfer
   --no-gzip                 Don't gzip the DB dump (default is gzip on, push mode only)
@@ -1377,6 +1443,8 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --verbose) VERBOSE=true; shift ;;
+    --trace) TRACE_MODE=true; VERBOSE=true; shift ;;
     --import-db) IMPORT_DB=true; shift ;;
     --no-import-db) IMPORT_DB=false; shift ;;
     --no-gzip) GZIP_DB=false; shift ;;
@@ -1584,9 +1652,12 @@ fi
 # ==================================================================================
 if [[ "$MIGRATION_MODE" == "push" ]]; then
 
+log_verbose "Detecting source database prefix..."
 SOURCE_DB_PREFIX="$(wp_local db prefix)"
-DEST_DB_PREFIX="$(wp_remote "$DEST_HOST" "$DEST_ROOT" db prefix)"
 log "Source DB prefix: $SOURCE_DB_PREFIX"
+
+log_verbose "Detecting destination database prefix..."
+DEST_DB_PREFIX="$(wp_remote "$DEST_HOST" "$DEST_ROOT" db prefix)"
 log "Dest   DB prefix: $DEST_DB_PREFIX"
 
 SOURCE_HOME_URL="$(wp_local eval "echo get_option(\"home\");")"
@@ -1898,6 +1969,7 @@ log "Rsync options: ${RS_OPTS[*]}"
 # -------------------------
 log "Pushing $SRC_WP_CONTENT -> $DEST_HOST:$DST_WP_CONTENT"
 ssh_cmd_content="$(ssh_cmd_string)"
+log_trace "rsync ${RS_OPTS[*]} -e \"$ssh_cmd_content\" $SRC_WP_CONTENT/ $DEST_HOST:$DST_WP_CONTENT/"
 rsync "${RS_OPTS[@]}" -e "$ssh_cmd_content" \
   "$SRC_WP_CONTENT"/ \
   "$DEST_HOST":"$DST_WP_CONTENT"/ | tee -a "$LOG_FILE"
@@ -2350,6 +2422,7 @@ else
 
   # Sync wp-content from archive to destination
   # Excluded items (mu-plugins, object-cache.php) are preserved in destination
+  log_trace "rsync ${RSYNC_OPTS[*]} ${RSYNC_EXCLUDES[*]} $ARCHIVE_WP_CONTENT/ $DEST_WP_CONTENT/"
   rsync "${RSYNC_OPTS[@]}" "${RSYNC_EXCLUDES[@]}" \
     "$ARCHIVE_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE"
 

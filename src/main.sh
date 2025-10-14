@@ -14,6 +14,8 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --verbose) VERBOSE=true; shift ;;
+    --trace) TRACE_MODE=true; VERBOSE=true; shift ;;
     --import-db) IMPORT_DB=true; shift ;;
     --no-import-db) IMPORT_DB=false; shift ;;
     --no-gzip) GZIP_DB=false; shift ;;
@@ -221,9 +223,12 @@ fi
 # ==================================================================================
 if [[ "$MIGRATION_MODE" == "push" ]]; then
 
+log_verbose "Detecting source database prefix..."
 SOURCE_DB_PREFIX="$(wp_local db prefix)"
-DEST_DB_PREFIX="$(wp_remote "$DEST_HOST" "$DEST_ROOT" db prefix)"
 log "Source DB prefix: $SOURCE_DB_PREFIX"
+
+log_verbose "Detecting destination database prefix..."
+DEST_DB_PREFIX="$(wp_remote "$DEST_HOST" "$DEST_ROOT" db prefix)"
 log "Dest   DB prefix: $DEST_DB_PREFIX"
 
 SOURCE_HOME_URL="$(wp_local eval "echo get_option(\"home\");")"
@@ -535,6 +540,7 @@ log "Rsync options: ${RS_OPTS[*]}"
 # -------------------------
 log "Pushing $SRC_WP_CONTENT -> $DEST_HOST:$DST_WP_CONTENT"
 ssh_cmd_content="$(ssh_cmd_string)"
+log_trace "rsync ${RS_OPTS[*]} -e \"$ssh_cmd_content\" $SRC_WP_CONTENT/ $DEST_HOST:$DST_WP_CONTENT/"
 rsync "${RS_OPTS[@]}" -e "$ssh_cmd_content" \
   "$SRC_WP_CONTENT"/ \
   "$DEST_HOST":"$DST_WP_CONTENT"/ | tee -a "$LOG_FILE"
@@ -987,6 +993,7 @@ else
 
   # Sync wp-content from archive to destination
   # Excluded items (mu-plugins, object-cache.php) are preserved in destination
+  log_trace "rsync ${RSYNC_OPTS[*]} ${RSYNC_EXCLUDES[*]} $ARCHIVE_WP_CONTENT/ $DEST_WP_CONTENT/"
   rsync "${RSYNC_OPTS[@]}" "${RSYNC_EXCLUDES[@]}" \
     "$ARCHIVE_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE"
 
