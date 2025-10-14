@@ -105,7 +105,73 @@ needs() {
     log_verbose "  ✓ Found: $cmd_path"
     return 0
   else
-    err "Missing dependency: $cmd"
+    err "Missing required dependency: $cmd
+
+This command is required for migration to work.
+
+Installation instructions:
+$(case "$cmd" in
+  wp)
+    echo "  # WP-CLI (WordPress command-line tool)
+  # macOS: brew install wp-cli
+  # Linux: curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x wp-cli.phar && sudo mv wp-cli.phar /usr/local/bin/wp
+  # Verify: wp --version"
+    ;;
+  rsync)
+    echo "  # rsync (file synchronization tool)
+  # macOS: brew install rsync (or use built-in)
+  # Debian/Ubuntu: sudo apt-get install rsync
+  # RHEL/CentOS: sudo yum install rsync
+  # Verify: rsync --version"
+    ;;
+  ssh)
+    echo "  # SSH client
+  # macOS: built-in (check with: which ssh)
+  # Debian/Ubuntu: sudo apt-get install openssh-client
+  # RHEL/CentOS: sudo yum install openssh-clients
+  # Verify: ssh -V"
+    ;;
+  gzip)
+    echo "  # gzip (compression tool)
+  # Usually pre-installed on most systems
+  # macOS: built-in
+  # Debian/Ubuntu: sudo apt-get install gzip
+  # RHEL/CentOS: sudo yum install gzip
+  # Verify: gzip --version"
+    ;;
+  unzip)
+    echo "  # unzip (archive extraction tool for ZIP files)
+  # macOS: brew install unzip (or use built-in)
+  # Debian/Ubuntu: sudo apt-get install unzip
+  # RHEL/CentOS: sudo yum install unzip
+  # Verify: unzip -v"
+    ;;
+  tar)
+    echo "  # tar (archive tool)
+  # Usually pre-installed on most systems
+  # macOS: built-in
+  # Debian/Ubuntu: sudo apt-get install tar
+  # RHEL/CentOS: sudo yum install tar
+  # Verify: tar --version"
+    ;;
+  file)
+    echo "  # file (file type detection tool)
+  # macOS: brew install file (or use built-in)
+  # Debian/Ubuntu: sudo apt-get install file
+  # RHEL/CentOS: sudo yum install file
+  # Verify: file --version"
+    ;;
+  *)
+    echo "  # Generic installation:
+  # Check your system's package manager
+  # macOS: brew install $cmd
+  # Debian/Ubuntu: sudo apt-get install $cmd
+  # RHEL/CentOS: sudo yum install $cmd"
+    ;;
+esac)
+
+After installation, verify with:
+  which $cmd && $cmd --version"
   fi
 }
 
@@ -113,11 +179,32 @@ validate_url() {
   local url="$1" flag_name="$2"
   # Basic URL validation: must start with http:// or https://
   if [[ ! "$url" =~ ^https?:// ]]; then
-    err "$flag_name must be a valid URL starting with http:// or https:// (got: $url)"
+    err "$flag_name must be a valid URL starting with http:// or https://
+
+Invalid URL: $url
+
+Common mistakes:
+  • Missing protocol: use http://example.com (not example.com)
+  • Wrong protocol: use http:// or https:// (not ftp:// or file://)
+
+Examples:
+  $flag_name http://example.com
+  $flag_name https://staging.example.com
+  $flag_name https://example.com/subdir"
   fi
   # Ensure URL has a domain part after protocol
   if [[ ! "$url" =~ ^https?://[^/]+ ]]; then
-    err "$flag_name must include a domain name (got: $url)"
+    err "$flag_name must include a domain name after the protocol.
+
+Invalid URL: $url
+
+The URL must have a domain name after http:// or https://
+
+Examples:
+  ✓ Correct: http://example.com
+  ✓ Correct: https://staging.example.com/wordpress
+  ✗ Wrong: http://
+  ✗ Wrong: https:///path"
   fi
 }
 
@@ -855,7 +942,14 @@ check_disk_space_for_archive() {
 
   log_verbose "Calculating archive size..."
   archive_size_bytes=$(stat -f%z "$archive_path" 2>/dev/null || stat -c%s "$archive_path" 2>/dev/null)
-  [[ -n "$archive_size_bytes" ]] || err "Unable to determine archive size: $archive_path"
+  [[ -n "$archive_size_bytes" ]] || err "Unable to determine archive size: $archive_path
+
+Next steps:
+  1. Verify file exists and is readable:
+       ls -lh \"$archive_path\"
+  2. Check file permissions:
+       stat \"$archive_path\"
+  3. Ensure you have read access to the file"
 
   # Need 3x archive size: 1x for archive, 1x for extraction, 1x buffer
   required_bytes=$((archive_size_bytes * 3))
@@ -877,12 +971,28 @@ check_disk_space_for_archive() {
   log "  Available: ${available_mb}MB"
 
   if [[ $available_bytes -lt $required_bytes ]]; then
-    err "Insufficient disk space. Need ${required_mb}MB but only ${available_mb}MB available.
-Archive: ${archive_size_mb}MB
-Required: ${required_mb}MB (3x for archive + extraction + buffer)
-Available: ${available_mb}MB
+    err "Insufficient disk space for archive extraction.
 
-Free up space or move the archive to a location with more available space."
+Archive size: ${archive_size_mb}MB
+Required space: ${required_mb}MB (3x archive size for safe extraction)
+Available space: ${available_mb}MB
+Shortfall: $((required_mb - available_mb))MB
+
+Why 3x? Archive extraction needs:
+  1. Original archive (${archive_size_mb}MB)
+  2. Extracted files (${archive_size_mb}MB)
+  3. Safety buffer (${archive_size_mb}MB)
+
+Next steps:
+  1. Free up disk space:
+       df -h .
+       # Delete old backups, logs, or temporary files
+  2. Move archive to a location with more space:
+       # Check space on other volumes/partitions
+       df -h
+  3. Use a smaller working directory (if archive is very large):
+       export TMPDIR=/path/to/large/volume
+  4. Clean up WordPress uploads or other large files temporarily"
   fi
 
   log "Disk space check: PASSED"
@@ -905,7 +1015,28 @@ extract_archive_to_temp() {
     rm -rf "$ARCHIVE_EXTRACT_DIR"
     local format_name
     format_name=$(get_archive_format_name)
-    err "Failed to extract $format_name archive: $archive_path"
+    err "Failed to extract $format_name archive: $archive_path
+
+Possible causes:
+  • Archive file is corrupted
+  • Incorrect archive format (try --archive-type to force format)
+  • Insufficient disk space during extraction
+  • Missing extraction tools (unzip, tar, gzip)
+
+Next steps:
+  1. Verify archive integrity:
+       file \"$archive_path\"
+       # For ZIP: unzip -t \"$archive_path\"
+       # For tar.gz: tar -tzf \"$archive_path\" >/dev/null
+  2. Check available disk space:
+       df -h .
+  3. Verify extraction tools are installed:
+       which unzip tar gzip
+  4. Try extracting manually to see detailed error:
+       unzip -t \"$archive_path\"  # for ZIP
+       tar -xzf \"$archive_path\"  # for tar.gz
+  5. If format detection failed, specify type explicitly:
+       --archive-type duplicator  # or jetpack"
   fi
 
   log "Archive extracted successfully"
@@ -927,18 +1058,40 @@ find_archive_database_file() {
     local format_name
     format_name=$(get_archive_format_name)
     err "Unable to locate database file in $format_name archive.
+
 Archive extracted to: $extract_dir
 
-Please verify this is a valid $format_name backup archive."
+Expected database file patterns for $format_name:
+$([ "$format_name" = "Duplicator" ] && echo "  • dup-installer/dup-database__*.sql")
+$([ "$format_name" = "Jetpack" ] && echo "  • *.sql or */database.sql")
+
+Next steps:
+  1. Inspect extracted archive contents:
+       ls -laR \"$extract_dir\"
+  2. Look for SQL files manually:
+       find \"$extract_dir\" -name \"*.sql\" -type f
+  3. Verify this is a complete $format_name backup (not partial)
+  4. If using wrong adapter, try specifying format:
+       --archive-type duplicator  # or jetpack
+  5. Check if archive was created correctly by backup plugin"
   fi
 
   if [[ -z "$db_file" ]]; then
     local format_name
     format_name=$(get_archive_format_name)
     err "Unable to locate database file in $format_name archive.
+
 Archive extracted to: $extract_dir
 
-Please verify this is a valid $format_name backup archive."
+Database file search returned empty result. This may indicate:
+  • Incomplete backup archive
+  • Corrupted archive structure
+  • Wrong archive adapter for this backup format
+
+Next steps:
+  1. Search for SQL files manually:
+       find \"$extract_dir\" -name \"*.sql\"
+  2. Verify archive completeness"
   fi
 
   ARCHIVE_DB_FILE="$db_file"
@@ -961,18 +1114,42 @@ find_archive_wp_content_dir() {
     local format_name
     format_name=$(get_archive_format_name)
     err "Unable to locate wp-content directory in $format_name archive.
+
 Archive extracted to: $extract_dir
 
-Please verify this is a valid $format_name backup archive."
+wp-content should contain subdirectories like:
+  • plugins/
+  • themes/
+  • uploads/
+
+Next steps:
+  1. Inspect extracted archive structure:
+       ls -laR \"$extract_dir\"
+  2. Look for wp-content manually:
+       find \"$extract_dir\" -type d -name \"wp-content\"
+  3. Verify this is a complete WordPress backup
+  4. If backup only contains database, you may need to migrate wp-content separately:
+       # Use push mode to sync wp-content from another server
+  5. Check if archive was created correctly by backup plugin"
   fi
 
   if [[ -z "$wp_content_dir" ]]; then
     local format_name
     format_name=$(get_archive_format_name)
     err "Unable to locate wp-content directory in $format_name archive.
+
 Archive extracted to: $extract_dir
 
-Please verify this is a valid $format_name backup archive."
+wp-content directory search returned empty result. This may indicate:
+  • Database-only backup (no files included)
+  • Incomplete backup archive
+  • Non-standard WordPress directory structure
+
+Next steps:
+  1. Search for common WordPress directories:
+       find \"$extract_dir\" -type d -name \"plugins\" -o -name \"themes\" -o -name \"uploads\"
+  2. If this is a database-only backup, skip --archive mode and use push mode instead
+  3. Contact backup plugin support if structure is unexpected"
   fi
 
   ARCHIVE_WP_CONTENT="$wp_content_dir"
@@ -1488,7 +1665,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --version|-v) print_version; exit 0 ;;
     --help|-h) print_usage; exit 0 ;;
-    *) err "Unknown argument: $1 (see --help)";;
+    *) err "Unknown argument: $1
+
+Next steps:
+  1. Run: ./wp-migrate.sh --help
+  2. Check for typos in flag names (--dest-host, --archive, etc.)
+  3. Ensure flags use = syntax: --flag=value OR space syntax: --flag value";;
   esac
 done
 
@@ -1507,9 +1689,17 @@ fi
 # --------------------
 if [[ -n "$ARCHIVE_FILE" && ( -n "$DEST_HOST" || -n "$DEST_ROOT" ) ]]; then
   err "--archive is mutually exclusive with --dest-host/--dest-root.
+
+You cannot use both push mode and archive mode simultaneously.
+
 Choose one mode:
-  Push mode: --dest-host and --dest-root
-  Archive mode: --archive </path/to/backup>"
+  • Push mode (migrate via SSH):
+      ./wp-migrate.sh --dest-host user@host --dest-root /path
+
+  • Archive mode (import backup):
+      ./wp-migrate.sh --archive /path/to/backup.zip
+
+Run ./wp-migrate.sh --help for more examples."
 fi
 
 if [[ -n "$ARCHIVE_FILE" ]]; then
@@ -1544,17 +1734,42 @@ Please install tar (usually pre-installed; check your system)"
     # User specified adapter type explicitly
     if ! load_adapter "$ARCHIVE_TYPE"; then
       err "Unknown archive type: $ARCHIVE_TYPE
-Available adapters: ${AVAILABLE_ADAPTERS[*]}"
+
+Available archive types: ${AVAILABLE_ADAPTERS[*]}
+
+Next steps:
+  1. Check for typos in --archive-type value
+  2. Use one of the supported types:
+       --archive-type duplicator  # For Duplicator Pro/Lite backups
+       --archive-type jetpack     # For Jetpack Backup archives
+  3. Or remove --archive-type to auto-detect format"
     fi
     ARCHIVE_ADAPTER="$ARCHIVE_TYPE"
   else
     # Auto-detect adapter from archive
     ARCHIVE_ADAPTER=$(detect_adapter "$ARCHIVE_FILE")
     if [[ -z "$ARCHIVE_ADAPTER" ]]; then
-      err "Unable to detect archive format. Please specify with --archive-type <type>
-Available types: ${AVAILABLE_ADAPTERS[*]}
+      err "Unable to auto-detect archive format for: $ARCHIVE_FILE
 
-Example: --archive file.zip --archive-type duplicator"
+The archive doesn't match any known backup plugin format.
+
+Supported formats:
+  • Duplicator Pro/Lite (.zip with installer.php)
+  • Jetpack Backup (.tar.gz or .zip)
+
+Next steps:
+  1. Verify this is a valid WordPress backup archive:
+       file \"$ARCHIVE_FILE\"
+  2. Check which backup plugin created this archive
+  3. Try specifying the format explicitly:
+       --archive \"$ARCHIVE_FILE\" --archive-type duplicator
+       --archive \"$ARCHIVE_FILE\" --archive-type jetpack
+  4. If using an unsupported backup plugin, you may need to:
+       • Extract the archive manually
+       • Import database via wp db import
+       • Sync wp-content via push mode from another server
+
+Available types: ${AVAILABLE_ADAPTERS[*]}"
     fi
   fi
 
@@ -1563,24 +1778,57 @@ Example: --archive file.zip --archive-type duplicator"
 elif [[ -n "$DEST_HOST" || -n "$DEST_ROOT" ]]; then
   MIGRATION_MODE="push"
 else
-  err "No migration mode specified. Choose one:
-  Push mode: --dest-host <user@host> --dest-root </path>
-  Archive mode: --archive </path/to/backup>
-Run --help for more information."
+  err "No migration mode specified. You must choose either push mode or archive mode.
+
+Push mode (migrate to remote server via SSH):
+  ./wp-migrate.sh --dest-host user@host --dest-root /var/www/site
+
+Archive mode (import local backup):
+  ./wp-migrate.sh --archive /path/to/backup.zip
+
+Next steps:
+  1. Run: ./wp-migrate.sh --help
+  2. Choose which mode suits your use case
+  3. Run with appropriate flags"
 fi
 
 # ----------
 # Preflight
 # ----------
-[[ -f "./wp-config.php" ]] || err "Run this from a WordPress root directory (wp-config.php not found)."
+[[ -f "./wp-config.php" ]] || err "WordPress installation not detected. wp-config.php not found in current directory.
+
+Current directory: $PWD
+
+Next steps:
+  1. Verify you're in the WordPress root directory:
+       ls -la wp-config.php
+  2. If wp-config.php exists elsewhere, cd to that directory first
+  3. For push mode: Run from SOURCE WordPress root
+  4. For archive mode: Run from DESTINATION WordPress root"
 
 if [[ "$MIGRATION_MODE" == "push" ]]; then
-  [[ -n "$DEST_HOST" && -n "$DEST_ROOT" ]] || err "Push mode requires both --dest-host and --dest-root."
+  [[ -n "$DEST_HOST" && -n "$DEST_ROOT" ]] || err "Push mode requires both --dest-host and --dest-root flags.
+
+Missing: $([ -z "$DEST_HOST" ] && echo "--dest-host")$([ -z "$DEST_HOST" ] && [ -z "$DEST_ROOT" ] && echo " and ")$([ -z "$DEST_ROOT" ] && echo "--dest-root")
+
+Correct usage:
+  ./wp-migrate.sh --dest-host user@remote.server --dest-root /var/www/html
+
+Example:
+  ./wp-migrate.sh --dest-host wp@example.com --dest-root /home/wp/public_html"
 elif [[ "$MIGRATION_MODE" == "archive" ]]; then
   [[ -n "$ARCHIVE_FILE" ]] || err "Archive mode requires --archive."
 
   # Validate archive file exists
-  [[ -f "$ARCHIVE_FILE" ]] || err "Archive file not found: $ARCHIVE_FILE"
+  [[ -f "$ARCHIVE_FILE" ]] || err "Archive file not found: $ARCHIVE_FILE
+
+Next steps:
+  1. Verify the file path is correct:
+       ls -lh \"$ARCHIVE_FILE\"
+  2. Check for typos in the path
+  3. Ensure you have read permissions:
+       ls -l \"$(dirname "$ARCHIVE_FILE")\"
+  4. Try using an absolute path instead of relative path"
 
   # Validate push-mode-only flags aren't used in archive mode
   if [[ -n "$DEST_HOME_OVERRIDE" || -n "$DEST_SITE_OVERRIDE" || -n "$DEST_DOMAIN_OVERRIDE" ]]; then
@@ -1636,11 +1884,29 @@ if [[ "$MIGRATION_MODE" == "push" ]]; then
   # Test SSH connectivity
   log "Testing SSH connection to $DEST_HOST..."
   if ! ssh_run "$DEST_HOST" "echo 'SSH connection successful'" >/dev/null 2>&1; then
-    err "Cannot connect to $DEST_HOST via SSH. Check:
-  - Host is reachable
-  - SSH key authentication is configured
-  - Firewall allows SSH connections
-  - Hostname/IP is correct"
+    err "Cannot connect to $DEST_HOST via SSH.
+
+Common causes:
+  • Host is unreachable (network/DNS issue)
+  • SSH key authentication not configured
+  • Wrong username or hostname
+  • Firewall blocking SSH (port 22)
+  • SSH service not running on remote host
+
+Next steps:
+  1. Test basic connectivity:
+       ping ${DEST_HOST##*@}
+  2. Test SSH connection manually:
+       ssh $DEST_HOST \"echo 'Connection test'\"
+  3. Verify SSH key is added to remote authorized_keys:
+       ssh-copy-id $DEST_HOST
+  4. Check SSH config and permissions:
+       ls -la ~/.ssh/
+  5. Try with verbose SSH output:
+       ssh -vvv $DEST_HOST
+
+If using a bastion/jump host, add --ssh-opt:
+  --ssh-opt ProxyJump=bastion.example.com"
   fi
   log "SSH connection to $DEST_HOST verified."
 fi
@@ -1648,13 +1914,46 @@ fi
 # Verify WP installs
 if [[ "$MIGRATION_MODE" == "push" ]]; then
   log "Verifying SOURCE WordPress at: $PWD"
-  wp_local core is-installed || err "Source WordPress not detected."
+  wp_local core is-installed || err "Source WordPress not detected at: $PWD
+
+Next steps:
+  1. Verify WordPress is installed:
+       wp core version
+  2. Check wp-config.php has correct database credentials:
+       wp db check
+  3. Ensure WP-CLI can connect to database:
+       wp db query \"SELECT COUNT(*) FROM wp_options\"
+  4. Verify you're in the WordPress root directory:
+       ls -la wp-config.php wp-content/"
 
   log "Verifying DEST WordPress at: $DEST_HOST:$DEST_ROOT"
-  wp_remote "$DEST_HOST" "$DEST_ROOT" core is-installed || err "Destination WordPress not detected."
+  wp_remote "$DEST_HOST" "$DEST_ROOT" core is-installed || err "Destination WordPress not detected at: $DEST_HOST:$DEST_ROOT
+
+Next steps:
+  1. Verify WordPress is installed on destination:
+       ssh $DEST_HOST \"cd $DEST_ROOT && wp core version\"
+  2. Check destination wp-config.php exists:
+       ssh $DEST_HOST \"ls -la $DEST_ROOT/wp-config.php\"
+  3. Verify database connection on destination:
+       ssh $DEST_HOST \"cd $DEST_ROOT && wp db check\"
+  4. Ensure WP-CLI is installed on destination:
+       ssh $DEST_HOST \"which wp && wp --version\""
 elif [[ "$MIGRATION_MODE" == "archive" ]]; then
   log "Verifying DEST WordPress at: $PWD"
-  wp_local core is-installed || err "Destination WordPress not detected."
+  wp_local core is-installed || err "Destination WordPress not detected at: $PWD
+
+Archive mode requires an existing WordPress installation at the destination.
+
+Next steps:
+  1. Verify WordPress is installed:
+       wp core version
+  2. Check database connection:
+       wp db check
+  3. If WordPress is not installed, install it first:
+       wp core download
+       wp config create --dbname=DB --dbuser=USER --dbpass=PASS
+       wp core install --url=http://example.com --title=Site --admin_user=admin
+  4. Then re-run the archive import"
 fi
 
 # ==================================================================================
@@ -1751,7 +2050,18 @@ fi
 
 if $GZIP_DB && $IMPORT_DB; then
   if ! ssh_run "$DEST_HOST" "command -v gzip >/dev/null 2>&1"; then
-    err "Destination is missing gzip. Install gzip or re-run with --no-gzip to import without compression."
+    err "Destination server is missing gzip command.
+
+The database dump will be compressed with gzip, but the destination cannot decompress it.
+
+Solutions:
+  1. Install gzip on destination server:
+       ssh $DEST_HOST \"sudo apt-get install gzip\"  # Debian/Ubuntu
+       ssh $DEST_HOST \"sudo yum install gzip\"      # RHEL/CentOS
+  2. Or skip compression by adding flag:
+       --no-gzip
+
+Note: Compression reduces transfer time but requires gzip on both ends."
   fi
 fi
 
@@ -1888,7 +2198,24 @@ else
           log "  Expected: $SOURCE_DB_PREFIX"
           log "  Actual: $ACTUAL_PREFIX"
           ssh_run "$DEST_HOST" "cd \"$DEST_ROOT\" && mv wp-config.php.bak wp-config.php 2>/dev/null"
-          err "Cannot proceed with wrong table prefix in wp-config.php. Migration aborted."
+          err "Cannot proceed with wrong table prefix in wp-config.php. Migration aborted.
+
+Problem: Failed to update table prefix from '$DEST_DB_PREFIX' to '$SOURCE_DB_PREFIX'
+
+This is a critical error because the database tables use prefix '$SOURCE_DB_PREFIX' but
+wp-config.php still has '$DEST_DB_PREFIX', causing WordPress to fail.
+
+Next steps:
+  1. Manually update wp-config.php on destination:
+       ssh $DEST_HOST \"vi $DEST_ROOT/wp-config.php\"
+       # Change: \\\$table_prefix = '$DEST_DB_PREFIX';
+       # To:     \\\$table_prefix = '$SOURCE_DB_PREFIX';
+  2. Verify the update worked:
+       ssh $DEST_HOST \"cd $DEST_ROOT && wp db prefix\"
+       # Should output: $SOURCE_DB_PREFIX
+  3. Re-run the migration script
+
+The wp-config.php has been restored to its original state for safety."
         fi
       else
         log "Table prefix updated successfully"
@@ -2353,11 +2680,45 @@ else
             log "  Expected: $IMPORTED_DB_PREFIX"
             log "  Actual: $ACTUAL_PREFIX"
             mv wp-config.php.bak wp-config.php 2>/dev/null
-            err "Cannot proceed with wrong table prefix in wp-config.php. Migration aborted."
+            err "Cannot proceed with wrong table prefix in wp-config.php. Migration aborted.
+
+Problem: Failed to update table prefix to '$IMPORTED_DB_PREFIX'
+
+This is a critical error because the imported database tables use prefix '$IMPORTED_DB_PREFIX' but
+wp-config.php has a different prefix, causing WordPress to fail.
+
+Next steps:
+  1. Manually update wp-config.php:
+       vi $PWD/wp-config.php
+       # Change \\\$table_prefix line to: \\\$table_prefix = '$IMPORTED_DB_PREFIX';
+  2. Verify the update worked:
+       wp db prefix
+       # Should output: $IMPORTED_DB_PREFIX
+  3. Re-run the archive import
+
+The wp-config.php has been restored to its original state for safety."
           fi
         else
           log "ERROR: sed command failed to update wp-config.php"
-          err "Cannot proceed with wrong table prefix in wp-config.php. Migration aborted."
+          err "Cannot proceed with wrong table prefix in wp-config.php. Migration aborted.
+
+Problem: sed command failed to update wp-config.php
+
+This usually happens due to:
+  • File permissions (wp-config.php not writable)
+  • Unusual table_prefix line format in wp-config.php
+  • SELinux or other security restrictions
+
+Next steps:
+  1. Check wp-config.php permissions:
+       ls -la $PWD/wp-config.php
+  2. Manually update the table prefix:
+       vi $PWD/wp-config.php
+       # Find line: \\\$table_prefix = 'something';
+       # Change to: \\\$table_prefix = '$IMPORTED_DB_PREFIX';
+  3. Verify the change:
+       wp db prefix
+  4. Re-run the archive import"
         fi
       else
         log "Table prefix updated successfully"
@@ -2377,7 +2738,20 @@ Assumed prefix: $DEST_DB_PREFIX_BEFORE
 Could not find table: ${DEST_DB_PREFIX_BEFORE}options
 
 The imported database appears to be corrupt, incomplete, or uses a non-standard structure.
-Please verify this is a valid backup archive."
+
+Next steps:
+  1. Check what tables were actually imported:
+       wp db query \"SHOW TABLES\"
+  2. Look for core WordPress tables (options, posts, users):
+       wp db query \"SHOW TABLES\" | grep -E '(options|posts|users)'
+  3. If tables exist with different prefix, note the prefix and update wp-config.php:
+       # Example: if you see 'custom_prefix_options' instead of 'wp_options'
+       vi wp-config.php
+       # Set: \\\$table_prefix = 'custom_prefix_';
+  4. Verify this is a complete WordPress database backup:
+       # Check archive contents or contact backup plugin support
+  5. If database import was interrupted, restore backup and retry:
+       wp db import <(gunzip -c db-backups/pre-archive-backup_*.sql.gz)"
     fi
 
     log "Verified: ${IMPORTED_DB_PREFIX}options table is accessible"
