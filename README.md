@@ -3,7 +3,7 @@
 `wp-migrate.sh` migrates WordPress sites in two modes:
 
 1. **Push mode**: Pushes a WordPress site's `wp-content` directory and database export from a source server to a destination server via SSH.
-2. **Archive mode**: Imports WordPress backup archives (currently supports Duplicator; designed to support Jetpack, UpdraftPlus, and other formats in future releases) directly on the destination server without requiring SSH access to the source.
+2. **Archive mode**: Imports WordPress backup archives (currently supports **Duplicator** and **Jetpack Backup**; designed to support UpdraftPlus and other formats in future releases) directly on the destination server without requiring SSH access to the source.
 
 Both modes coordinate the entire workflow, including maintenance mode, database handling, file sync, and cache maintenance.
 
@@ -21,7 +21,7 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - Supports a comprehensive dry-run mode that previews every step without mutating either server.
 
 ### Archive Mode
-- Imports WordPress backup archives (currently **Duplicator only**; designed to support additional formats).
+- Imports WordPress backup archives (currently supports **Duplicator** and **Jetpack Backup**; designed to support additional formats).
 - **Extensible adapter system** makes adding new backup formats simple (see [src/lib/adapters/README.md](src/lib/adapters/README.md) for contributor guide).
 - **Auto-detects backup format** or accepts explicit `--archive-type` for manual override.
 - Automatically extracts and detects database and wp-content from archives with smart directory scoring.
@@ -47,7 +47,7 @@ Run the script from the WordPress root on the source server (where `wp-config.ph
 ### Archive Mode
 - WordPress CLI (`wp`)
 - `file` (for archive type detection)
-- `unzip` (for Duplicator archives; future adapters may require `tar`)
+- `unzip` and `tar` (for archive format extraction - Duplicator uses ZIP, Jetpack uses TAR.GZ)
 
 Run the script from the WordPress root on the destination server (where `wp-config.php` lives). The backup archive must be accessible on the filesystem.
 
@@ -79,24 +79,29 @@ Common examples:
 ```
 
 Common examples:
-- Import a Duplicator backup archive (auto-detect):
+- Import a backup archive (auto-detect format):
   ```bash
-  ./wp-migrate.sh --archive /backups/site_20251009.zip
+  # Duplicator
+  ./wp-migrate.sh --archive /backups/duplicator-site.zip
+
+  # Jetpack Backup
+  ./wp-migrate.sh --archive /backups/jetpack-backup.tar.gz
   ```
 - Import with explicit format specification:
   ```bash
   ./wp-migrate.sh --archive /backups/site.zip --archive-type duplicator
+  ./wp-migrate.sh --archive /backups/backup.tar.gz --archive-type jetpack
   ```
 - Preview import without making changes (dry run):
   ```bash
-  ./wp-migrate.sh --archive /backups/site_20251009.zip --dry-run
+  ./wp-migrate.sh --archive /backups/site.zip --dry-run
   ```
 - **Backward compatible** - old Duplicator flag still works:
   ```bash
   ./wp-migrate.sh --duplicator-archive /backups/site.zip
   ```
 
-**Note:** Currently only Duplicator archives are supported. The architecture supports adding Jetpack, UpdraftPlus, and other formats—contributors can add adapters following the guide in [src/lib/adapters/README.md](src/lib/adapters/README.md).
+**Note:** Currently supports **Duplicator** and **Jetpack Backup** archives. The architecture supports adding UpdraftPlus and other formats—contributors can add adapters following the guide in [src/lib/adapters/README.md](src/lib/adapters/README.md).
 
 ## Options
 
@@ -125,8 +130,8 @@ Common examples:
 ### Archive Mode Options
 | Flag | Description |
 | ---- | ----------- |
-| `--archive </path/to/backup>` | **Required.** Path to the backup archive file. Format is auto-detected (currently only Duplicator supported; mutually exclusive with `--dest-host`). |
-| `--archive-type <type>` | **Optional.** Explicitly specify archive format (currently only `duplicator`). Useful when auto-detection fails. Available types are listed if detection fails. |
+| `--archive </path/to/backup>` | **Required.** Path to the backup archive file. Format is auto-detected (currently supports `duplicator` and `jetpack`; mutually exclusive with `--dest-host`). |
+| `--archive-type <type>` | **Optional.** Explicitly specify archive format (`duplicator` or `jetpack`). Useful when auto-detection fails. Available types are listed if detection fails. |
 | `--duplicator-archive </path/to/backup.zip>` | **Deprecated.** Use `--archive` instead. Still works for backward compatibility (treated as `--archive --archive-type=duplicator`). |
 
 ## Workflow Overview
@@ -144,8 +149,8 @@ Common examples:
 
 ### Archive Mode
 1. **Preflight**: Ensures the script runs from a WordPress root, verifies required binaries, confirms WordPress installation, validates the archive file exists.
-2. **Format Detection**: Auto-detects archive format (currently Duplicator only) by trying each adapter's validation function, or uses explicit `--archive-type` if provided.
-3. **Dependency Check**: Verifies format-specific tools are available (e.g., `unzip` for Duplicator).
+2. **Format Detection**: Auto-detects archive format (Duplicator or Jetpack) by trying each adapter's validation function, or uses explicit `--archive-type` if provided.
+3. **Dependency Check**: Verifies format-specific tools are available (e.g., `unzip` for Duplicator, `tar` for Jetpack).
 4. **URL Capture**: Captures current destination site URLs (`home` and `siteurl` options) before any operations.
 5. **Disk Space Check**: Validates that 3x the archive size is available (archive + extraction + buffer) and fails early if insufficient.
 6. **Extraction**: Extracts the archive to a temporary directory using the appropriate adapter's extract function.

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Jetpack Backup adapter**: Added support for Jetpack Backup archives (ZIP, TAR.GZ, or extracted directory format). Handles Jetpack's multi-file SQL structure (one table per file in `sql/` directory) by consolidating into a single database dump before import. Auto-detects Jetpack backups via `meta.json` signature file and `sql/wp_options.sql` presence. Supports both archive files and already-extracted directory paths. Table prefix detection extracts from SQL filenames (e.g., `wp_options.sql` → `wp_`). wp-content location detected at root level of backup. Example: `./wp-migrate.sh --archive /path/to/jetpack-backup.tar.gz` or `./wp-migrate.sh --archive /path/to/extracted-jetpack-backup/`.
+
+### Changed
+- Updated `AVAILABLE_ADAPTERS` to include "jetpack" alongside "duplicator" for auto-detection
+- Updated Makefile build order to include `src/lib/adapters/jetpack.sh` in concatenation
+- Updated README.md and help text to reflect Jetpack Backup support (no longer states "Duplicator only")
+
+### Fixed
+- **HIGH**: Fixed missing tar dependency check causing cryptic "command not found" errors during Jetpack archive detection. Added explicit `tar` check in preflight alongside existing `unzip` check. With `set -e` enabled, calling `tar -tzf` during adapter validation would kill the script before the friendly dependency error message. Now checks for both `unzip` (Duplicator) and `tar` (Jetpack) before attempting archive detection.
+- **HIGH**: Fixed BSD sort incompatibility in Jetpack adapter. Replaced `sort -z` (GNU-only) with portable array sorting using `printf` and `while read`. BSD sort (default on macOS) doesn't support `-z` flag, causing Jetpack imports to fail on macOS. New approach works on all platforms (Linux, macOS, BSD).
+- **HIGH**: Fixed Bash 3.2 incompatibility in Jetpack adapter. Replaced `mapfile` (Bash 4+) with portable `while read` loop for collecting SQL files. Prevents "mapfile: command not found" errors on macOS (default Bash 3.2) when importing Jetpack backups.
+- **MEDIUM**: Fixed Jetpack adapter silently skipping hidden files when copying extracted backup directories. Changed `cp -a "$archive"/* "$dest/"` to `cp -a "$archive"/. "$dest"/` to include dotfiles like `.htaccess` and `.user.ini` which are critical for site configuration.
+
 ### Added (v2.0.0 - Development)
 - **[v2 ONLY]** **Archive Adapter System**: Implemented extensible plugin adapter architecture for supporting multiple WordPress backup formats. Currently ships with Duplicator adapter only; designed to support Jetpack, UpdraftPlus, BackWPup, and other formats in future releases. Each backup plugin format is handled by its own adapter module in `src/lib/adapters/`. Includes auto-detection of archive formats and manual override via `--archive-type` flag. Maintainers can add new formats by creating a single adapter file without modifying core code (see `src/lib/adapters/README.md` for contributor guide).
 - **[v2 ONLY]** **New `--archive` flag**: Replaces `--duplicator-archive` as the primary archive import flag. Supports any backup format via the adapter system. Example: `--archive /path/to/backup.zip` with optional `--archive-type duplicator` for explicit format specification.
