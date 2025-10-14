@@ -73,9 +73,8 @@ fi
 if [[ -n "$ARCHIVE_FILE" ]]; then
   MIGRATION_MODE="archive"
 
-  # Load adapter base functions
-  # shellcheck disable=SC1091  # Source path is dynamic
-  source "$(dirname "${BASH_SOURCE[0]}")/lib/adapters/base.sh"
+  # Note: Adapter files are already concatenated into the built script by Makefile
+  # No dynamic sourcing needed - all adapter code is already loaded
 
   # Detect or load adapter
   if [[ -n "$ARCHIVE_TYPE" ]]; then

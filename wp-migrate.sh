@@ -316,23 +316,19 @@ wp_local() { wp --path="$PWD" "$@"; }
 # List of available adapters (add new adapters here)
 AVAILABLE_ADAPTERS=("duplicator")
 
-# Load adapter functions by sourcing the adapter file
+# Verify adapter exists (adapter functions already loaded in built script)
 # Usage: load_adapter <adapter_name>
-# Returns: 0 if loaded successfully, 1 if adapter not found
+# Returns: 0 if adapter functions exist, 1 if not found
 load_adapter() {
   local adapter_name="$1"
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  local adapter_file="$script_dir/adapters/${adapter_name}.sh"
 
-  if [[ ! -f "$adapter_file" ]]; then
-    return 1
+  # In the built script, all adapter functions are already defined via concatenation
+  # Just verify the adapter's validate function exists
+  if declare -f "adapter_${adapter_name}_validate" >/dev/null 2>&1; then
+    return 0
   fi
 
-  # Source the adapter file
-  # shellcheck disable=SC1090  # Dynamic source path
-  source "$adapter_file"
-  return 0
+  return 1
 }
 
 # Detect which adapter can handle the given archive
@@ -342,13 +338,8 @@ detect_adapter() {
   local archive="$1"
   local adapter
 
-  # Try each available adapter's validate function
+  # Try each available adapter's validate function (already loaded in built script)
   for adapter in "${AVAILABLE_ADAPTERS[@]}"; do
-    # Load adapter if not already loaded
-    if ! declare -f "adapter_${adapter}_validate" >/dev/null 2>&1; then
-      load_adapter "$adapter" || continue
-    fi
-
     # Call the adapter's validate function
     if "adapter_${adapter}_validate" "$archive" 2>/dev/null; then
       echo "$adapter"
@@ -917,9 +908,8 @@ fi
 if [[ -n "$ARCHIVE_FILE" ]]; then
   MIGRATION_MODE="archive"
 
-  # Load adapter base functions
-  # shellcheck disable=SC1091  # Source path is dynamic
-  source "$(dirname "${BASH_SOURCE[0]}")/lib/adapters/base.sh"
+  # Note: Adapter files are already concatenated into the built script by Makefile
+  # No dynamic sourcing needed - all adapter code is already loaded
 
   # Detect or load adapter
   if [[ -n "$ARCHIVE_TYPE" ]]; then
