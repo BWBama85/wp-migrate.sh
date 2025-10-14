@@ -76,6 +76,29 @@ if [[ -n "$ARCHIVE_FILE" ]]; then
   # Note: Adapter files are already concatenated into the built script by Makefile
   # No dynamic sourcing needed - all adapter code is already loaded
 
+  # Check basic tools needed for adapter detection before calling validate functions
+  # This prevents cryptic "command not found" errors during detection with set -e
+  if ! command -v file >/dev/null 2>&1; then
+    err "Missing required tool for archive detection: file
+Please install the 'file' package (e.g., apt-get install file)"
+  fi
+
+  # Check for archive tools that validate functions might use to inspect contents
+  # We need at least one of these to be able to detect any archive format
+  HAS_ARCHIVE_TOOL=false
+  if command -v unzip >/dev/null 2>&1; then
+    HAS_ARCHIVE_TOOL=true
+  fi
+  if command -v tar >/dev/null 2>&1; then
+    HAS_ARCHIVE_TOOL=true
+  fi
+
+  if ! $HAS_ARCHIVE_TOOL; then
+    err "Missing archive tools for detection. Please install at least one of:
+  - unzip (for ZIP archives like Duplicator)
+  - tar (for TAR/TAR.GZ archives like Jetpack, BackWPup)"
+  fi
+
   # Detect or load adapter
   if [[ -n "$ARCHIVE_TYPE" ]]; then
     # User specified adapter type explicitly
