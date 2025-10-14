@@ -122,11 +122,14 @@ validate_url() {
 }
 
 log() {
-  printf "%s %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE"
+  # Write to stderr to prevent contaminating command substitutions
+  # This ensures log output doesn't interfere with captured return values
+  printf "%s %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE" >&2
 }
 
 log_warning() {
   # Yellow text for warnings (non-critical issues that don't stop migration)
+  # Write to stderr to prevent contaminating command substitutions
   local yellow='\033[1;33m'
   local reset='\033[0m'
   local timestamp
@@ -137,12 +140,12 @@ log_warning() {
   # Always write plain text to log file
   printf "%s\n" "$plain_msg" >> "$LOG_FILE"
 
-  # Write colored output to terminal if interactive
-  if [[ -t 1 ]]; then
-    printf "%s ${yellow}WARNING:${reset} %s\n" "$timestamp" "$*"
+  # Write colored output to stderr (check fd 2, not fd 1)
+  if [[ -t 2 ]]; then
+    printf "%s ${yellow}WARNING:${reset} %s\n" "$timestamp" "$*" >&2
   else
-    # Non-interactive, just echo the plain message
-    printf "%s\n" "$plain_msg"
+    # Non-interactive, just echo the plain message to stderr
+    printf "%s\n" "$plain_msg" >&2
   fi
 }
 
@@ -157,6 +160,8 @@ log_verbose() {
 log_trace() {
   # Logs command execution traces when --trace flag is set
   # Uses cyan color to distinguish from regular logs
+  # CRITICAL: Write to stderr to prevent contaminating command substitutions
+  # Without this, trace output gets captured in variables like SOURCE_DB_PREFIX="$(wp_local ...)"
   if $TRACE_MODE; then
     local cyan='\033[0;36m'
     local reset='\033[0m'
@@ -168,12 +173,12 @@ log_trace() {
     # Always write plain text to log file
     printf "%s\n" "$plain_msg" >> "$LOG_FILE"
 
-    # Write colored output to terminal if interactive
-    if [[ -t 1 ]]; then
-      printf "%s ${cyan}+${reset} %s\n" "$timestamp" "$*"
+    # Write colored output to stderr (check fd 2, not fd 1)
+    if [[ -t 2 ]]; then
+      printf "%s ${cyan}+${reset} %s\n" "$timestamp" "$*" >&2
     else
-      # Non-interactive, just echo the plain message
-      printf "%s\n" "$plain_msg"
+      # Non-interactive, write plain message to stderr
+      printf "%s\n" "$plain_msg" >&2
     fi
   fi
 }
