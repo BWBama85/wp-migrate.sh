@@ -1,0 +1,18 @@
+# CODEOWNERS for wp-migrate.sh
+#
+# This file defines code ownership for the repository.
+# Code owners are automatically requested for review when someone opens a PR.
+#
+# Syntax: path/to/file @github-username
+# * matches everything in the repository
+#
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+* @BWBama85
+
+# Critical files require owner review
+/wp-migrate.sh @BWBama85
+/src/** @BWBama85
+/Makefile @BWBama85
+/.github/** @BWBama85

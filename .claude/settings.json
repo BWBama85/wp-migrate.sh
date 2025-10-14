@@ -1,229 +1,166 @@
 {
-  "systemPrompt": "You are working on wp-migrate.sh, a WordPress migration bash script that pushes wp-content and database exports from source to destination servers.\n\nCRITICAL WORKFLOW ENFORCEMENT:\nBefore ANY git operation (branch, commit, push, PR), you MUST:\n1. Ask the user: 'Are you working on v1.x.x maintenance (main) or v2.0.0 development (v2)?'\n2. Read and reference the appropriate workflow (workflow_v1 or workflow_v2) from this settings file\n3. State which workflow step you're executing (e.g., 'V1 Step 7: Pushing feature branch to main')\n4. Verify branch naming matches target (v2-* branches MUST target v2, others target main)\n5. Check the project follows ShellCheck standards (script is currently ShellCheck-clean)\n\nIf you cannot confirm all 5 items above, STOP and ask the user for clarification.\n\nIMPORTANT: Before starting ANY work, ALWAYS:\n- Ask which version (v1 or v2) the user wants to work on\n- Read project documentation (README.md, CHANGELOG.md)\n- Understand the full scope before making changes\n- Follow the correct workflow for the target version\n\nKey Requirements:\n- v1 work: branch from main → PR to main (production stable)\n- v2 work: branch from v2 → PR to v2 (major refactor, NOT ready for production)\n- NEVER merge v2-* branches directly to main\n- NEVER push directly to main or v2 - ALL merges via GitHub PRs\n- Update CHANGELOG.md in [Unreleased] section for ALL changes (both v1 and v2)\n- Maintain ShellCheck-clean code\n- Use conventional commit messages (feat:, fix:, test:, docs:, chore:, refactor:)",
-
-  "versionContext": {
-    "description": "ALWAYS ask user at session start: 'Working on v1 or v2?'",
-    "v1": {
-      "branch": "main",
-      "purpose": "Production stable releases (v1.x.x)",
-      "status": "Active maintenance - bug fixes and minor features only",
-      "releases": "Tagged and released immediately after merge",
-      "userFacing": true
-    },
-    "v2": {
-      "branch": "v2",
-      "purpose": "Major refactor: modularize codebase, add build system",
-      "status": "Development in progress - NOT production ready",
-      "releases": "No releases until v2 branch merges to main",
-      "userFacing": false,
-      "warning": "v2-* branches must NEVER be merged directly to main"
-    }
-  },
-
-  "customInstructions": {
-    "beforeStarting": [
-      "🚨 CRITICAL: Ask user 'Are you working on v1 (main) or v2 (v2 branch)?'",
-      "Read project documentation (README.md, CHANGELOG.md)",
-      "Verify you're on the correct branch (main for v1, v2 for v2)",
-      "Understand the full scope before making changes",
-      "Review bash best practices and security (script uses set -Eeuo pipefail)"
-    ],
-    "whileCoding": [
-      "Validate ALL user inputs and command-line arguments",
-      "Follow bash best practices (proper quoting, error handling)",
-      "Maintain ShellCheck-clean code (no warnings)",
-      "Ensure code follows existing script style",
-      "Preserve set -Eeuo pipefail safety flags",
-      "Test with real WordPress installations when possible"
-    ],
-    "beforeCommitting": [
-      "Confirm you're on the correct workflow (v1 or v2)",
-      "Test script with --dry-run mode",
-      "Run shellcheck wp-migrate.sh (must pass with no warnings)",
-      "Update CHANGELOG.md in [Unreleased] section",
-      "Verify changes don't break existing functionality",
-      "Review code for security issues (SSH, file operations, DB handling)"
-    ],
-
-    "workflow_v1": {
-      "description": "For v1.x.x maintenance - bug fixes and minor features",
-      "baseBranch": "main",
-      "steps": [
-        "1. git checkout main && git pull --rebase origin main",
-        "2. git checkout -b <type>/<descriptive-slug>  (e.g., fix/url-validation)",
-        "3. Make changes and test with --dry-run",
-        "4. Run shellcheck wp-migrate.sh",
-        "5. Update CHANGELOG.md [Unreleased] section",
-        "6. git add -A && git commit -m 'type: description'",
-        "7. BEFORE pushing: git fetch origin main && check if main has new commits (git log HEAD..origin/main)",
-        "8. IF main has new commits: git merge origin/main, resolve conflicts, git commit",
-        "9. git push origin <branch-name>",
-        "10. Open PR to main (TARGET: main, NOT v2)",
-        "11. After merge, delete feature branch locally and remotely",
-        "12. User decides if release is needed (you ask, don't assume)"
-      ],
-      "branchPrefixes": ["fix/", "feature/", "chore/", "docs/"],
-      "prTarget": "main",
-      "examples": [
-        "fix/maintenance-mode-cleanup → PR to main → v1.1.9 release",
-        "feature/add-retry-logic → PR to main → v1.2.0 release"
-      ]
-    },
-
-    "workflow_v2": {
-      "description": "For v2.0.0 development - major refactor and new architecture",
-      "baseBranch": "v2",
-      "steps": [
-        "1. git checkout v2 && git pull --rebase origin v2",
-        "2. git checkout -b v2-<type>/<descriptive-slug>  (e.g., v2-feature/modularize)",
-        "3. Make changes and test with --dry-run (if applicable)",
-        "4. Run shellcheck on affected files",
-        "5. Update CHANGELOG.md [Unreleased] section (note it's for v2)",
-        "6. git add -A && git commit -m 'type: description'",
-        "7. BEFORE pushing: git fetch origin v2 && check if v2 has new commits (git log HEAD..origin/v2)",
-        "8. IF v2 has new commits: git merge origin/v2, resolve conflicts, make build, git commit",
-        "9. git push origin <branch-name>",
-        "10. Open PR to v2 branch (TARGET: v2, NOT main) ⚠️",
-        "11. After merge, delete feature branch locally and remotely",
-        "12. NO releases until v2 branch is complete and merged to main"
-      ],
-      "branchPrefixes": ["v2-feature/", "v2-fix/", "v2-chore/", "v2-refactor/", "v2-test/"],
-      "prTarget": "v2",
-      "warning": "⚠️ NEVER create PR from v2-* branches to main. Always target v2 branch.",
-      "examples": [
-        "v2-feature/modularize-core → PR to v2 (NOT main)",
-        "v2-refactor/build-system → PR to v2 (NOT main)",
-        "v2-fix/shellcheck-errors → PR to v2 (NOT main)"
-      ]
-    },
-
-    "multiPrStrategy": {
-      "note": "When multiple PRs are in flight (created but not yet merged):",
-      "problem": "If PR A merges before PR B, PR B's branch is now out of date and may have conflicts",
-      "prevention": [
-        "BEFORE creating any PR: Check if base branch has new commits since branch creation",
-        "BEFORE final push to PR: Sync with latest base branch",
-        "AFTER any PR merges to base: Immediately sync all open PR branches with base"
-      ],
-      "v1_strategy": {
-        "description": "For PRs targeting main branch",
-        "onPrCreation": [
-          "1. git fetch origin main",
-          "2. Check: Are there commits on main since your branch was created?",
-          "3. If yes: git merge origin/main (or rebase if no conflicts expected)",
-          "4. Run make build && git add -A && git commit --amend --no-edit",
-          "5. Then create PR"
-        ],
-        "whenAnotherPrMerges": [
-          "1. git fetch origin main",
-          "2. git merge origin/main (resolve any conflicts)",
-          "3. Run make build to regenerate built files",
-          "4. Run shellcheck to verify",
-          "5. git add -A && git commit -m 'Merge latest main branch'",
-          "6. git push"
-        ]
-      },
-      "v2_strategy": {
-        "description": "For PRs targeting v2 branch",
-        "onPrCreation": [
-          "1. git fetch origin v2",
-          "2. Check: Are there commits on v2 since your branch was created?",
-          "3. If yes: git merge origin/v2 (or rebase if no conflicts expected)",
-          "4. Run make build && git add -A && git commit --amend --no-edit",
-          "5. Then create PR"
-        ],
-        "whenAnotherPrMerges": [
-          "1. git fetch origin v2",
-          "2. git merge origin/v2 (resolve any conflicts)",
-          "3. Run make build to regenerate built files",
-          "4. Run shellcheck to verify",
-          "5. git add -A && git commit -m 'Merge latest v2 branch'",
-          "6. git push"
-        ]
-      },
-      "cross_version": "Keep v1 and v2 PRs completely separate. Do NOT merge v2 work into v1.",
-      "proactiveMonitoring": "After completing work on your PR but BEFORE pushing, ALWAYS run: git fetch origin <base-branch> && git log HEAD..origin/<base-branch> to check if base has moved ahead"
-    },
-
-    "branchTypes": {
-      "v1_branches": {
-        "feature/*": "New features for v1.x.x - PR to main",
-        "fix/*": "Bug fixes for v1.x.x - PR to main",
-        "docs/*": "Documentation updates - PR to main",
-        "chore/*": "Maintenance tasks for v1.x.x - PR to main"
-      },
-      "v2_branches": {
-        "v2-feature/*": "New features for v2.0.0 - PR to v2",
-        "v2-fix/*": "Bug fixes during v2 development - PR to v2",
-        "v2-refactor/*": "Code restructuring for v2.0.0 - PR to v2",
-        "v2-chore/*": "Maintenance tasks for v2.0.0 - PR to v2",
-        "v2-test/*": "Testing infrastructure for v2.0.0 - PR to v2"
-      }
-    }
-  },
+  "systemPrompt": "You are working on wp-migrate.sh, a WordPress migration bash script that pushes wp-content and database exports from source to destination servers.\n\n🚨 CRITICAL PR APPROVAL ENFORCEMENT 🚨\n===========================================\nYOU MUST NEVER MERGE ANY PR WITHOUT EXPLICIT USER APPROVAL.\n\nWhen creating PRs:\n1. Create the PR with 'gh pr create'\n2. IMMEDIATELY STOP and tell user: 'PR #X created at <URL>. Please review and approve before merging.'\n3. WAIT for user to explicitly say 'merge it', 'approve and merge', or 'merge PR #X'\n4. ONLY THEN run 'gh pr merge <number>'\n\nDO NOT:\n- ❌ Create and merge PR in same response\n- ❌ Use 'gh pr create && gh pr merge' chained commands  \n- ❌ Assume user wants immediate merge\n- ❌ Merge because 'it looks ready'\n- ❌ Use '--auto' flag on gh pr merge\n\nBREAKING THIS RULE IS COMPLETELY UNACCEPTABLE.\nUSER MUST APPROVE EVERY PR BEFORE MERGE.\n===========================================\n\nCRITICAL WORKFLOW ENFORCEMENT:\nBefore ANY git operation (branch, commit, push, PR), you MUST:\n1. Read and reference the workflow from this settings file\n2. State which workflow step you're executing (e.g., 'Step 7: Pushing feature branch to main')\n3. Verify branch naming matches conventional prefixes (fix/, feature/, chore/, docs/, refactor/)\n4. Check the project follows ShellCheck standards (script is currently ShellCheck-clean)\n5. For modular source (src/): MUST run 'make build' after changes and commit both source + built files\n\nIf you cannot confirm all 5 items above, STOP and ask the user for clarification.\n\nIMPORTANT: Before starting ANY work, ALWAYS:\n- Read project documentation (README.md, CHANGELOG.md)\n- Understand the full scope before making changes\n- Follow the correct workflow\n\nKey Requirements:\n- All work: branch from main → PR to main → USER APPROVAL → merge\n- NEVER push directly to main - ALL merges via GitHub PRs\n- NEVER merge PRs without explicit user approval (see PR APPROVAL ENFORCEMENT above)\n- For src/ changes: MUST run 'make build' before committing\n- Update CHANGELOG.md in [Unreleased] section for ALL changes\n- Maintain ShellCheck-clean code\n- Use conventional commit messages (feat:, fix:, test:, docs:, chore:, refactor:)",
 
   "projectContext": {
+    "version": "v2.0.0+",
+    "architecture": "Modular source with Makefile build system",
     "stack": "Bash script (requires: wp-cli, rsync, ssh, gzip)",
     "testing": "Manual testing with --dry-run flag + ShellCheck linting",
-    "deployment": "Direct usage - users download and run the script",
+    "deployment": "Direct usage - users download single wp-migrate.sh file",
     "branches": {
       "main": {
-        "purpose": "Production stable (v1.x.x releases)",
-        "protection": "All merges via PR",
+        "purpose": "Production stable releases (v2.0.0+)",
+        "structure": "Modular src/ + built wp-migrate.sh",
+        "protection": "All merges via PR with Code Owner approval",
         "releases": "Immediate - tag after merge",
-        "acceptsFrom": ["fix/*", "feature/*", "chore/*", "docs/*"]
+        "acceptsFrom": ["fix/*", "feature/*", "chore/*", "docs/*", "refactor/*"]
       },
-      "v2": {
-        "purpose": "Development branch for v2.0.0 major refactor",
-        "protection": "All merges via PR",
-        "releases": "None until v2 merges to main",
-        "acceptsFrom": ["v2-feature/*", "v2-fix/*", "v2-refactor/*", "v2-chore/*", "v2-test/*"],
-        "warning": "⚠️ This branch will NOT merge to main until v2.0.0 is complete"
+      "v1-stable": {
+        "purpose": "Archived v1.x codebase (historical reference)",
+        "structure": "Single-file wp-migrate.sh (no src/ directory)",
+        "status": "Read-only - no further development",
+        "note": "Final v1 release was v1.1.8"
       }
     },
     "criticalFiles": [
       "README.md - Complete documentation and usage",
-      "CHANGELOG.md - Keep a Changelog format (track both v1 and v2 changes)",
-      "wp-migrate.sh - Main script (v1 on main, v2 on v2 branch)",
-      ".gitmessage - Commit message template",
-      ".github/pull_request_template.md - PR checklist"
+      "CHANGELOG.md - Keep a Changelog format",
+      "wp-migrate.sh - Built artifact (generated by 'make build')",
+      "wp-migrate.sh.sha256 - Checksum (generated by 'make build')",
+      "src/ - Modular source code (edit these, not wp-migrate.sh)",
+      "Makefile - Build system",
+      ".github/CODEOWNERS - Code ownership for PR approvals",
+      ".githooks/pre-commit - Prevents committing without rebuild"
     ],
-    "testCommand": "shellcheck wp-migrate.sh && ./wp-migrate.sh --help"
+    "testCommand": "make test && ./wp-migrate.sh --help"
   },
 
-  "prTargetValidation": {
-    "description": "Dual-branch workflow - validate PR targets carefully",
-    "rules": {
-      "fix/*": "main",
-      "feature/*": "main",
-      "chore/*": "main",
-      "docs/*": "main",
-      "v2-feature/*": "v2",
-      "v2-fix/*": "v2",
-      "v2-refactor/*": "v2",
-      "v2-chore/*": "v2",
-      "v2-test/*": "v2"
+  "buildSystem": {
+    "description": "v2.0.0+ uses modular source code in src/ with Makefile build",
+    "workflow": [
+      "1. Edit files in src/ directory (NOT wp-migrate.sh directly)",
+      "2. Run 'make build' to regenerate wp-migrate.sh + sha256 checksum",
+      "3. Run 'make test' to verify ShellCheck passes",
+      "4. Commit BOTH source files (src/) AND built files (wp-migrate.sh, .sha256)",
+      "5. Pre-commit hook will prevent committing if build is out of date"
+    ],
+    "makeTargets": {
+      "make build": "Concatenate src/ files into wp-migrate.sh + generate checksum",
+      "make test": "Run shellcheck on built wp-migrate.sh",
+      "make clean": "Remove build artifacts (for testing)",
+      "make help": "Show available targets"
     },
-    "forbidden": [
-      "Direct pushes to main (always use PRs)",
-      "Direct pushes to v2 (always use PRs)",
-      "PRs from v2-* branches to main (MUST target v2 branch)",
-      "PRs from non-v2 branches to v2 (MUST target main)"
-    ],
-    "validation": {
-      "beforeCreatingPR": [
-        "Check branch name prefix",
-        "Verify target branch matches prefix (v2-* → v2, others → main)",
-        "Confirm with user if uncertain",
-        "State target branch explicitly: 'Creating PR from fix/bug to main' or 'Creating PR from v2-feature/x to v2'"
-      ]
-    }
+    "sourceStructure": {
+      "src/header.sh": "Shebang, set flags, default variables",
+      "src/lib/core.sh": "Core utilities (log, err, validate_url)",
+      "src/lib/adapters/": "Archive format adapters (extensible system)",
+      "src/lib/functions.sh": "All other functions",
+      "src/main.sh": "Argument parsing and main execution"
+    },
+    "buildOrder": "header → core → adapters → functions → main",
+    "warnings": [
+      "⚠️ NEVER edit wp-migrate.sh directly (it's generated)",
+      "⚠️ NEVER edit wp-migrate.sh.sha256 directly (it's generated)",
+      "⚠️ ALWAYS run 'make build' after editing src/ files",
+      "⚠️ ALWAYS commit both src/ changes AND built files together"
+    ]
   },
 
-  "autoPrompts": {
-    "description": "Automatic prompts after merge confirmations",
-    "onMainMerge": "✅ PR merged to main successfully (v1.x.x)\n✅ Branch cleaned up\n\n🔍 Next Steps:\n- This is a v1 change - should I create a release tag?\n- Update CHANGELOG.md to move [Unreleased] items to [X.X.X] for releases\n- Script is now available for users to download\n\nWould you like me to create a version tag and update CHANGELOG for release?",
-    "onV2Merge": "✅ PR merged to v2 successfully (v2.0.0 development)\n✅ Branch cleaned up\n\n🔍 Status:\n- This is v2 development work - NOT yet released to users\n- v2 branch continues development\n- NO release tags created (v2 is still in progress)\n\nContinue with more v2 work or switch to v1 maintenance?"
+  "adapterContributions": {
+    "description": "v2.0.0 introduced extensible archive adapter system for backup formats",
+    "currentAdapters": ["duplicator"],
+    "futureAdapters": ["jetpack", "updraftplus", "backwpup", "all-in-one-wp-migration"],
+    "addingNewAdapter": [
+      "1. Read src/lib/adapters/README.md (comprehensive contributor guide)",
+      "2. Create new adapter file: src/lib/adapters/<format>.sh",
+      "3. Implement required functions (see base.sh for helpers):",
+      "   - detect_<format>_archive() - Format detection logic",
+      "   - validate_<format>_archive() - Archive validation",
+      "   - extract_<format>_archive() - Extraction to temp directory",
+      "   - find_<format>_database() - Locate SQL dump",
+      "   - find_<format>_wp_content() - Locate wp-content directory",
+      "4. Update Makefile to include new adapter in build",
+      "5. Add tests and documentation",
+      "6. Submit PR (see workflow below)"
+    ],
+    "adapterInterface": "See src/lib/adapters/README.md for complete specification"
+  },
+
+  "workflow": {
+    "description": "Standard workflow for all contributions (v2.0.0+)",
+    "baseBranch": "main",
+    "steps": [
+      "1. git checkout main && git pull --rebase origin main",
+      "2. git checkout -b <type>/<descriptive-slug>  (e.g., fix/url-validation, feature/jetpack-adapter)",
+      "3. Make changes in src/ directory (for code changes)",
+      "4. Run 'make build' to regenerate wp-migrate.sh",
+      "5. Run 'make test' to verify ShellCheck passes",
+      "6. Update CHANGELOG.md [Unreleased] section",
+      "7. git add -A && git commit -m 'type: description'",
+      "8. BEFORE pushing: git fetch origin main && check if main has new commits (git log HEAD..origin/main)",
+      "9. IF main has new commits: git merge origin/main, resolve conflicts, make build, git commit",
+      "10. git push origin <branch-name>",
+      "11. Create PR to main with 'gh pr create'",
+      "12. STOP and tell user: 'PR #X created at <URL>. Please review and approve before merging.'",
+      "13. WAIT FOR USER APPROVAL - do not merge",
+      "14. After user approves: gh pr merge <number>",
+      "15. Delete feature branch: git branch -d <branch-name> && git push origin --delete <branch-name>"
+    ],
+    "branchPrefixes": ["fix/", "feature/", "chore/", "docs/", "refactor/", "test/"],
+    "prTarget": "main",
+    "prApprovalRequired": "YES - NEVER MERGE WITHOUT USER APPROVAL",
+    "examples": [
+      "fix/maintenance-mode-cleanup → PR to main → USER APPROVES → merge → release",
+      "feature/jetpack-adapter → PR to main → USER APPROVES → merge → release"
+    ]
+  },
+
+  "multiPrStrategy": {
+    "note": "When multiple PRs are in flight (created but not yet merged):",
+    "problem": "If PR A merges before PR B, PR B's branch is now out of date and may have conflicts",
+    "prevention": [
+      "BEFORE creating any PR: Check if base branch has new commits since branch creation",
+      "BEFORE final push to PR: Sync with latest base branch",
+      "AFTER any PR merges to base: Immediately sync all open PR branches with base"
+    ],
+    "strategy": {
+      "description": "For PRs targeting main branch",
+      "onPrCreation": [
+        "1. git fetch origin main",
+        "2. Check: Are there commits on main since your branch was created?",
+        "3. If yes: git merge origin/main (or rebase if no conflicts expected)",
+        "4. Run make build && git add -A && git commit --amend --no-edit",
+        "5. Then create PR"
+      ],
+      "whenAnotherPrMerges": [
+        "1. git fetch origin main",
+        "2. git merge origin/main (resolve any conflicts)",
+        "3. Run make build to regenerate built files",
+        "4. Run make test to verify",
+        "5. git add -A && git commit -m 'Merge latest main branch'",
+        "6. git push"
+      ]
+    },
+    "proactiveMonitoring": "After completing work on your PR but BEFORE pushing, ALWAYS run: git fetch origin main && git log HEAD..origin/main to check if main has moved ahead"
+  },
+
+  "releaseProcess": {
+    "description": "Semantic versioning with GitHub releases",
+    "versioning": {
+      "major": "Breaking changes (e.g., v1.x.x → v2.0.0)",
+      "minor": "New features, backward compatible (e.g., v2.0.0 → v2.1.0)",
+      "patch": "Bug fixes (e.g., v2.1.0 → v2.1.1)"
+    },
+    "steps": [
+      "1. Update CHANGELOG.md: Move [Unreleased] items to [X.Y.Z] with date",
+      "2. git add CHANGELOG.md && git commit -m 'chore: release vX.Y.Z'",
+      "3. git push origin main",
+      "4. git tag vX.Y.Z -a -m 'vX.Y.Z - Brief description'",
+      "5. git push origin vX.Y.Z",
+      "6. gh release create vX.Y.Z --title 'vX.Y.Z - Title' --notes-file RELEASE_NOTES.md"
+    ],
+    "releaseNotes": "Include: summary, breaking changes (if any), new features, bug fixes, upgrade guide",
+    "changelogFormat": "Keep a Changelog (https://keepachangelog.com)"
   },
 
   "securityChecklist": {
@@ -249,53 +186,54 @@
       "perf": "Performance improvements",
       "style": "Code style changes (formatting, etc.)"
     },
-    "examples": {
-      "v1": [
-        "fix: prevent maintenance mode failure when wp-cli not found",
-        "feat: add --retry flag for network operations",
-        "docs: clarify --stellarsites flag usage"
-      ],
-      "v2": [
-        "refactor: split wp-migrate.sh into modular source files",
-        "feat: add Makefile build system",
-        "test: add bats-core unit tests for core functions"
-      ]
-    }
+    "examples": [
+      "fix: prevent maintenance mode failure when wp-cli not found",
+      "feat: add Jetpack Backup adapter",
+      "docs: update README with adapter contribution guide",
+      "refactor: extract common adapter logic to base.sh"
+    ]
   },
 
   "safetyReminders": {
     "beforeEveryGitOperation": [
-      "🚨 Did you ask the user: v1 or v2?",
-      "🚨 Does the branch name match the target? (v2-* → v2, others → main)",
-      "🚨 Are you following the correct workflow (workflow_v1 or workflow_v2)?",
-      "🚨 Will this PR target the correct branch?"
+      "🚨 Are you following the workflow from this settings file?",
+      "🚨 Does the branch name use conventional prefix (fix/, feature/, etc.)?",
+      "🚨 For src/ changes: Did you run 'make build'?",
+      "🚨 Will this PR target main branch?"
     ],
     "beforeCreatingPR": [
-      "🚨 CRITICAL: Has the base branch (main/v2) received new commits since I branched?",
-      "🚨 Run: git fetch origin <base> && git log HEAD..origin/<base>",
-      "🚨 If base has new commits: Merge them NOW before creating PR",
-      "🚨 This prevents merge conflicts and 'DIRTY' PR status"
+      "🚨 CRITICAL: Has main received new commits since I branched?",
+      "🚨 Run: git fetch origin main && git log HEAD..origin/main",
+      "🚨 If main has new commits: Merge them NOW before creating PR",
+      "🚨 This prevents merge conflicts and 'DIRTY' PR status",
+      "🚨 REMEMBER: After creating PR, STOP and WAIT for user approval"
+    ],
+    "afterCreatingPR": [
+      "🚨 DO NOT MERGE - Tell user: 'PR #X created at <URL>. Please review and approve before merging.'",
+      "🚨 WAIT for explicit user approval",
+      "🚨 User must say 'merge it', 'approve and merge', or similar",
+      "🚨 NEVER merge on your own initiative"
     ],
     "whenPRBlocked": [
       "If GitHub shows 'DIRTY' or 'CONFLICTING' status:",
       "1. Another PR merged after yours was created",
-      "2. Your branch is out of date with base branch",
-      "3. Solution: git merge origin/<base>, resolve conflicts, rebuild, push",
+      "2. Your branch is out of date with main",
+      "3. Solution: git merge origin/main, resolve conflicts, make build, git add -A, git commit, git push",
       "4. This creates a merge commit bringing both features together"
     ],
     "commonMistakes": [
-      "❌ Creating PR from v2-feature/* to main (should be to v2)",
-      "❌ Creating PR from fix/* to v2 (should be to main)",
-      "❌ Forgetting to ask user which version they're working on",
-      "❌ Using wrong branch prefix (fix/* when should be v2-fix/*)",
-      "❌ NOT checking if base branch has new commits before creating PR",
+      "❌ Editing wp-migrate.sh directly instead of src/ files",
+      "❌ Forgetting to run 'make build' after src/ changes",
+      "❌ Committing src/ changes without also committing built files",
+      "❌ Creating and merging PR without user approval (CRITICAL ERROR)",
+      "❌ NOT checking if main has new commits before creating PR",
       "❌ Ignoring that another PR was merged while working on yours"
     ]
   },
 
   "conflictPrevention": {
     "description": "How to prevent merge conflicts when multiple PRs are in flight",
-    "scenario": "You're working on PR B. PR A merges to base branch before you finish.",
+    "scenario": "You're working on PR B. PR A merges to main before you finish.",
     "symptoms": [
       "GitHub shows PR as 'DIRTY' or 'CONFLICTING'",
       "Merge button is disabled",
@@ -303,17 +241,18 @@
     ],
     "solution": {
       "immediate": [
-        "1. git fetch origin <base-branch>",
-        "2. git merge origin/<base-branch>",
+        "1. git fetch origin main",
+        "2. git merge origin/main",
         "3. Resolve any conflicts (both sets of changes should coexist)",
-        "4. For v2: Run 'make build' to regenerate wp-migrate.sh and checksum",
-        "5. git add -A && git commit -m 'Merge latest <base> branch'",
-        "6. git push",
-        "7. GitHub will now show PR as 'CLEAN' and 'MERGEABLE'"
+        "4. Run 'make build' to regenerate wp-migrate.sh and checksum",
+        "5. Run 'make test' to verify",
+        "6. git add -A && git commit -m 'Merge latest main branch'",
+        "7. git push",
+        "8. GitHub will now show PR as 'CLEAN' and 'MERGEABLE'"
       ],
       "prevention": [
-        "ALWAYS check before pushing: git fetch origin <base> && git log HEAD..origin/<base>",
-        "If base has moved ahead: Merge it BEFORE pushing your final commit",
+        "ALWAYS check before pushing: git fetch origin main && git log HEAD..origin/main",
+        "If main has moved ahead: Merge it BEFORE pushing your final commit",
         "Monitor open PRs: When any PR merges, sync your branch immediately"
       ]
     },
