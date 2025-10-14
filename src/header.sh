@@ -28,8 +28,9 @@ set -Eeuo pipefail
 # -------------------
 DEST_HOST=""                 # REQUIRED (push mode): user@dest.example.com
 DEST_ROOT=""                 # REQUIRED (push mode): absolute WP root on destination (e.g., /var/www/site)
-DUPLICATOR_ARCHIVE=""        # REQUIRED (Duplicator mode): path to Duplicator .zip backup
-MIGRATION_MODE=""            # Detected: "push" or "duplicator"
+ARCHIVE_FILE=""              # REQUIRED (archive mode): path to backup archive file
+ARCHIVE_TYPE=""              # OPTIONAL (archive mode): adapter name override (duplicator, jetpack, etc.)
+MIGRATION_MODE=""            # Detected: "push" or "archive"
 
 # Use a single-element -o form to avoid dangling -o errors if mis-expanded
 SSH_OPTS=(-oStrictHostKeyChecking=accept-new)
@@ -44,12 +45,13 @@ MAINTENANCE_ALWAYS=true     # Always enable maintenance mode during migration
 MAINTENANCE_SOURCE=true     # Allow skipping maintenance mode on the source (--no-maint-source)
 STELLARSITES_MODE=false     # Enable StellarSites compatibility (preserves protected mu-plugins)
 
-# Duplicator mode variables
-DUPLICATOR_EXTRACT_DIR=""    # Temporary extraction directory
-DUPLICATOR_DB_FILE=""        # Detected database file path
-DUPLICATOR_WP_CONTENT=""     # Detected wp-content directory path
-ORIGINAL_DEST_HOME_URL=""    # Captured before import
-ORIGINAL_DEST_SITE_URL=""    # Captured before import
+# Archive mode variables
+ARCHIVE_ADAPTER=""           # Detected adapter name (duplicator, jetpack, etc.)
+ARCHIVE_EXTRACT_DIR=""       # Temporary extraction directory
+ARCHIVE_DB_FILE=""           # Detected database file path
+ARCHIVE_WP_CONTENT=""        # Detected wp-content directory path
+ORIGINAL_DEST_HOME_URL=""    # Captured before import (archive mode)
+ORIGINAL_DEST_SITE_URL=""    # Captured before import (archive mode)
 
 LOG_DIR="./logs"
 LOG_FILE="/dev/null"
