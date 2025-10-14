@@ -55,10 +55,12 @@
         "4. Run shellcheck wp-migrate.sh",
         "5. Update CHANGELOG.md [Unreleased] section",
         "6. git add -A && git commit -m 'type: description'",
-        "7. git push origin <branch-name>",
-        "8. Open PR to main (TARGET: main, NOT v2)",
-        "9. After merge, delete feature branch locally and remotely",
-        "10. User decides if release is needed (you ask, don't assume)"
+        "7. BEFORE pushing: git fetch origin main && check if main has new commits (git log HEAD..origin/main)",
+        "8. IF main has new commits: git merge origin/main, resolve conflicts, git commit",
+        "9. git push origin <branch-name>",
+        "10. Open PR to main (TARGET: main, NOT v2)",
+        "11. After merge, delete feature branch locally and remotely",
+        "12. User decides if release is needed (you ask, don't assume)"
       ],
       "branchPrefixes": ["fix/", "feature/", "chore/", "docs/"],
       "prTarget": "main",
@@ -78,10 +80,12 @@
         "4. Run shellcheck on affected files",
         "5. Update CHANGELOG.md [Unreleased] section (note it's for v2)",
         "6. git add -A && git commit -m 'type: description'",
-        "7. git push origin <branch-name>",
-        "8. Open PR to v2 branch (TARGET: v2, NOT main) ⚠️",
-        "9. After merge, delete feature branch locally and remotely",
-        "10. NO releases until v2 branch is complete and merged to main"
+        "7. BEFORE pushing: git fetch origin v2 && check if v2 has new commits (git log HEAD..origin/v2)",
+        "8. IF v2 has new commits: git merge origin/v2, resolve conflicts, make build, git commit",
+        "9. git push origin <branch-name>",
+        "10. Open PR to v2 branch (TARGET: v2, NOT main) ⚠️",
+        "11. After merge, delete feature branch locally and remotely",
+        "12. NO releases until v2 branch is complete and merged to main"
       ],
       "branchPrefixes": ["v2-feature/", "v2-fix/", "v2-chore/", "v2-refactor/", "v2-test/"],
       "prTarget": "v2",
@@ -94,10 +98,51 @@
     },
 
     "multiPrStrategy": {
-      "note": "When creating multiple independent PRs simultaneously:",
-      "v1_strategy": "Create all from main, but rebase each remaining PR after every merge to main",
-      "v2_strategy": "Create all from v2, but rebase each remaining PR after every merge to v2",
-      "cross_version": "Keep v1 and v2 PRs completely separate. Do NOT merge v2 work into v1."
+      "note": "When multiple PRs are in flight (created but not yet merged):",
+      "problem": "If PR A merges before PR B, PR B's branch is now out of date and may have conflicts",
+      "prevention": [
+        "BEFORE creating any PR: Check if base branch has new commits since branch creation",
+        "BEFORE final push to PR: Sync with latest base branch",
+        "AFTER any PR merges to base: Immediately sync all open PR branches with base"
+      ],
+      "v1_strategy": {
+        "description": "For PRs targeting main branch",
+        "onPrCreation": [
+          "1. git fetch origin main",
+          "2. Check: Are there commits on main since your branch was created?",
+          "3. If yes: git merge origin/main (or rebase if no conflicts expected)",
+          "4. Run make build && git add -A && git commit --amend --no-edit",
+          "5. Then create PR"
+        ],
+        "whenAnotherPrMerges": [
+          "1. git fetch origin main",
+          "2. git merge origin/main (resolve any conflicts)",
+          "3. Run make build to regenerate built files",
+          "4. Run shellcheck to verify",
+          "5. git add -A && git commit -m 'Merge latest main branch'",
+          "6. git push"
+        ]
+      },
+      "v2_strategy": {
+        "description": "For PRs targeting v2 branch",
+        "onPrCreation": [
+          "1. git fetch origin v2",
+          "2. Check: Are there commits on v2 since your branch was created?",
+          "3. If yes: git merge origin/v2 (or rebase if no conflicts expected)",
+          "4. Run make build && git add -A && git commit --amend --no-edit",
+          "5. Then create PR"
+        ],
+        "whenAnotherPrMerges": [
+          "1. git fetch origin v2",
+          "2. git merge origin/v2 (resolve any conflicts)",
+          "3. Run make build to regenerate built files",
+          "4. Run shellcheck to verify",
+          "5. git add -A && git commit -m 'Merge latest v2 branch'",
+          "6. git push"
+        ]
+      },
+      "cross_version": "Keep v1 and v2 PRs completely separate. Do NOT merge v2 work into v1.",
+      "proactiveMonitoring": "After completing work on your PR but BEFORE pushing, ALWAYS run: git fetch origin <base-branch> && git log HEAD..origin/<base-branch> to check if base has moved ahead"
     },
 
     "branchTypes": {
@@ -225,11 +270,59 @@
       "🚨 Are you following the correct workflow (workflow_v1 or workflow_v2)?",
       "🚨 Will this PR target the correct branch?"
     ],
+    "beforeCreatingPR": [
+      "🚨 CRITICAL: Has the base branch (main/v2) received new commits since I branched?",
+      "🚨 Run: git fetch origin <base> && git log HEAD..origin/<base>",
+      "🚨 If base has new commits: Merge them NOW before creating PR",
+      "🚨 This prevents merge conflicts and 'DIRTY' PR status"
+    ],
+    "whenPRBlocked": [
+      "If GitHub shows 'DIRTY' or 'CONFLICTING' status:",
+      "1. Another PR merged after yours was created",
+      "2. Your branch is out of date with base branch",
+      "3. Solution: git merge origin/<base>, resolve conflicts, rebuild, push",
+      "4. This creates a merge commit bringing both features together"
+    ],
     "commonMistakes": [
       "❌ Creating PR from v2-feature/* to main (should be to v2)",
       "❌ Creating PR from fix/* to v2 (should be to main)",
       "❌ Forgetting to ask user which version they're working on",
-      "❌ Using wrong branch prefix (fix/* when should be v2-fix/*)"
+      "❌ Using wrong branch prefix (fix/* when should be v2-fix/*)",
+      "❌ NOT checking if base branch has new commits before creating PR",
+      "❌ Ignoring that another PR was merged while working on yours"
     ]
+  },
+
+  "conflictPrevention": {
+    "description": "How to prevent merge conflicts when multiple PRs are in flight",
+    "scenario": "You're working on PR B. PR A merges to base branch before you finish.",
+    "symptoms": [
+      "GitHub shows PR as 'DIRTY' or 'CONFLICTING'",
+      "Merge button is disabled",
+      "Message: 'This branch is out-of-date with the base branch'"
+    ],
+    "solution": {
+      "immediate": [
+        "1. git fetch origin <base-branch>",
+        "2. git merge origin/<base-branch>",
+        "3. Resolve any conflicts (both sets of changes should coexist)",
+        "4. For v2: Run 'make build' to regenerate wp-migrate.sh and checksum",
+        "5. git add -A && git commit -m 'Merge latest <base> branch'",
+        "6. git push",
+        "7. GitHub will now show PR as 'CLEAN' and 'MERGEABLE'"
+      ],
+      "prevention": [
+        "ALWAYS check before pushing: git fetch origin <base> && git log HEAD..origin/<base>",
+        "If base has moved ahead: Merge it BEFORE pushing your final commit",
+        "Monitor open PRs: When any PR merges, sync your branch immediately"
+      ]
+    },
+    "conflictResolution": {
+      "CHANGELOG.md": "Keep both entries - add incoming changes to appropriate section",
+      "src/lib/functions.sh": "Merge help text - keep all new flags from both PRs",
+      "wp-migrate.sh": "NEVER manually edit - always regenerate with 'make build'",
+      "wp-migrate.sh.sha256": "NEVER manually edit - always regenerate with 'make build'",
+      "principle": "Both features should coexist. Conflicts mean both PRs touched the same area - merge both sets of changes."
+    }
   }
 }

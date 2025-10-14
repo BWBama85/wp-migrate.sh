@@ -18,6 +18,8 @@ test:
 	@mkdir -p dist
 	@cat src/header.sh \
 	     src/lib/core.sh \
+	     src/lib/adapters/base.sh \
+	     src/lib/adapters/duplicator.sh \
 	     src/lib/functions.sh \
 	     src/main.sh > dist/wp-migrate-temp.sh
 	@echo "Running shellcheck on complete script..."
@@ -31,6 +33,8 @@ build: test
 	@mkdir -p dist
 	@cat src/header.sh \
 	     src/lib/core.sh \
+	     src/lib/adapters/base.sh \
+	     src/lib/adapters/duplicator.sh \
 	     src/lib/functions.sh \
 	     src/main.sh > dist/wp-migrate.sh
 	@chmod +x dist/wp-migrate.sh

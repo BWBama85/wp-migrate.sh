@@ -5,7 +5,14 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dest-host) DEST_HOST="${2:-}"; shift 2 ;;
     --dest-root) DEST_ROOT="${2:-}"; shift 2 ;;
-    --duplicator-archive) DUPLICATOR_ARCHIVE="${2:-}"; shift 2 ;;
+    --archive) ARCHIVE_FILE="${2:-}"; shift 2 ;;
+    --archive-type) ARCHIVE_TYPE="${2:-}"; shift 2 ;;
+    --duplicator-archive)
+      # Backward compatibility: treat as --archive with duplicator type
+      ARCHIVE_FILE="${2:-}"
+      ARCHIVE_TYPE="duplicator"
+      shift 2
+      ;;
     --dry-run) DRY_RUN=true; shift ;;
     --import-db) IMPORT_DB=true; shift ;;
     --no-import-db) IMPORT_DB=false; shift ;;
@@ -57,21 +64,62 @@ fi
 # --------------------
 # Detect migration mode
 # --------------------
-if [[ -n "$DUPLICATOR_ARCHIVE" && ( -n "$DEST_HOST" || -n "$DEST_ROOT" ) ]]; then
-  err "--duplicator-archive is mutually exclusive with --dest-host/--dest-root.
+if [[ -n "$ARCHIVE_FILE" && ( -n "$DEST_HOST" || -n "$DEST_ROOT" ) ]]; then
+  err "--archive is mutually exclusive with --dest-host/--dest-root.
 Choose one mode:
   Push mode: --dest-host and --dest-root
-  Duplicator mode: --duplicator-archive"
+  Archive mode: --archive </path/to/backup>"
 fi
 
-if [[ -n "$DUPLICATOR_ARCHIVE" ]]; then
-  MIGRATION_MODE="duplicator"
+if [[ -n "$ARCHIVE_FILE" ]]; then
+  MIGRATION_MODE="archive"
+
+  # Note: Adapter files are already concatenated into the built script by Makefile
+  # No dynamic sourcing needed - all adapter code is already loaded
+
+  # Check basic tools needed for adapter detection before calling validate functions
+  # This prevents cryptic "command not found" errors during detection with set -e
+  if ! command -v file >/dev/null 2>&1; then
+    err "Missing required tool for archive detection: file
+Please install the 'file' package (e.g., apt-get install file)"
+  fi
+
+  # Check for archive tools needed by available adapters
+  # Currently only Duplicator adapter exists, which requires unzip
+  # When future adapters are added (Jetpack=tar, etc.), this logic can be made smarter
+  if ! command -v unzip >/dev/null 2>&1; then
+    err "Missing required tool for archive detection: unzip
+Currently only Duplicator archives are supported, which require unzip.
+Please install unzip (e.g., apt-get install unzip or yum install unzip)"
+  fi
+
+  # Detect or load adapter
+  if [[ -n "$ARCHIVE_TYPE" ]]; then
+    # User specified adapter type explicitly
+    if ! load_adapter "$ARCHIVE_TYPE"; then
+      err "Unknown archive type: $ARCHIVE_TYPE
+Available adapters: ${AVAILABLE_ADAPTERS[*]}"
+    fi
+    ARCHIVE_ADAPTER="$ARCHIVE_TYPE"
+  else
+    # Auto-detect adapter from archive
+    ARCHIVE_ADAPTER=$(detect_adapter "$ARCHIVE_FILE")
+    if [[ -z "$ARCHIVE_ADAPTER" ]]; then
+      err "Unable to detect archive format. Please specify with --archive-type <type>
+Available types: ${AVAILABLE_ADAPTERS[*]}
+
+Example: --archive file.zip --archive-type duplicator"
+    fi
+  fi
+
+  log "Archive format: $(get_archive_format_name)"
+
 elif [[ -n "$DEST_HOST" || -n "$DEST_ROOT" ]]; then
   MIGRATION_MODE="push"
 else
   err "No migration mode specified. Choose one:
   Push mode: --dest-host <user@host> --dest-root </path>
-  Duplicator mode: --duplicator-archive </path/to/backup.zip>
+  Archive mode: --archive </path/to/backup>
 Run --help for more information."
 fi
 
@@ -82,18 +130,13 @@ fi
 
 if [[ "$MIGRATION_MODE" == "push" ]]; then
   [[ -n "$DEST_HOST" && -n "$DEST_ROOT" ]] || err "Push mode requires both --dest-host and --dest-root."
-elif [[ "$MIGRATION_MODE" == "duplicator" ]]; then
-  [[ -n "$DUPLICATOR_ARCHIVE" ]] || err "Duplicator mode requires --duplicator-archive."
+elif [[ "$MIGRATION_MODE" == "archive" ]]; then
+  [[ -n "$ARCHIVE_FILE" ]] || err "Archive mode requires --archive."
 
-  # Validate Duplicator archive
-  [[ -f "$DUPLICATOR_ARCHIVE" ]] || err "Duplicator archive not found: $DUPLICATOR_ARCHIVE"
+  # Validate archive file exists
+  [[ -f "$ARCHIVE_FILE" ]] || err "Archive file not found: $ARCHIVE_FILE"
 
-  # Check if it's a zip file
-  if ! file -b "$DUPLICATOR_ARCHIVE" 2>/dev/null | grep -qi "zip"; then
-    err "Duplicator archive must be a ZIP file (got: $DUPLICATOR_ARCHIVE)"
-  fi
-
-  # Validate push-mode-only flags aren't used in Duplicator mode
+  # Validate push-mode-only flags aren't used in archive mode
   if [[ -n "$DEST_HOME_OVERRIDE" || -n "$DEST_SITE_OVERRIDE" || -n "$DEST_DOMAIN_OVERRIDE" ]]; then
     err "--dest-home-url, --dest-site-url, and --dest-domain are only valid in push mode."
   fi
@@ -117,9 +160,9 @@ if [[ "$MIGRATION_MODE" == "push" ]]; then
   needs rsync
   needs ssh
   needs gzip
-elif [[ "$MIGRATION_MODE" == "duplicator" ]]; then
-  needs unzip
-  needs file
+elif [[ "$MIGRATION_MODE" == "archive" ]]; then
+  # Check adapter-specific dependencies
+  check_adapter_dependencies "$ARCHIVE_ADAPTER"
 fi
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -128,7 +171,7 @@ if $DRY_RUN; then
   if [[ "$MIGRATION_MODE" == "push" ]]; then
     log "Starting push migration (dry-run preview; no log file will be written)."
   else
-    log "Starting Duplicator import (dry-run preview; no log file will be written)."
+    log "Starting archive import (dry-run preview; no log file will be written)."
   fi
 else
   mkdir -p "$LOG_DIR"
@@ -136,8 +179,8 @@ else
     LOG_FILE="$LOG_DIR/migrate-wpcontent-push-$STAMP.log"
     log "Starting push migration. Log: $LOG_FILE"
   else
-    LOG_FILE="$LOG_DIR/migrate-duplicator-import-$STAMP.log"
-    log "Starting Duplicator import. Log: $LOG_FILE"
+    LOG_FILE="$LOG_DIR/migrate-archive-import-$STAMP.log"
+    log "Starting archive import. Log: $LOG_FILE"
   fi
 fi
 
@@ -163,7 +206,7 @@ if [[ "$MIGRATION_MODE" == "push" ]]; then
 
   log "Verifying DEST WordPress at: $DEST_HOST:$DEST_ROOT"
   wp_remote "$DEST_HOST" "$DEST_ROOT" core is-installed || err "Destination WordPress not detected."
-elif [[ "$MIGRATION_MODE" == "duplicator" ]]; then
+elif [[ "$MIGRATION_MODE" == "archive" ]]; then
   log "Verifying DEST WordPress at: $PWD"
   wp_local core is-installed || err "Destination WordPress not detected."
 fi
@@ -595,11 +638,11 @@ fi
 fi
 
 # ==================================================================================
-# DUPLICATOR MODE WORKFLOW
+# ARCHIVE MODE WORKFLOW
 # ==================================================================================
-if [[ "$MIGRATION_MODE" == "duplicator" ]]; then
+if [[ "$MIGRATION_MODE" == "archive" ]]; then
 
-log "Archive: $DUPLICATOR_ARCHIVE"
+log "Archive: $ARCHIVE_FILE"
 
 # Phase 0: Capture destination URLs BEFORE any operations
 log "Capturing current destination URLs..."
@@ -609,14 +652,14 @@ log "Current site home: $ORIGINAL_DEST_HOME_URL"
 log "Current site URL: $ORIGINAL_DEST_SITE_URL"
 
 # Phase 1: Disk space check
-check_disk_space_for_duplicator "$DUPLICATOR_ARCHIVE"
+check_disk_space_for_archive "$ARCHIVE_FILE"
 
 # Phase 2: Extract archive
-extract_duplicator_archive "$DUPLICATOR_ARCHIVE"
+extract_archive_to_temp "$ARCHIVE_FILE"
 
 # Phase 3: Discover database and wp-content
-find_duplicator_database "$DUPLICATOR_EXTRACT_DIR"
-find_duplicator_wp_content "$DUPLICATOR_EXTRACT_DIR"
+find_archive_database_file "$ARCHIVE_EXTRACT_DIR"
+find_archive_wp_content_dir "$ARCHIVE_EXTRACT_DIR"
 
 # Phase 4: Enable maintenance mode
 log "Enabling maintenance mode on destination..."
@@ -629,10 +672,10 @@ fi
 
 # Phase 5: Backup current database
 if $DRY_RUN; then
-  log "[dry-run] Would backup current database to: db-backups/pre-duplicator-backup_${STAMP}.sql.gz"
+  log "[dry-run] Would backup current database to: db-backups/pre-archive-backup_${STAMP}.sql.gz"
 else
   mkdir -p "db-backups"
-  BACKUP_DB_FILE="db-backups/pre-duplicator-backup_${STAMP}.sql.gz"
+  BACKUP_DB_FILE="db-backups/pre-archive-backup_${STAMP}.sql.gz"
   log "Backing up current database to: $BACKUP_DB_FILE"
   wp_local db export - | gzip > "$BACKUP_DB_FILE"
   log "Database backup created: $BACKUP_DB_FILE"
@@ -661,8 +704,8 @@ if $PRESERVE_DEST_PLUGINS; then
   detect_dest_themes_local
 
   # Get archive plugins/themes
-  detect_archive_plugins "$DUPLICATOR_WP_CONTENT"
-  detect_archive_themes "$DUPLICATOR_WP_CONTENT"
+  detect_archive_plugins "$ARCHIVE_WP_CONTENT"
+  detect_archive_themes "$ARCHIVE_WP_CONTENT"
 
   # Compute unique destination items (not in source/archive)
   array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
@@ -688,10 +731,10 @@ fi
 # Phase 7: Import database
 if $DRY_RUN; then
   log "[dry-run] Would reset database to clean state"
-  log "[dry-run] Would import database from: $(basename "$DUPLICATOR_DB_FILE")"
+  log "[dry-run] Would import database from: $(basename "$ARCHIVE_DB_FILE")"
   log "[dry-run] Would detect and align table prefix if needed"
 else
-  log "Importing database from: $(basename "$DUPLICATOR_DB_FILE")"
+  log "Importing database from: $(basename "$ARCHIVE_DB_FILE")"
 
   # Get current destination prefix before import
   DEST_DB_PREFIX_BEFORE="$(wp_local db prefix)"
@@ -750,7 +793,7 @@ else
   log "Database reset complete (all tables dropped)"
 
   # Import the database
-  wp_local db import "$DUPLICATOR_DB_FILE"
+  wp_local db import "$ARCHIVE_DB_FILE"
   log "Database imported successfully"
 
   # Detect the prefix from the imported database
@@ -848,7 +891,7 @@ Assumed prefix: $DEST_DB_PREFIX_BEFORE
 Could not find table: ${DEST_DB_PREFIX_BEFORE}options
 
 The imported database appears to be corrupt, incomplete, or uses a non-standard structure.
-Please verify this is a valid Duplicator backup archive."
+Please verify this is a valid backup archive."
     fi
 
     log "Verified: ${IMPORTED_DB_PREFIX}options table is accessible"
@@ -913,12 +956,12 @@ fi
 # Phase 9: Replace wp-content
 if $DRY_RUN; then
   log "[dry-run] Would replace wp-content with archive contents"
-  log "[dry-run]   Source: $DUPLICATOR_WP_CONTENT"
+  log "[dry-run]   Source: $ARCHIVE_WP_CONTENT"
   log "[dry-run]   Destination: $DEST_WP_CONTENT"
   log "[dry-run] Would exclude object-cache.php from archive (preserves destination caching setup)"
 else
   log "Replacing wp-content with archive contents..."
-  log "  Source: ${DUPLICATOR_WP_CONTENT#"$DUPLICATOR_EXTRACT_DIR"/}"
+  log "  Source: ${ARCHIVE_WP_CONTENT#"$ARCHIVE_EXTRACT_DIR"/}"
   log "  Destination: $DEST_WP_CONTENT"
 
   # Build rsync command with appropriate options
@@ -940,7 +983,7 @@ else
   # Sync wp-content from archive to destination
   # Excluded items (mu-plugins, object-cache.php) are preserved in destination
   rsync "${RSYNC_OPTS[@]}" "${RSYNC_EXCLUDES[@]}" \
-    "$DUPLICATOR_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE"
+    "$ARCHIVE_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE"
 
   log "wp-content synced successfully (object-cache.php excluded to preserve destination caching)"
 
@@ -975,9 +1018,9 @@ fi
 
 # Phase 12: Report completion and rollback instructions
 if $DRY_RUN; then
-  log "[dry-run] Duplicator import preview complete."
+  log "[dry-run] Archive import preview complete."
 else
-  log "Duplicator import complete."
+  log "Archive import complete."
   log ""
   log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   log "ROLLBACK INSTRUCTIONS (if needed):"
@@ -1004,5 +1047,5 @@ else
   log ""
 fi
 
-# End of Duplicator mode workflow
+# End of archive mode workflow
 fi

@@ -1,5 +1,97 @@
 wp_local() { wp --path="$PWD" "$@"; }
 
+# ========================================
+# Archive Adapter System
+# ========================================
+
+# List of available adapters (add new adapters here)
+AVAILABLE_ADAPTERS=("duplicator")
+
+# Verify adapter exists (adapter functions already loaded in built script)
+# Usage: load_adapter <adapter_name>
+# Returns: 0 if adapter functions exist, 1 if not found
+load_adapter() {
+  local adapter_name="$1"
+
+  # In the built script, all adapter functions are already defined via concatenation
+  # Just verify the adapter's validate function exists
+  if declare -f "adapter_${adapter_name}_validate" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  return 1
+}
+
+# Detect which adapter can handle the given archive
+# Usage: detect_adapter <archive_path>
+# Returns: echoes adapter name if detected, returns 1 if no match
+detect_adapter() {
+  local archive="$1"
+  local adapter
+
+  # Try each available adapter's validate function (already loaded in built script)
+  for adapter in "${AVAILABLE_ADAPTERS[@]}"; do
+    # Call the adapter's validate function
+    if "adapter_${adapter}_validate" "$archive" 2>/dev/null; then
+      echo "$adapter"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# Wrapper functions that call the appropriate adapter function
+# These provide a consistent interface regardless of which adapter is loaded
+
+extract_archive() {
+  local archive="$1" dest="$2"
+  "adapter_${ARCHIVE_ADAPTER}_extract" "$archive" "$dest"
+}
+
+find_archive_database() {
+  local extract_dir="$1"
+  "adapter_${ARCHIVE_ADAPTER}_find_database" "$extract_dir"
+}
+
+find_archive_wp_content() {
+  local extract_dir="$1"
+  "adapter_${ARCHIVE_ADAPTER}_find_content" "$extract_dir"
+}
+
+get_archive_format_name() {
+  "adapter_${ARCHIVE_ADAPTER}_get_name"
+}
+
+# Check and verify required dependencies for an adapter
+# Usage: check_adapter_dependencies <adapter_name>
+# Returns: 0 if all dependencies available, 1 otherwise
+check_adapter_dependencies() {
+  local adapter="$1"
+
+  # Check if adapter has a dependencies function
+  if declare -f "adapter_${adapter}_get_dependencies" >/dev/null 2>&1; then
+    local deps
+    deps=$("adapter_${adapter}_get_dependencies")
+
+    # Check each dependency
+    local dep
+    for dep in $deps; do
+      if ! command -v "$dep" >/dev/null 2>&1; then
+        err "Missing dependency for $adapter adapter: $dep"
+        # shellcheck disable=SC2317  # err() exits script, but shellcheck doesn't know
+        return 1
+      fi
+    done
+  fi
+
+  return 0
+}
+
+# ========================================
+# End Archive Adapter System
+# ========================================
+
 # Build a safe "ssh ..." string for rsync -e
 ssh_cmd_string() {
   printf 'ssh'
@@ -127,12 +219,12 @@ exit_cleanup() {
   # Maintenance cleanup is non-critical - don't let it affect exit status
   maintenance_cleanup || true
   cleanup_ssh_control
-  if [[ "$MIGRATION_MODE" == "duplicator" ]]; then
+  if [[ "$MIGRATION_MODE" == "archive" ]]; then
     # Only cleanup on success; keep files on failure for debugging
     if [[ $status -eq 0 ]]; then
-      cleanup_duplicator_temp
-    elif [[ -n "$DUPLICATOR_EXTRACT_DIR" && -d "$DUPLICATOR_EXTRACT_DIR" ]]; then
-      log "Keeping extraction directory for debugging: $DUPLICATOR_EXTRACT_DIR"
+      cleanup_archive_temp
+    elif [[ -n "$ARCHIVE_EXTRACT_DIR" && -d "$ARCHIVE_EXTRACT_DIR" ]]; then
+      log "Keeping extraction directory for debugging: $ARCHIVE_EXTRACT_DIR"
     fi
   fi
   set -e
@@ -149,7 +241,7 @@ discover_wp_content_remote() {
   wp_remote "$host" "$root" eval 'echo WP_CONTENT_DIR;'
 }
 
-check_disk_space_for_duplicator() {
+check_disk_space_for_archive() {
   local archive_path="$1"
   local archive_size_bytes
   local available_bytes
@@ -185,101 +277,101 @@ Free up space or move the archive to a location with more available space."
   log "Disk space check: PASSED"
 }
 
-extract_duplicator_archive() {
+extract_archive_to_temp() {
   local archive_path="$1"
 
   if $DRY_RUN; then
     log "[dry-run] Would extract archive to temporary directory"
-    DUPLICATOR_EXTRACT_DIR="/tmp/wp-migrate-duplicator-XXXXXX-dryrun"
+    ARCHIVE_EXTRACT_DIR="/tmp/wp-migrate-archive-XXXXXX-dryrun"
     return 0
   fi
 
-  DUPLICATOR_EXTRACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/wp-migrate-duplicator-XXXXXX")"
-  log "Extracting archive to: $DUPLICATOR_EXTRACT_DIR"
+  ARCHIVE_EXTRACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/wp-migrate-archive-XXXXXX")"
+  log "Extracting archive to: $ARCHIVE_EXTRACT_DIR"
 
-  if ! unzip -q "$archive_path" -d "$DUPLICATOR_EXTRACT_DIR"; then
-    rm -rf "$DUPLICATOR_EXTRACT_DIR"
-    err "Failed to extract Duplicator archive: $archive_path"
+  # Use the adapter's extract function
+  if ! extract_archive "$archive_path" "$ARCHIVE_EXTRACT_DIR"; then
+    rm -rf "$ARCHIVE_EXTRACT_DIR"
+    local format_name
+    format_name=$(get_archive_format_name)
+    err "Failed to extract $format_name archive: $archive_path"
   fi
 
   log "Archive extracted successfully"
 }
 
-find_duplicator_database() {
+find_archive_database_file() {
   local extract_dir="$1"
 
   if $DRY_RUN; then
-    log "[dry-run] Would search for database file: dup-installer/dup-database__*.sql"
-    DUPLICATOR_DB_FILE="$extract_dir/dup-installer/dup-database__example.sql"
+    log "[dry-run] Would search for database file using $(get_archive_format_name) adapter"
+    ARCHIVE_DB_FILE="$extract_dir/database-example.sql"
     return 0
   fi
 
-  # Look for database file in dup-installer directory
+  # Use the adapter's find database function
+  # Capture exit status to prevent set -e from killing script before error message
   local db_file
-  db_file=$(find "$extract_dir" -type f -path "*/dup-installer/dup-database__*.sql" | head -1)
+  if ! db_file=$(find_archive_database "$extract_dir"); then
+    local format_name
+    format_name=$(get_archive_format_name)
+    err "Unable to locate database file in $format_name archive.
+Archive extracted to: $extract_dir
+
+Please verify this is a valid $format_name backup archive."
+  fi
 
   if [[ -z "$db_file" ]]; then
-    err "Unable to locate database file in Duplicator archive.
-Expected path: dup-installer/dup-database__*.sql
+    local format_name
+    format_name=$(get_archive_format_name)
+    err "Unable to locate database file in $format_name archive.
 Archive extracted to: $extract_dir
 
-Please verify this is a valid Duplicator backup archive."
+Please verify this is a valid $format_name backup archive."
   fi
 
-  DUPLICATOR_DB_FILE="$db_file"
-  log "Found database file: $(basename "$DUPLICATOR_DB_FILE")"
+  ARCHIVE_DB_FILE="$db_file"
+  log "Found database file: $(basename "$ARCHIVE_DB_FILE")"
 }
 
-find_duplicator_wp_content() {
+find_archive_wp_content_dir() {
   local extract_dir="$1"
 
   if $DRY_RUN; then
-    log "[dry-run] Would auto-detect wp-content directory"
-    DUPLICATOR_WP_CONTENT="$extract_dir/wordpress/core/6.8.3/wp-content"
+    log "[dry-run] Would auto-detect wp-content directory using $(get_archive_format_name) adapter"
+    ARCHIVE_WP_CONTENT="$extract_dir/wp-content"
     return 0
   fi
 
-  # Find all wp-content directories
-  local candidates=()
-  while IFS= read -r -d '' dir; do
-    candidates+=("$dir")
-  done < <(find "$extract_dir" -type d -name "wp-content" -print0)
-
-  if [[ ${#candidates[@]} -eq 0 ]]; then
-    err "Unable to locate wp-content directory in Duplicator archive.
+  # Use the adapter's find wp-content function
+  # Capture exit status to prevent set -e from killing script before error message
+  local wp_content_dir
+  if ! wp_content_dir=$(find_archive_wp_content "$extract_dir"); then
+    local format_name
+    format_name=$(get_archive_format_name)
+    err "Unable to locate wp-content directory in $format_name archive.
 Archive extracted to: $extract_dir
 
-Please verify this is a valid Duplicator backup archive."
+Please verify this is a valid $format_name backup archive."
   fi
 
-  # Score each candidate by presence of standard subdirectories
-  local best_dir="" best_score=0
-  for dir in "${candidates[@]}"; do
-    local score=0
-    [[ -d "$dir/plugins" ]] && score=$((score + 1))
-    [[ -d "$dir/themes" ]] && score=$((score + 1))
-    [[ -d "$dir/uploads" ]] && score=$((score + 1))
+  if [[ -z "$wp_content_dir" ]]; then
+    local format_name
+    format_name=$(get_archive_format_name)
+    err "Unable to locate wp-content directory in $format_name archive.
+Archive extracted to: $extract_dir
 
-    if [[ $score -gt $best_score ]]; then
-      best_score=$score
-      best_dir="$dir"
-    fi
-  done
-
-  if [[ -z "$best_dir" ]]; then
-    log "WARNING: Found wp-content directories but none with standard subdirectories."
-    log "Using first candidate: ${candidates[0]}"
-    best_dir="${candidates[0]}"
+Please verify this is a valid $format_name backup archive."
   fi
 
-  DUPLICATOR_WP_CONTENT="$best_dir"
-  log "Found wp-content directory: ${DUPLICATOR_WP_CONTENT#"$extract_dir"/}"
-  log "  Contains: plugins=$([ -d "$DUPLICATOR_WP_CONTENT/plugins" ] && echo "YES" || echo "NO") themes=$([ -d "$DUPLICATOR_WP_CONTENT/themes" ] && echo "YES" || echo "NO") uploads=$([ -d "$DUPLICATOR_WP_CONTENT/uploads" ] && echo "YES" || echo "NO")"
+  ARCHIVE_WP_CONTENT="$wp_content_dir"
+  log "Found wp-content directory: ${ARCHIVE_WP_CONTENT#"$extract_dir"/}"
+  log "  Contains: plugins=$([ -d "$ARCHIVE_WP_CONTENT/plugins" ] && echo "YES" || echo "NO") themes=$([ -d "$ARCHIVE_WP_CONTENT/themes" ] && echo "YES" || echo "NO") uploads=$([ -d "$ARCHIVE_WP_CONTENT/uploads" ] && echo "YES" || echo "NO")"
 }
 
-cleanup_duplicator_temp() {
-  [[ -z "$DUPLICATOR_EXTRACT_DIR" ]] && return 0
-  [[ ! -d "$DUPLICATOR_EXTRACT_DIR" ]] && return 0
+cleanup_archive_temp() {
+  [[ -z "$ARCHIVE_EXTRACT_DIR" ]] && return 0
+  [[ ! -d "$ARCHIVE_EXTRACT_DIR" ]] && return 0
 
   if $DRY_RUN; then
     log "[dry-run] Would remove temporary extraction directory"
@@ -287,8 +379,8 @@ cleanup_duplicator_temp() {
   fi
 
   log "Cleaning up temporary extraction directory..."
-  if ! rm -rf "$DUPLICATOR_EXTRACT_DIR" 2>/dev/null; then
-    log_warning "Failed to remove temporary extraction directory: $DUPLICATOR_EXTRACT_DIR. You may need to manually delete it."
+  if ! rm -rf "$ARCHIVE_EXTRACT_DIR" 2>/dev/null; then
+    log_warning "Failed to remove temporary extraction directory: $ARCHIVE_EXTRACT_DIR. You may need to manually delete it."
   fi
 }
 
@@ -685,17 +777,24 @@ Usage:
 PUSH MODE (run on SOURCE WP root):
   $(basename "$0") --dest-host <user@host> --dest-root </abs/path> [options]
 
-DUPLICATOR MODE (run on DESTINATION WP root):
-  $(basename "$0") --duplicator-archive </path/to/backup.zip> [options]
+ARCHIVE MODE (run on DESTINATION WP root):
+  $(basename "$0") --archive </path/to/backup> [options]
 
 Required (choose one mode):
   --dest-host <user@dest.example.com>
   --dest-root </absolute/path/to/destination/wp-root>
       Push mode: migrate from current host to destination via SSH
 
-  --duplicator-archive </path/to/backup.zip>
-      Duplicator mode: import Duplicator backup archive to current host
+  --archive </path/to/backup>
+      Archive mode: import backup archive to current host (Duplicator, Jetpack, etc.)
       (mutually exclusive with --dest-host)
+
+  --archive-type <type>
+      Optional: Specify archive format (duplicator, jetpack, etc.)
+      If not specified, format will be auto-detected
+
+  --duplicator-archive </path/to/backup.zip>
+      Deprecated: Use --archive instead (backward compatibility maintained)
 
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
@@ -717,10 +816,11 @@ Examples (push mode):
   $(basename "$0") --dest-host wp@dest --dest-root /var/www/site
   $(basename "$0") --dest-host wp@dest --dest-root /var/www/site --no-import-db
 
-Examples (Duplicator mode):
-  $(basename "$0") --duplicator-archive /path/to/backup_20251009.zip
-  $(basename "$0") --duplicator-archive /backups/site.zip --dry-run
-  $(basename "$0") --duplicator-archive /backups/site.zip --stellarsites
+Examples (archive mode):
+  $(basename "$0") --archive /path/to/backup_20251009.zip
+  $(basename "$0") --archive /backups/site.zip --dry-run
+  $(basename "$0") --archive /backups/site.zip --stellarsites
+  $(basename "$0") --archive /backups/site.tar.gz --archive-type jetpack
 USAGE
 }
 
