@@ -5,7 +5,7 @@ wp_local() { wp --path="$PWD" "$@"; }
 # ========================================
 
 # List of available adapters (add new adapters here)
-AVAILABLE_ADAPTERS=("duplicator")
+AVAILABLE_ADAPTERS=("duplicator" "jetpack")
 
 # Verify adapter exists (adapter functions already loaded in built script)
 # Usage: load_adapter <adapter_name>

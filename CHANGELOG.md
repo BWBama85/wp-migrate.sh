@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Jetpack Backup adapter**: Added support for Jetpack Backup archives (ZIP, TAR.GZ, or extracted directory format). Handles Jetpack's multi-file SQL structure (one table per file in `sql/` directory) by consolidating into a single database dump before import. Auto-detects Jetpack backups via `meta.json` signature file and `sql/wp_options.sql` presence. Supports both archive files and already-extracted directory paths. Table prefix detection extracts from SQL filenames (e.g., `wp_options.sql` → `wp_`). wp-content location detected at root level of backup. Example: `./wp-migrate.sh --archive /path/to/jetpack-backup.tar.gz` or `./wp-migrate.sh --archive /path/to/extracted-jetpack-backup/`.
+
+### Changed
+- Updated `AVAILABLE_ADAPTERS` to include "jetpack" alongside "duplicator" for auto-detection
+- Updated Makefile build order to include `src/lib/adapters/jetpack.sh` in concatenation
+- Updated help text examples to show Jetpack backup usage
+
 ### Added (v2.0.0 - Development)
 - **[v2 ONLY]** **Archive Adapter System**: Implemented extensible plugin adapter architecture for supporting multiple WordPress backup formats. Currently ships with Duplicator adapter only; designed to support Jetpack, UpdraftPlus, BackWPup, and other formats in future releases. Each backup plugin format is handled by its own adapter module in `src/lib/adapters/`. Includes auto-detection of archive formats and manual override via `--archive-type` flag. Maintainers can add new formats by creating a single adapter file without modifying core code (see `src/lib/adapters/README.md` for contributor guide).
 - **[v2 ONLY]** **New `--archive` flag**: Replaces `--duplicator-archive` as the primary archive import flag. Supports any backup format via the adapter system. Example: `--archive /path/to/backup.zip` with optional `--archive-type duplicator` for explicit format specification.
