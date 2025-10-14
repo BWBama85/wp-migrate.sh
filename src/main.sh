@@ -732,6 +732,7 @@ if $DRY_RUN; then
 else
   DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
   log "Backing up current wp-content to: $DEST_WP_CONTENT_BACKUP"
+  log_trace "cp -a \"$DEST_WP_CONTENT\" \"$DEST_WP_CONTENT_BACKUP\""
   cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"
   log "wp-content backup created: $DEST_WP_CONTENT_BACKUP"
 fi
