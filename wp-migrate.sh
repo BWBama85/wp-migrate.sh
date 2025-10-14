@@ -1660,10 +1660,16 @@ log_verbose "Detecting destination database prefix..."
 DEST_DB_PREFIX="$(wp_remote "$DEST_HOST" "$DEST_ROOT" db prefix)"
 log "Dest   DB prefix: $DEST_DB_PREFIX"
 
+log_verbose "Detecting WordPress URLs..."
 SOURCE_HOME_URL="$(wp_local eval "echo get_option(\"home\");")"
 SOURCE_SITE_URL="$(wp_local eval "echo get_option(\"siteurl\");")"
+log_verbose "  Source home: $SOURCE_HOME_URL"
+log_verbose "  Source site: $SOURCE_SITE_URL"
+
 DEST_HOME_URL="$(wp_remote "$DEST_HOST" "$DEST_ROOT" eval "echo get_option(\"home\");")"
 DEST_SITE_URL="$(wp_remote "$DEST_HOST" "$DEST_ROOT" eval "echo get_option(\"siteurl\");")"
+log_verbose "  Dest home: $DEST_HOME_URL"
+log_verbose "  Dest site: $DEST_SITE_URL"
 
 if [[ -n "$DEST_HOME_OVERRIDE" ]]; then
   log "Using --dest-home-url override: $DEST_HOME_OVERRIDE"
@@ -1717,12 +1723,20 @@ else
   fi
 fi
 
+log_verbose "Checking for WordPress multisite..."
 if wp_remote "$DEST_HOST" "$DEST_ROOT" core is-installed --network >/dev/null 2>&1; then
   SEARCH_REPLACE_FLAGS+=(--network)
+  log_verbose "  ✓ Multisite detected (will use --network flag for search-replace)"
+else
+  log_verbose "  Single-site installation"
 fi
 
+log_verbose "Checking for Redis object cache support..."
 if wp_remote_has_command "$DEST_HOST" "$DEST_ROOT" redis; then
   REDIS_FLUSH_AVAILABLE=true
+  log_verbose "  ✓ Redis CLI available (will flush cache after migration)"
+else
+  log_verbose "  Redis not available (skipping cache flush)"
 fi
 
 if $GZIP_DB && $IMPORT_DB; then
@@ -1732,6 +1746,7 @@ if $GZIP_DB && $IMPORT_DB; then
 fi
 
 # Discover wp-content paths
+log_verbose "Discovering wp-content directories..."
 SRC_WP_CONTENT="$(discover_wp_content_local)"
 DST_WP_CONTENT="$(discover_wp_content_remote "$DEST_HOST" "$DEST_ROOT")"
 log "Source WP_CONTENT_DIR: $SRC_WP_CONTENT"
@@ -1838,13 +1853,16 @@ else
     if [[ "$SOURCE_DB_PREFIX" != "$DEST_DB_PREFIX" ]]; then
       DEST_DB_PREFIX_BEFORE="$DEST_DB_PREFIX"
       log "Updating destination table prefix: $DEST_DB_PREFIX -> $SOURCE_DB_PREFIX"
+      log_verbose "  Attempting wp config set..."
       wp_remote "$DEST_HOST" "$DEST_ROOT" config set table_prefix "$SOURCE_DB_PREFIX" --type=variable
 
       # Verify the update worked (wp config set has bugs with values starting with underscores)
+      log_verbose "  Verifying table prefix was written correctly..."
       ACTUAL_PREFIX="$(wp_remote "$DEST_HOST" "$DEST_ROOT" db prefix 2>/dev/null || echo "")"
       if [[ "$ACTUAL_PREFIX" != "$SOURCE_DB_PREFIX" ]]; then
         log "WARNING: wp config set failed to write correct prefix (wrote '$ACTUAL_PREFIX' instead of '$SOURCE_DB_PREFIX')"
         log "Falling back to direct wp-config.php edit via sed..."
+        log_verbose "  Using sed to directly edit wp-config.php..."
 
         # Fallback: Use sed to directly update wp-config.php on remote
         # This handles edge cases like prefixes with leading underscores that wp config set mishandles
@@ -1910,14 +1928,19 @@ fi
 if $PRESERVE_DEST_PLUGINS; then
   log "Detecting plugins/themes for preservation..."
 
+  log_verbose "  Scanning destination plugins/themes..."
   # Get destination plugins/themes (before migration)
   detect_dest_plugins_push "$DEST_HOST" "$DEST_ROOT"
   detect_dest_themes_push "$DEST_HOST" "$DEST_ROOT"
+  log_verbose "    Found ${#DEST_PLUGINS_BEFORE[@]} destination plugins, ${#DEST_THEMES_BEFORE[@]} themes"
 
+  log_verbose "  Scanning source plugins/themes..."
   # Get source plugins/themes
   detect_source_plugins
   detect_source_themes
+  log_verbose "    Found ${#SOURCE_PLUGINS[@]} source plugins, ${#SOURCE_THEMES[@]} themes"
 
+  log_verbose "  Computing unique destination items (not in source)..."
   # Compute unique destination items (not in source)
   array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
   array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE[@] SOURCE_THEMES[@]
@@ -1947,10 +1970,16 @@ DST_WP_CONTENT_BACKUP="$(backup_remote_wp_content "$DEST_HOST" "$DST_WP_CONTENT"
 # ---------------------
 # Build rsync options
 # ---------------------
+log_verbose "Building rsync options..."
 RS_OPTS=( -a -h -z --info=stats2 --partial --links --prune-empty-dirs --no-perms --no-owner --no-group )
 # Add progress indicator for real runs (shows current file being transferred)
-$DRY_RUN || RS_OPTS+=( --info=progress2 )
-$DRY_RUN && RS_OPTS+=( -n --itemize-changes )
+if $DRY_RUN; then
+  RS_OPTS+=( -n --itemize-changes )
+  log_verbose "  Dry-run mode: added -n --itemize-changes"
+else
+  RS_OPTS+=( --info=progress2 )
+  log_verbose "  Live mode: added --info=progress2"
+fi
 
 # Exclude object-cache.php drop-in to prevent caching infrastructure incompatibility
 # Use root-anchored path (/) to only exclude wp-content/object-cache.php, not plugin files
@@ -1960,6 +1989,7 @@ log "Excluding object-cache.php drop-in from transfer (preserves destination cac
 # Extra rsync opts
 if [[ ${#EXTRA_RSYNC_OPTS[@]} -gt 0 ]]; then
   RS_OPTS+=( "${EXTRA_RSYNC_OPTS[@]}" )
+  log_verbose "  Added ${#EXTRA_RSYNC_OPTS[@]} custom rsync option(s): ${EXTRA_RSYNC_OPTS[*]}"
 fi
 
 log "Rsync options: ${RS_OPTS[*]}"
@@ -2139,14 +2169,19 @@ fi
 if $PRESERVE_DEST_PLUGINS; then
   log "Detecting plugins/themes for preservation..."
 
+  log_verbose "  Scanning destination plugins/themes..."
   # Get destination plugins/themes (before migration)
   detect_dest_plugins_local
   detect_dest_themes_local
+  log_verbose "    Found ${#DEST_PLUGINS_BEFORE[@]} destination plugins, ${#DEST_THEMES_BEFORE[@]} themes"
 
+  log_verbose "  Scanning archive plugins/themes..."
   # Get archive plugins/themes
   detect_archive_plugins "$ARCHIVE_WP_CONTENT"
   detect_archive_themes "$ARCHIVE_WP_CONTENT"
+  log_verbose "    Found ${#SOURCE_PLUGINS[@]} archive plugins, ${#SOURCE_THEMES[@]} themes"
 
+  log_verbose "  Computing unique destination items (not in archive)..."
   # Compute unique destination items (not in source/archive)
   array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
   array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE[@] SOURCE_THEMES[@]
@@ -2366,8 +2401,12 @@ else
     fi
 
     # Check for multisite
+    log_verbose "Checking for WordPress multisite..."
     if wp_local core is-installed --network >/dev/null 2>&1; then
       SEARCH_REPLACE_FLAGS+=(--network)
+      log_verbose "  ✓ Multisite detected (will use --network flag for search-replace)"
+    else
+      log_verbose "  Single-site installation"
     fi
 
     # Perform search-replace
@@ -2406,11 +2445,14 @@ else
 
   # Build rsync command with appropriate options
   # Always use --delete to ensure destination matches archive (removes stale files)
+  log_verbose "Building rsync options for archive sync..."
   RSYNC_OPTS=(-a --delete)
+  log_verbose "  Base options: -a --delete"
 
   # Use root-anchored exclusions (leading /) to only match files at wp-content root
   # Without /, rsync would exclude these filenames at ANY depth (e.g., plugins/foo/object-cache.php)
   RSYNC_EXCLUDES=(--exclude=/object-cache.php)
+  log_verbose "  Excluding: object-cache.php (preserves destination caching)"
 
   if $STELLARSITES_MODE; then
     # StellarSites mode: Exclude mu-plugins directory AND loader file (both at root)
@@ -2418,6 +2460,7 @@ else
     # Must exclude both the directory and the loader, or --delete will remove the loader
     RSYNC_EXCLUDES+=(--exclude=/mu-plugins/ --exclude=/mu-plugins.php)
     log "StellarSites mode: Preserving destination mu-plugins directory and loader"
+    log_verbose "  Excluding: mu-plugins/ mu-plugins.php (StellarSites protected files)"
   fi
 
   # Sync wp-content from archive to destination
@@ -2435,7 +2478,9 @@ else
 fi
 
 # Phase 10: Flush cache if available
+log_verbose "Checking for Redis object cache support..."
 if wp_local cli has-command redis >/dev/null 2>&1; then
+  log_verbose "  ✓ Redis CLI available (flushing cache)"
   if $DRY_RUN; then
     log "[dry-run] Would flush Object Cache Pro cache via: wp redis flush"
   else

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Logging infrastructure**: Added `--verbose` and `--trace` flags for enhanced logging and debugging. `--verbose` shows additional details like dependency checks, command construction, and detection processes. `--trace` displays every command before execution with full arguments (implies `--verbose`). Foundation for upcoming verbose logging and improved error messages in subsequent releases.
+- **Enhanced verbose logging**: Added 38 new verbose log calls throughout migration workflow. WordPress environment detection (multisite, Redis, URLs, wp-content paths), command construction (rsync options, exclusions, SSH commands), plugin/theme preservation (scanning, counting, uniqueness detection), and table prefix operations (verification, fallback logic). Users can now see decision points and intermediate results with `--verbose` flag.
 
 ## [2.1.1] - 2025-10-14
 
