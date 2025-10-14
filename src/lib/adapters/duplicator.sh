@@ -42,6 +42,7 @@ adapter_duplicator_validate() {
 adapter_duplicator_extract() {
   local archive="$1" dest="$2"
 
+  log_trace "unzip -q \"$archive\" -d \"$dest\""
   if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
     return 1
   fi

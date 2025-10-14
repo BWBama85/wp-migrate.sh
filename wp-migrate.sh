@@ -317,6 +317,7 @@ adapter_duplicator_validate() {
 adapter_duplicator_extract() {
   local archive="$1" dest="$2"
 
+  log_trace "unzip -q \"$archive\" -d \"$dest\""
   if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
     return 1
   fi
@@ -428,6 +429,7 @@ adapter_jetpack_extract() {
 
   # If already a directory, copy it (include hidden files with trailing /.)
   if [[ -d "$archive" ]]; then
+    log_trace "cp -a \"$archive\"/. \"$dest\"/"
     if ! cp -a "$archive"/. "$dest"/ 2>/dev/null; then
       return 1
     fi
@@ -439,14 +441,17 @@ adapter_jetpack_extract() {
   archive_type=$(adapter_base_get_archive_type "$archive")
 
   if [[ "$archive_type" == "zip" ]]; then
+    log_trace "unzip -q \"$archive\" -d \"$dest\""
     if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
       return 1
     fi
   elif [[ "$archive_type" == "tar.gz" ]]; then
+    log_trace "tar -xzf \"$archive\" -C \"$dest\""
     if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
       return 1
     fi
   elif [[ "$archive_type" == "tar" ]]; then
+    log_trace "tar -xf \"$archive\" -C \"$dest\""
     if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
       return 1
     fi
@@ -2166,6 +2171,7 @@ if $DRY_RUN; then
 else
   DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
   log "Backing up current wp-content to: $DEST_WP_CONTENT_BACKUP"
+  log_trace "cp -a \"$DEST_WP_CONTENT\" \"$DEST_WP_CONTENT_BACKUP\""
   cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"
   log "wp-content backup created: $DEST_WP_CONTENT_BACKUP"
 fi

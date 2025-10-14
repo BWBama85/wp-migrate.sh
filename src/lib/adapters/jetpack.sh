@@ -53,6 +53,7 @@ adapter_jetpack_extract() {
 
   # If already a directory, copy it (include hidden files with trailing /.)
   if [[ -d "$archive" ]]; then
+    log_trace "cp -a \"$archive\"/. \"$dest\"/"
     if ! cp -a "$archive"/. "$dest"/ 2>/dev/null; then
       return 1
     fi
@@ -64,14 +65,17 @@ adapter_jetpack_extract() {
   archive_type=$(adapter_base_get_archive_type "$archive")
 
   if [[ "$archive_type" == "zip" ]]; then
+    log_trace "unzip -q \"$archive\" -d \"$dest\""
     if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
       return 1
     fi
   elif [[ "$archive_type" == "tar.gz" ]]; then
+    log_trace "tar -xzf \"$archive\" -C \"$dest\""
     if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
       return 1
     fi
   elif [[ "$archive_type" == "tar" ]]; then
+    log_trace "tar -xf \"$archive\" -C \"$dest\""
     if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
       return 1
     fi
