@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2025-10-14
+
+**🚀 Second Archive Format: Jetpack Backup Support**
+
+This release adds Jetpack Backup as the second supported archive format, demonstrating the extensible adapter system working as designed. Users can now import both Duplicator and Jetpack Backup archives with automatic format detection.
+
 ### Added
 - **Jetpack Backup adapter**: Added support for Jetpack Backup archives (ZIP, TAR.GZ, or extracted directory format). Handles Jetpack's multi-file SQL structure (one table per file in `sql/` directory) by consolidating into a single database dump before import. Auto-detects Jetpack backups via `meta.json` signature file and `sql/wp_options.sql` presence. Supports both archive files and already-extracted directory paths. Table prefix detection extracts from SQL filenames (e.g., `wp_options.sql` → `wp_`). wp-content location detected at root level of backup. Example: `./wp-migrate.sh --archive /path/to/jetpack-backup.tar.gz` or `./wp-migrate.sh --archive /path/to/extracted-jetpack-backup/`.
 
