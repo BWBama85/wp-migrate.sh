@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2025-10-14
+
+**🔍 Observability & Error Guidance: Enhanced Logging & Troubleshooting**
+
+This minor release adds comprehensive logging capabilities (`--verbose` and `--trace` flags) and significantly improves error messages with actionable troubleshooting guidance. A 4-phase improvement initiative spanning 60+ log calls and 25+ enhanced error messages.
+
 ### Added
-- **Logging infrastructure**: Added `--verbose` and `--trace` flags for enhanced logging and debugging. `--verbose` shows additional details like dependency checks, command construction, and detection processes. `--trace` displays every command before execution with full arguments (implies `--verbose`). Foundation for upcoming verbose logging and improved error messages in subsequent releases.
-- **Enhanced verbose logging**: Added 38 new verbose log calls throughout migration workflow. WordPress environment detection (multisite, Redis, URLs, wp-content paths), command construction (rsync options, exclusions, SSH commands), plugin/theme preservation (scanning, counting, uniqueness detection), and table prefix operations (verification, fallback logic). Users can now see decision points and intermediate results with `--verbose` flag.
-- **Enhanced trace logging**: Added 6 new trace calls for archive extraction and file operations. Traces archive extraction commands (unzip, tar, cp), wp-content backup operations. Combined with existing trace coverage (wp-cli commands via `wp_local`/`wp_remote`, SSH commands via `ssh_run`, rsync operations), users now have complete command visibility with `--trace` flag. All critical operations traced: database exports/imports, search-replace, archive extraction, file copies, rsync syncs.
+- **Logging infrastructure**: Added `--verbose` and `--trace` flags for enhanced logging and debugging. `--verbose` shows additional details like dependency checks, command construction, and detection processes. `--trace` displays every command before execution with full arguments (implies `--verbose`). Provides complete observability into migration workflow.
+- **Enhanced verbose logging**: Added 44 verbose log calls throughout migration workflow. WordPress environment detection (multisite, Redis, URLs, wp-content paths), command construction (rsync options, exclusions, SSH commands), plugin/theme preservation (scanning, counting, uniqueness detection), table prefix operations (verification, fallback logic), and dependency checks. Users can now see decision points and intermediate results with `--verbose` flag.
+- **Enhanced trace logging**: Added 16 trace calls for command execution visibility. Traces all WP-CLI commands (`wp_local`/`wp_remote`), SSH commands (`ssh_run`), rsync operations, archive extraction (unzip, tar, cp), and file backup operations. Combined with existing trace coverage, users now have complete command visibility with `--trace` flag. All critical operations traced: database exports/imports, search-replace, archive extraction, file copies, rsync syncs.
 - **Enhanced error messages**: Improved 25+ error messages throughout the script with actionable "next steps" guidance. Validation errors (unknown arguments, missing flags, invalid URLs) now include examples and common mistakes. Connection errors (SSH failures, WordPress not detected) now include diagnostic commands and troubleshooting steps. Archive errors (extraction failures, missing database/wp-content) now explain possible causes and provide manual verification commands. Database errors (prefix mismatch, table detection failures) now include recovery procedures and manual fix instructions. Dependency errors (missing wp-cli, rsync, gzip) now include OS-specific installation commands for macOS, Debian/Ubuntu, and RHEL/CentOS.
 
 ### Fixed
