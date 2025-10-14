@@ -18,7 +18,8 @@ while [[ $# -gt 0 ]]; do
     --no-import-db) IMPORT_DB=false; shift ;;
     --no-gzip) GZIP_DB=false; shift ;;
     --no-maint-source) MAINTENANCE_SOURCE=false; shift ;;
-    --stellarsites) STELLARSITES_MODE=true; shift ;;
+    --stellarsites) STELLARSITES_MODE=true; PRESERVE_DEST_PLUGINS=true; shift ;;
+    --preserve-dest-plugins) PRESERVE_DEST_PLUGINS=true; shift ;;
     --rsync-opt) EXTRA_RSYNC_OPTS+=("${2:-}"); shift 2 ;;
     --ssh-opt)
       val="${2:-}"; shift 2
@@ -463,6 +464,42 @@ else
   fi
 fi
 
+# ---------------------------------------------------------
+# Detect plugins/themes (if preserving destination content)
+# IMPORTANT: Must happen BEFORE backup (backup uses mv, making wp-content unavailable)
+# ---------------------------------------------------------
+if $PRESERVE_DEST_PLUGINS; then
+  log "Detecting plugins/themes for preservation..."
+
+  # Get destination plugins/themes (before migration)
+  detect_dest_plugins_push "$DEST_HOST" "$DEST_ROOT"
+  detect_dest_themes_push "$DEST_HOST" "$DEST_ROOT"
+
+  # Get source plugins/themes
+  detect_source_plugins
+  detect_source_themes
+
+  # Compute unique destination items (not in source)
+  array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
+  array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE[@] SOURCE_THEMES[@]
+
+  if ! $DRY_RUN; then
+    log "  Destination has ${#DEST_PLUGINS_BEFORE[@]} plugin(s), source has ${#SOURCE_PLUGINS[@]} plugin(s)"
+    log "  Unique to destination: ${#UNIQUE_DEST_PLUGINS[@]} plugin(s)"
+
+    log "  Destination has ${#DEST_THEMES_BEFORE[@]} theme(s), source has ${#SOURCE_THEMES[@]} theme(s)"
+    log "  Unique to destination: ${#UNIQUE_DEST_THEMES[@]} theme(s)"
+
+    if [[ ${#UNIQUE_DEST_PLUGINS[@]} -gt 0 ]]; then
+      log "  Plugins to preserve: ${UNIQUE_DEST_PLUGINS[*]}"
+    fi
+
+    if [[ ${#UNIQUE_DEST_THEMES[@]} -gt 0 ]]; then
+      log "  Themes to preserve: ${UNIQUE_DEST_THEMES[*]}"
+    fi
+  fi
+fi
+
 # -------------------------------
 # Backup destination wp-content
 # -------------------------------
@@ -496,6 +533,11 @@ ssh_cmd_content="$(ssh_cmd_string)"
 rsync "${RS_OPTS[@]}" -e "$ssh_cmd_content" \
   "$SRC_WP_CONTENT"/ \
   "$DEST_HOST":"$DST_WP_CONTENT"/ | tee -a "$LOG_FILE"
+
+# Restore unique destination plugins/themes (if preserving)
+if $PRESERVE_DEST_PLUGINS && [[ -n "$DST_WP_CONTENT_BACKUP" ]]; then
+  restore_dest_content_push "$DEST_HOST" "$DEST_ROOT" "$DST_WP_CONTENT_BACKUP"
+fi
 
 # Report backup location if applicable
 if [[ -n "$DST_WP_CONTENT_BACKUP" ]]; then
@@ -651,6 +693,39 @@ else
   log "Backing up current wp-content to: $DEST_WP_CONTENT_BACKUP"
   cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"
   log "wp-content backup created: $DEST_WP_CONTENT_BACKUP"
+fi
+
+# Phase 6b: Detect plugins/themes (if preserving destination content)
+if $PRESERVE_DEST_PLUGINS; then
+  log "Detecting plugins/themes for preservation..."
+
+  # Get destination plugins/themes (before migration)
+  detect_dest_plugins_local
+  detect_dest_themes_local
+
+  # Get archive plugins/themes
+  detect_archive_plugins "$DUPLICATOR_WP_CONTENT"
+  detect_archive_themes "$DUPLICATOR_WP_CONTENT"
+
+  # Compute unique destination items (not in source/archive)
+  array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
+  array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE[@] SOURCE_THEMES[@]
+
+  if ! $DRY_RUN; then
+    log "  Destination has ${#DEST_PLUGINS_BEFORE[@]} plugin(s), archive has ${#SOURCE_PLUGINS[@]} plugin(s)"
+    log "  Unique to destination: ${#UNIQUE_DEST_PLUGINS[@]} plugin(s)"
+
+    log "  Destination has ${#DEST_THEMES_BEFORE[@]} theme(s), archive has ${#SOURCE_THEMES[@]} theme(s)"
+    log "  Unique to destination: ${#UNIQUE_DEST_THEMES[@]} theme(s)"
+
+    if [[ ${#UNIQUE_DEST_PLUGINS[@]} -gt 0 ]]; then
+      log "  Plugins to preserve: ${UNIQUE_DEST_PLUGINS[*]}"
+    fi
+
+    if [[ ${#UNIQUE_DEST_THEMES[@]} -gt 0 ]]; then
+      log "  Themes to preserve: ${UNIQUE_DEST_THEMES[*]}"
+    fi
+  fi
 fi
 
 # Phase 7: Import database
@@ -911,6 +986,11 @@ else
     "$ARCHIVE_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE"
 
   log "wp-content synced successfully (object-cache.php excluded to preserve destination caching)"
+
+  # Restore unique destination plugins/themes (if preserving)
+  if $PRESERVE_DEST_PLUGINS; then
+    restore_dest_content_local "$DEST_WP_CONTENT_BACKUP"
+  fi
 fi
 
 # Phase 10: Flush cache if available

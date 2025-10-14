@@ -44,6 +44,15 @@ GZIP_DB=true                # Compress DB dump during transfer
 MAINTENANCE_ALWAYS=true     # Always enable maintenance mode during migration
 MAINTENANCE_SOURCE=true     # Allow skipping maintenance mode on the source (--no-maint-source)
 STELLARSITES_MODE=false     # Enable StellarSites compatibility (preserves protected mu-plugins)
+PRESERVE_DEST_PLUGINS=false # Preserve destination plugins/themes not in source (auto-enabled with --stellarsites)
+
+# Plugin/theme preservation tracking
+DEST_PLUGINS_BEFORE=()      # Plugins on destination before migration
+DEST_THEMES_BEFORE=()       # Themes on destination before migration
+SOURCE_PLUGINS=()           # Plugins in source (push) or archive (duplicator)
+SOURCE_THEMES=()            # Themes in source (push) or archive (duplicator)
+UNIQUE_DEST_PLUGINS=()      # Plugins unique to destination (to be restored)
+UNIQUE_DEST_THEMES=()       # Themes unique to destination (to be restored)
 
 # Archive mode variables
 ARCHIVE_ADAPTER=""           # Detected adapter name (duplicator, jetpack, etc.)

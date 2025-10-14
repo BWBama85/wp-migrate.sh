@@ -44,6 +44,15 @@ GZIP_DB=true                # Compress DB dump during transfer
 MAINTENANCE_ALWAYS=true     # Always enable maintenance mode during migration
 MAINTENANCE_SOURCE=true     # Allow skipping maintenance mode on the source (--no-maint-source)
 STELLARSITES_MODE=false     # Enable StellarSites compatibility (preserves protected mu-plugins)
+PRESERVE_DEST_PLUGINS=false # Preserve destination plugins/themes not in source (auto-enabled with --stellarsites)
+
+# Plugin/theme preservation tracking
+DEST_PLUGINS_BEFORE=()      # Plugins on destination before migration
+DEST_THEMES_BEFORE=()       # Themes on destination before migration
+SOURCE_PLUGINS=()           # Plugins in source (push) or archive (duplicator)
+SOURCE_THEMES=()            # Themes in source (push) or archive (duplicator)
+UNIQUE_DEST_PLUGINS=()      # Plugins unique to destination (to be restored)
+UNIQUE_DEST_THEMES=()       # Themes unique to destination (to be restored)
 
 # Archive mode variables
 ARCHIVE_ADAPTER=""           # Detected adapter name (duplicator, jetpack, etc.)
@@ -697,6 +706,289 @@ cleanup_archive_temp() {
   fi
 }
 
+# Compute array difference: items in arr1 NOT in arr2
+# Usage: array_diff result_var arr1_name arr2_name
+# Note: Bash 3.2 compatible (no namerefs)
+array_diff() {
+  local result_var="$1"
+  local arr1_name="$2"
+  local arr2_name="$3"
+
+  # Clear result array
+  eval "$result_var=()"
+
+  local item found check
+
+  # Get array1 elements via eval (shellcheck can't track dynamic assignment)
+  eval "local arr1_items=(\"\${${arr1_name}[@]}\")"
+  eval "local arr2_items=(\"\${${arr2_name}[@]}\")"
+
+  # For each item in arr1, check if it exists in arr2
+  # shellcheck disable=SC2154  # arr1_items/arr2_items assigned via eval
+  for item in "${arr1_items[@]}"; do
+    found=false
+    for check in "${arr2_items[@]}"; do
+      if [[ "$item" == "$check" ]]; then
+        found=true
+        break
+      fi
+    done
+
+    # If not found in arr2, add to result
+    if ! $found; then
+      eval "$result_var+=(\"\$item\")"
+    fi
+  done
+}
+
+# Detect plugins on destination (before migration)
+detect_dest_plugins_push() {
+  local host="$1" root="$2"
+  if $DRY_RUN; then
+    log "[dry-run] Would detect destination plugins via wp plugin list"
+    return 0
+  fi
+
+  local plugins_csv plugin
+  plugins_csv=$(wp_remote "$host" "$root" plugin list --field=name --format=csv 2>/dev/null || echo "")
+  if [[ -n "$plugins_csv" ]]; then
+    DEST_PLUGINS_BEFORE=()
+    while IFS= read -r plugin; do
+      [[ -n "$plugin" ]] && DEST_PLUGINS_BEFORE+=("$plugin")
+    done < <(echo "$plugins_csv" | tr ',' '\n')
+  fi
+}
+
+# Detect themes on destination (before migration)
+detect_dest_themes_push() {
+  local host="$1" root="$2"
+  if $DRY_RUN; then
+    log "[dry-run] Would detect destination themes via wp theme list"
+    return 0
+  fi
+
+  local themes_csv theme
+  themes_csv=$(wp_remote "$host" "$root" theme list --field=name --format=csv 2>/dev/null || echo "")
+  if [[ -n "$themes_csv" ]]; then
+    DEST_THEMES_BEFORE=()
+    while IFS= read -r theme; do
+      [[ -n "$theme" ]] && DEST_THEMES_BEFORE+=("$theme")
+    done < <(echo "$themes_csv" | tr ',' '\n')
+  fi
+}
+
+# Detect plugins in source (push mode)
+detect_source_plugins() {
+  if $DRY_RUN; then
+    log "[dry-run] Would detect source plugins via wp plugin list"
+    return 0
+  fi
+
+  local plugins_csv plugin
+  plugins_csv=$(wp_local plugin list --field=name --format=csv 2>/dev/null || echo "")
+  if [[ -n "$plugins_csv" ]]; then
+    SOURCE_PLUGINS=()
+    while IFS= read -r plugin; do
+      [[ -n "$plugin" ]] && SOURCE_PLUGINS+=("$plugin")
+    done < <(echo "$plugins_csv" | tr ',' '\n')
+  fi
+}
+
+# Detect themes in source (push mode)
+detect_source_themes() {
+  if $DRY_RUN; then
+    log "[dry-run] Would detect source themes via wp theme list"
+    return 0
+  fi
+
+  local themes_csv theme
+  themes_csv=$(wp_local theme list --field=name --format=csv 2>/dev/null || echo "")
+  if [[ -n "$themes_csv" ]]; then
+    SOURCE_THEMES=()
+    while IFS= read -r theme; do
+      [[ -n "$theme" ]] && SOURCE_THEMES+=("$theme")
+    done < <(echo "$themes_csv" | tr ',' '\n')
+  fi
+}
+
+# Detect plugins on destination (duplicator mode - before migration)
+detect_dest_plugins_local() {
+  if $DRY_RUN; then
+    log "[dry-run] Would detect destination plugins via wp plugin list"
+    return 0
+  fi
+
+  local plugins_csv plugin
+  plugins_csv=$(wp_local plugin list --field=name --format=csv 2>/dev/null || echo "")
+  if [[ -n "$plugins_csv" ]]; then
+    DEST_PLUGINS_BEFORE=()
+    while IFS= read -r plugin; do
+      [[ -n "$plugin" ]] && DEST_PLUGINS_BEFORE+=("$plugin")
+    done < <(echo "$plugins_csv" | tr ',' '\n')
+  fi
+}
+
+# Detect themes on destination (duplicator mode - before migration)
+detect_dest_themes_local() {
+  if $DRY_RUN; then
+    log "[dry-run] Would detect destination themes via wp theme list"
+    return 0
+  fi
+
+  local themes_csv theme
+  themes_csv=$(wp_local theme list --field=name --format=csv 2>/dev/null || echo "")
+  if [[ -n "$themes_csv" ]]; then
+    DEST_THEMES_BEFORE=()
+    while IFS= read -r theme; do
+      [[ -n "$theme" ]] && DEST_THEMES_BEFORE+=("$theme")
+    done < <(echo "$themes_csv" | tr ',' '\n')
+  fi
+}
+
+# Detect plugins in archive (duplicator mode)
+detect_archive_plugins() {
+  local wp_content_path="$1"
+  if $DRY_RUN; then
+    log "[dry-run] Would scan archive for plugins"
+    return 0
+  fi
+
+  if [[ ! -d "$wp_content_path/plugins" ]]; then
+    return 0
+  fi
+
+  local plugin
+  while IFS= read -r -d '' plugin_dir; do
+    plugin=$(basename "$plugin_dir")
+    SOURCE_PLUGINS+=("$plugin")
+  done < <(find "$wp_content_path/plugins" -maxdepth 1 -mindepth 1 -type d -print0)
+}
+
+# Detect themes in archive (duplicator mode)
+detect_archive_themes() {
+  local wp_content_path="$1"
+  if $DRY_RUN; then
+    log "[dry-run] Would scan archive for themes"
+    return 0
+  fi
+
+  if [[ ! -d "$wp_content_path/themes" ]]; then
+    return 0
+  fi
+
+  local theme
+  while IFS= read -r -d '' theme_dir; do
+    theme=$(basename "$theme_dir")
+    SOURCE_THEMES+=("$theme")
+  done < <(find "$wp_content_path/themes" -maxdepth 1 -mindepth 1 -type d -print0)
+}
+
+# Restore unique destination plugins/themes (push mode)
+restore_dest_content_push() {
+  local host="$1" root="$2" backup_path="$3"
+
+  if [[ ${#UNIQUE_DEST_PLUGINS[@]} -eq 0 && ${#UNIQUE_DEST_THEMES[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  log "Restoring destination plugins/themes not in source..."
+
+  # Restore plugins
+  if [[ ${#UNIQUE_DEST_PLUGINS[@]} -gt 0 ]]; then
+    log "  Restoring ${#UNIQUE_DEST_PLUGINS[@]} unique destination plugin(s)..."
+    for plugin in "${UNIQUE_DEST_PLUGINS[@]}"; do
+      if $DRY_RUN; then
+        log "[dry-run]   Would restore plugin: $plugin"
+      else
+        log "    Restoring plugin: $plugin"
+        ssh_run "$host" "cp -a \"$backup_path/plugins/$plugin\" \"$(discover_wp_content_remote "$host" "$root")/plugins/\" 2>/dev/null" || {
+          log_warning "Failed to restore plugin: $plugin"
+        }
+      fi
+    done
+
+    # Deactivate restored plugins
+    if ! $DRY_RUN; then
+      log "  Deactivating restored plugins..."
+      for plugin in "${UNIQUE_DEST_PLUGINS[@]}"; do
+        if wp_remote "$host" "$root" plugin deactivate "$plugin" 2>/dev/null; then
+          log "    Deactivated: $plugin"
+        else
+          log_warning "Could not deactivate plugin: $plugin"
+        fi
+      done
+    fi
+  fi
+
+  # Restore themes
+  if [[ ${#UNIQUE_DEST_THEMES[@]} -gt 0 ]]; then
+    log "  Restoring ${#UNIQUE_DEST_THEMES[@]} unique destination theme(s)..."
+    for theme in "${UNIQUE_DEST_THEMES[@]}"; do
+      if $DRY_RUN; then
+        log "[dry-run]   Would restore theme: $theme"
+      else
+        log "    Restoring theme: $theme"
+        ssh_run "$host" "cp -a \"$backup_path/themes/$theme\" \"$(discover_wp_content_remote "$host" "$root")/themes/\" 2>/dev/null" || {
+          log_warning "Failed to restore theme: $theme"
+        }
+      fi
+    done
+  fi
+}
+
+# Restore unique destination plugins/themes (duplicator mode)
+restore_dest_content_local() {
+  local backup_path="$1"
+
+  if [[ ${#UNIQUE_DEST_PLUGINS[@]} -eq 0 && ${#UNIQUE_DEST_THEMES[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  log "Restoring destination plugins/themes not in source..."
+
+  # Restore plugins
+  if [[ ${#UNIQUE_DEST_PLUGINS[@]} -gt 0 ]]; then
+    log "  Restoring ${#UNIQUE_DEST_PLUGINS[@]} unique destination plugin(s)..."
+    for plugin in "${UNIQUE_DEST_PLUGINS[@]}"; do
+      if $DRY_RUN; then
+        log "[dry-run]   Would restore plugin: $plugin"
+      else
+        log "    Restoring plugin: $plugin"
+        cp -a "$backup_path/plugins/$plugin" "$DEST_WP_CONTENT/plugins/" 2>/dev/null || {
+          log_warning "Failed to restore plugin: $plugin"
+        }
+      fi
+    done
+
+    # Deactivate restored plugins
+    if ! $DRY_RUN; then
+      log "  Deactivating restored plugins..."
+      for plugin in "${UNIQUE_DEST_PLUGINS[@]}"; do
+        if wp_local plugin deactivate "$plugin" 2>/dev/null; then
+          log "    Deactivated: $plugin"
+        else
+          log_warning "Could not deactivate plugin: $plugin"
+        fi
+      done
+    fi
+  fi
+
+  # Restore themes
+  if [[ ${#UNIQUE_DEST_THEMES[@]} -gt 0 ]]; then
+    log "  Restoring ${#UNIQUE_DEST_THEMES[@]} unique destination theme(s)..."
+    for theme in "${UNIQUE_DEST_THEMES[@]}"; do
+      if $DRY_RUN; then
+        log "[dry-run]   Would restore theme: $theme"
+      else
+        log "    Restoring theme: $theme"
+        cp -a "$backup_path/themes/$theme" "$DEST_WP_CONTENT/themes/" 2>/dev/null || {
+          log_warning "Failed to restore theme: $theme"
+        }
+      fi
+    done
+  fi
+}
+
 backup_remote_wp_content() {
   local host="$1" path="$2" stamp="$3"
   local backup_path="${path%/}.backup-$stamp"
@@ -832,7 +1124,8 @@ Options:
   --no-import-db            Skip importing the DB on destination after transfer
   --no-gzip                 Don't gzip the DB dump (default is gzip on, push mode only)
   --no-maint-source         Skip enabling maintenance mode on the source site (push mode only)
-  --stellarsites            Enable StellarSites compatibility mode (preserves protected mu-plugins, archive mode only)
+  --stellarsites            Enable StellarSites compatibility mode (preserves protected mu-plugins, auto-enables --preserve-dest-plugins)
+  --preserve-dest-plugins   Preserve destination plugins/themes not in source (restored but deactivated after migration)
   --dest-domain '<host>'    Override destination domain (push mode only)
   --dest-home-url '<url>'   Force the destination home URL used for replacements (push mode only)
   --dest-site-url '<url>'   Force the destination site URL used for replacements (push mode only)
@@ -873,7 +1166,8 @@ while [[ $# -gt 0 ]]; do
     --no-import-db) IMPORT_DB=false; shift ;;
     --no-gzip) GZIP_DB=false; shift ;;
     --no-maint-source) MAINTENANCE_SOURCE=false; shift ;;
-    --stellarsites) STELLARSITES_MODE=true; shift ;;
+    --stellarsites) STELLARSITES_MODE=true; PRESERVE_DEST_PLUGINS=true; shift ;;
+    --preserve-dest-plugins) PRESERVE_DEST_PLUGINS=true; shift ;;
     --rsync-opt) EXTRA_RSYNC_OPTS+=("${2:-}"); shift 2 ;;
     --ssh-opt)
       val="${2:-}"; shift 2
@@ -1318,6 +1612,42 @@ else
   fi
 fi
 
+# ---------------------------------------------------------
+# Detect plugins/themes (if preserving destination content)
+# IMPORTANT: Must happen BEFORE backup (backup uses mv, making wp-content unavailable)
+# ---------------------------------------------------------
+if $PRESERVE_DEST_PLUGINS; then
+  log "Detecting plugins/themes for preservation..."
+
+  # Get destination plugins/themes (before migration)
+  detect_dest_plugins_push "$DEST_HOST" "$DEST_ROOT"
+  detect_dest_themes_push "$DEST_HOST" "$DEST_ROOT"
+
+  # Get source plugins/themes
+  detect_source_plugins
+  detect_source_themes
+
+  # Compute unique destination items (not in source)
+  array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
+  array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE[@] SOURCE_THEMES[@]
+
+  if ! $DRY_RUN; then
+    log "  Destination has ${#DEST_PLUGINS_BEFORE[@]} plugin(s), source has ${#SOURCE_PLUGINS[@]} plugin(s)"
+    log "  Unique to destination: ${#UNIQUE_DEST_PLUGINS[@]} plugin(s)"
+
+    log "  Destination has ${#DEST_THEMES_BEFORE[@]} theme(s), source has ${#SOURCE_THEMES[@]} theme(s)"
+    log "  Unique to destination: ${#UNIQUE_DEST_THEMES[@]} theme(s)"
+
+    if [[ ${#UNIQUE_DEST_PLUGINS[@]} -gt 0 ]]; then
+      log "  Plugins to preserve: ${UNIQUE_DEST_PLUGINS[*]}"
+    fi
+
+    if [[ ${#UNIQUE_DEST_THEMES[@]} -gt 0 ]]; then
+      log "  Themes to preserve: ${UNIQUE_DEST_THEMES[*]}"
+    fi
+  fi
+fi
+
 # -------------------------------
 # Backup destination wp-content
 # -------------------------------
@@ -1351,6 +1681,11 @@ ssh_cmd_content="$(ssh_cmd_string)"
 rsync "${RS_OPTS[@]}" -e "$ssh_cmd_content" \
   "$SRC_WP_CONTENT"/ \
   "$DEST_HOST":"$DST_WP_CONTENT"/ | tee -a "$LOG_FILE"
+
+# Restore unique destination plugins/themes (if preserving)
+if $PRESERVE_DEST_PLUGINS && [[ -n "$DST_WP_CONTENT_BACKUP" ]]; then
+  restore_dest_content_push "$DEST_HOST" "$DEST_ROOT" "$DST_WP_CONTENT_BACKUP"
+fi
 
 # Report backup location if applicable
 if [[ -n "$DST_WP_CONTENT_BACKUP" ]]; then
@@ -1506,6 +1841,39 @@ else
   log "Backing up current wp-content to: $DEST_WP_CONTENT_BACKUP"
   cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"
   log "wp-content backup created: $DEST_WP_CONTENT_BACKUP"
+fi
+
+# Phase 6b: Detect plugins/themes (if preserving destination content)
+if $PRESERVE_DEST_PLUGINS; then
+  log "Detecting plugins/themes for preservation..."
+
+  # Get destination plugins/themes (before migration)
+  detect_dest_plugins_local
+  detect_dest_themes_local
+
+  # Get archive plugins/themes
+  detect_archive_plugins "$DUPLICATOR_WP_CONTENT"
+  detect_archive_themes "$DUPLICATOR_WP_CONTENT"
+
+  # Compute unique destination items (not in source/archive)
+  array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
+  array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE[@] SOURCE_THEMES[@]
+
+  if ! $DRY_RUN; then
+    log "  Destination has ${#DEST_PLUGINS_BEFORE[@]} plugin(s), archive has ${#SOURCE_PLUGINS[@]} plugin(s)"
+    log "  Unique to destination: ${#UNIQUE_DEST_PLUGINS[@]} plugin(s)"
+
+    log "  Destination has ${#DEST_THEMES_BEFORE[@]} theme(s), archive has ${#SOURCE_THEMES[@]} theme(s)"
+    log "  Unique to destination: ${#UNIQUE_DEST_THEMES[@]} theme(s)"
+
+    if [[ ${#UNIQUE_DEST_PLUGINS[@]} -gt 0 ]]; then
+      log "  Plugins to preserve: ${UNIQUE_DEST_PLUGINS[*]}"
+    fi
+
+    if [[ ${#UNIQUE_DEST_THEMES[@]} -gt 0 ]]; then
+      log "  Themes to preserve: ${UNIQUE_DEST_THEMES[*]}"
+    fi
+  fi
 fi
 
 # Phase 7: Import database
@@ -1766,6 +2134,11 @@ else
     "$ARCHIVE_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE"
 
   log "wp-content synced successfully (object-cache.php excluded to preserve destination caching)"
+
+  # Restore unique destination plugins/themes (if preserving)
+  if $PRESERVE_DEST_PLUGINS; then
+    restore_dest_content_local "$DEST_WP_CONTENT_BACKUP"
+  fi
 fi
 
 # Phase 10: Flush cache if available

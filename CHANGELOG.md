@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[v2 ONLY]** Added pre-commit git hook (`.githooks/pre-commit`) that prevents committing source changes without rebuilding `wp-migrate.sh` and `wp-migrate.sh.sha256`. Blocks commits if `src/` files are modified but either the built script or its checksum is not staged. Install with `ln -s ../../.githooks/pre-commit .git/hooks/pre-commit`.
 - **[v2 ONLY]** Expanded README Development section with detailed instructions for building from source, git hook setup, Makefile targets, and contribution guidelines for v2+ development.
 
+- **[v2 ONLY]** Added `--preserve-dest-plugins` flag to preserve destination plugins and themes that are not present in the source during migration. When enabled, the script detects unique destination plugins/themes before migration, then restores them after wp-content sync and automatically deactivates restored plugins (themes remain available but inactive). Automatically enabled when using `--stellarsites` flag. Works in both push and archive modes. Use case: Managed hosting with host-specific plugins/themes that users may want to keep available for later activation.
+
 ### Deprecated (v2.0.0 - Development)
 - **[v2 ONLY]** `--duplicator-archive` flag deprecated in favor of `--archive`. Backward compatibility maintained - the old flag still works and is internally converted to `--archive --archive-type=duplicator`. Will be removed in v3.0.0.
 
