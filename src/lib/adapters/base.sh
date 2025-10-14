@@ -55,12 +55,16 @@ adapter_base_archive_contains() {
   local archive="$1" pattern="$2"
   local archive_type
 
-  archive_type=$(file -b "$archive" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+  archive_type=$(adapter_base_get_archive_type "$archive")
 
-  if [[ "$archive_type" == *"zip"* ]]; then
+  if [[ "$archive_type" == "zip" ]]; then
     unzip -l "$archive" 2>/dev/null | grep -q "$pattern" && return 0
-  elif [[ "$archive_type" == *"tar"* ]] || [[ "$archive_type" == *"gzip"* ]] || [[ "$archive_type" == *"compressed"* ]]; then
+  elif [[ "$archive_type" == "tar.gz" ]]; then
+    # Gzip-compressed tar: use -z flag
     tar -tzf "$archive" 2>/dev/null | grep -q "$pattern" && return 0
+  elif [[ "$archive_type" == "tar" ]]; then
+    # Uncompressed tar: no compression flag
+    tar -tf "$archive" 2>/dev/null | grep -q "$pattern" && return 0
   fi
 
   return 1
