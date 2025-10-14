@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated README.md and help text to reflect Jetpack Backup support (no longer states "Duplicator only")
 
 ### Fixed
+- **HIGH**: Fixed missing tar dependency check causing cryptic "command not found" errors during Jetpack archive detection. Added explicit `tar` check in preflight alongside existing `unzip` check. With `set -e` enabled, calling `tar -tzf` during adapter validation would kill the script before the friendly dependency error message. Now checks for both `unzip` (Duplicator) and `tar` (Jetpack) before attempting archive detection.
+- **HIGH**: Fixed BSD sort incompatibility in Jetpack adapter. Replaced `sort -z` (GNU-only) with portable array sorting using `printf` and `while read`. BSD sort (default on macOS) doesn't support `-z` flag, causing Jetpack imports to fail on macOS. New approach works on all platforms (Linux, macOS, BSD).
 - **HIGH**: Fixed Bash 3.2 incompatibility in Jetpack adapter. Replaced `mapfile` (Bash 4+) with portable `while read` loop for collecting SQL files. Prevents "mapfile: command not found" errors on macOS (default Bash 3.2) when importing Jetpack backups.
 - **MEDIUM**: Fixed Jetpack adapter silently skipping hidden files when copying extracted backup directories. Changed `cp -a "$archive"/* "$dest/"` to `cp -a "$archive"/. "$dest"/` to include dotfiles like `.htaccess` and `.user.ini` which are critical for site configuration.
 

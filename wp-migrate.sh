@@ -492,15 +492,25 @@ adapter_jetpack_detect_prefix() {
 adapter_jetpack_consolidate_database() {
   local sql_dir="$1" output_file="$2"
 
-  # Find all SQL files and concatenate them (Bash 3.2 compatible - no mapfile)
+  # Find all SQL files and concatenate them (Bash 3.2 + BSD compatible)
+  # Collect files into array, then sort (BSD sort doesn't support -z)
   local sql_files=()
   while IFS= read -r -d '' file; do
     sql_files+=("$file")
-  done < <(find "$sql_dir" -type f -name "*.sql" -print0 2>/dev/null | sort -z)
+  done < <(find "$sql_dir" -type f -name "*.sql" -print0 2>/dev/null)
 
   if [[ ${#sql_files[@]} -eq 0 ]]; then
     return 1
   fi
+
+  # Sort the array using Bash built-in sorting (works on all platforms)
+  # Read sorted output back into array (ShellCheck compliant)
+  local sorted_files
+  sorted_files=$(printf '%s\n' "${sql_files[@]}" | sort)
+  sql_files=()
+  while IFS= read -r file; do
+    sql_files+=("$file")
+  done <<<"$sorted_files"
 
   # Concatenate all SQL files into output file
   : > "$output_file"  # Create/truncate output file
@@ -1438,12 +1448,17 @@ Please install the 'file' package (e.g., apt-get install file)"
   fi
 
   # Check for archive tools needed by available adapters
-  # Currently only Duplicator adapter exists, which requires unzip
-  # When future adapters are added (Jetpack=tar, etc.), this logic can be made smarter
+  # Duplicator requires unzip, Jetpack requires tar
   if ! command -v unzip >/dev/null 2>&1; then
     err "Missing required tool for archive detection: unzip
-Currently only Duplicator archives are supported, which require unzip.
-Please install unzip (e.g., apt-get install unzip or yum install unzip)"
+Duplicator archives require unzip.
+Please install unzip (e.g., apt-get install unzip or brew install unzip)"
+  fi
+
+  if ! command -v tar >/dev/null 2>&1; then
+    err "Missing required tool for archive detection: tar
+Jetpack Backup archives require tar.
+Please install tar (usually pre-installed; check your system)"
   fi
 
   # Detect or load adapter

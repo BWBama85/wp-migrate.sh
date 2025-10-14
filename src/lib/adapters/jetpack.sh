@@ -170,15 +170,25 @@ adapter_jetpack_detect_prefix() {
 adapter_jetpack_consolidate_database() {
   local sql_dir="$1" output_file="$2"
 
-  # Find all SQL files and concatenate them (Bash 3.2 compatible - no mapfile)
+  # Find all SQL files and concatenate them (Bash 3.2 + BSD compatible)
+  # Collect files into array, then sort (BSD sort doesn't support -z)
   local sql_files=()
   while IFS= read -r -d '' file; do
     sql_files+=("$file")
-  done < <(find "$sql_dir" -type f -name "*.sql" -print0 2>/dev/null | sort -z)
+  done < <(find "$sql_dir" -type f -name "*.sql" -print0 2>/dev/null)
 
   if [[ ${#sql_files[@]} -eq 0 ]]; then
     return 1
   fi
+
+  # Sort the array using Bash built-in sorting (works on all platforms)
+  # Read sorted output back into array (ShellCheck compliant)
+  local sorted_files
+  sorted_files=$(printf '%s\n' "${sql_files[@]}" | sort)
+  sql_files=()
+  while IFS= read -r file; do
+    sql_files+=("$file")
+  done <<<"$sorted_files"
 
   # Concatenate all SQL files into output file
   : > "$output_file"  # Create/truncate output file

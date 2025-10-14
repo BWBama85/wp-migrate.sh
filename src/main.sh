@@ -85,12 +85,17 @@ Please install the 'file' package (e.g., apt-get install file)"
   fi
 
   # Check for archive tools needed by available adapters
-  # Currently only Duplicator adapter exists, which requires unzip
-  # When future adapters are added (Jetpack=tar, etc.), this logic can be made smarter
+  # Duplicator requires unzip, Jetpack requires tar
   if ! command -v unzip >/dev/null 2>&1; then
     err "Missing required tool for archive detection: unzip
-Currently only Duplicator archives are supported, which require unzip.
-Please install unzip (e.g., apt-get install unzip or yum install unzip)"
+Duplicator archives require unzip.
+Please install unzip (e.g., apt-get install unzip or brew install unzip)"
+  fi
+
+  if ! command -v tar >/dev/null 2>&1; then
+    err "Missing required tool for archive detection: tar
+Jetpack Backup archives require tar.
+Please install tar (usually pre-installed; check your system)"
   fi
 
   # Detect or load adapter
