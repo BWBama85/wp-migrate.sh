@@ -3,7 +3,7 @@
 `wp-migrate.sh` migrates WordPress sites in two modes:
 
 1. **Push mode**: Pushes a WordPress site's `wp-content` directory and database export from a source server to a destination server via SSH.
-2. **Duplicator mode**: Imports a Duplicator backup archive directly on the destination server without requiring SSH access to the source.
+2. **Archive mode**: Imports WordPress backup archives (currently supports Duplicator; designed to support Jetpack, UpdraftPlus, and other formats in future releases) directly on the destination server without requiring SSH access to the source.
 
 Both modes coordinate the entire workflow, including maintenance mode, database handling, file sync, and cache maintenance.
 
@@ -20,9 +20,11 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - Optionally flushes the destination Object Cache Pro/Redis cache when `wp redis` is available.
 - Supports a comprehensive dry-run mode that previews every step without mutating either server.
 
-### Duplicator Mode
-- Imports Duplicator WordPress backup archives without requiring SSH access to the source server.
-- Automatically extracts and detects database and wp-content from Duplicator `.zip` archives with smart directory scoring.
+### Archive Mode
+- Imports WordPress backup archives (currently **Duplicator only**; designed to support additional formats).
+- **Extensible adapter system** makes adding new backup formats simple (see [src/lib/adapters/README.md](src/lib/adapters/README.md) for contributor guide).
+- **Auto-detects backup format** or accepts explicit `--archive-type` for manual override.
+- Automatically extracts and detects database and wp-content from archives with smart directory scoring.
 - Pre-flight disk space validation ensures 3x archive size is available (archive + extraction + buffer).
 - Creates timestamped backups of both the destination database and wp-content before any destructive operations.
 - Automatically detects and aligns table prefix if the imported database uses a different prefix than the destination's `wp-config.php` (supports complex prefixes with underscores like `my_site_`, `wp_live_2024_`).
@@ -42,12 +44,12 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 
 Run the script from the WordPress root on the source server (where `wp-config.php` lives). The destination host must be reachable over SSH and capable of running `wp` commands.
 
-### Duplicator Mode
+### Archive Mode
 - WordPress CLI (`wp`)
-- `unzip`
-- `file`
+- `file` (for archive type detection)
+- `unzip` (for Duplicator archives; future adapters may require `tar`)
 
-Run the script from the WordPress root on the destination server (where `wp-config.php` lives). The Duplicator backup archive must be accessible on the filesystem.
+Run the script from the WordPress root on the destination server (where `wp-config.php` lives). The backup archive must be accessible on the filesystem.
 
 ## Usage
 
@@ -71,20 +73,30 @@ Common examples:
   ./wp-migrate.sh --dest-host wp@dest --dest-root /var/www/site --no-import-db
   ```
 
-### Duplicator Mode
+### Archive Mode
 ```bash
-./wp-migrate.sh --duplicator-archive /path/to/backup.zip [options]
+./wp-migrate.sh --archive /path/to/backup [options]
 ```
 
 Common examples:
-- Import a Duplicator backup:
+- Import a Duplicator backup archive (auto-detect):
   ```bash
-  ./wp-migrate.sh --duplicator-archive /backups/site_20251009.zip
+  ./wp-migrate.sh --archive /backups/site_20251009.zip
+  ```
+- Import with explicit format specification:
+  ```bash
+  ./wp-migrate.sh --archive /backups/site.zip --archive-type duplicator
   ```
 - Preview import without making changes (dry run):
   ```bash
-  ./wp-migrate.sh --duplicator-archive /backups/site_20251009.zip --dry-run
+  ./wp-migrate.sh --archive /backups/site_20251009.zip --dry-run
   ```
+- **Backward compatible** - old Duplicator flag still works:
+  ```bash
+  ./wp-migrate.sh --duplicator-archive /backups/site.zip
+  ```
+
+**Note:** Currently only Duplicator archives are supported. The architecture supports adding Jetpack, UpdraftPlus, and other formats—contributors can add adapters following the guide in [src/lib/adapters/README.md](src/lib/adapters/README.md).
 
 ## Options
 
@@ -110,10 +122,12 @@ Common examples:
 | `--rsync-opt <opt>` | Append an additional rsync option (can be passed multiple times). |
 | `--ssh-opt <opt>` | Append an extra SSH option (repeatable; options are safely quoted). |
 
-### Duplicator Mode Options
+### Archive Mode Options
 | Flag | Description |
 | ---- | ----------- |
-| `--duplicator-archive </path/to/backup.zip>` | **Required.** Path to the Duplicator backup archive file (mutually exclusive with `--dest-host`). |
+| `--archive </path/to/backup>` | **Required.** Path to the backup archive file. Format is auto-detected (currently only Duplicator supported; mutually exclusive with `--dest-host`). |
+| `--archive-type <type>` | **Optional.** Explicitly specify archive format (currently only `duplicator`). Useful when auto-detection fails. Available types are listed if detection fails. |
+| `--duplicator-archive </path/to/backup.zip>` | **Deprecated.** Use `--archive` instead. Still works for backward compatibility (treated as `--archive --archive-type=duplicator`). |
 
 ## Workflow Overview
 
@@ -128,22 +142,24 @@ Common examples:
 6. **Post Tasks**: Flushes the destination Object Cache Pro cache via `wp redis flush` when the command exists. Dry runs skip execution and log intent.
 7. **Cleanup**: Disables maintenance mode (real runs only) and logs final status as well as the dump location or future import instructions when imports are skipped.
 
-### Duplicator Mode
-1. **Preflight**: Ensures the script runs from a WordPress root, verifies required binaries, confirms WordPress installation, validates the Duplicator archive file exists and is a valid ZIP.
-2. **URL Capture**: Captures current destination site URLs (`home` and `siteurl` options) before any operations.
-3. **Disk Space Check**: Validates that 3x the archive size is available (archive + extraction + buffer) and fails early if insufficient.
-4. **Extraction**: Extracts the Duplicator archive to a temporary directory.
-5. **Discovery**: Auto-detects the database file (`dup-installer/dup-database__*.sql`) and wp-content directory using smart scoring based on presence of plugins/themes/uploads subdirectories.
-6. **Maintenance Mode**: Activates maintenance mode on the destination during a real import. Dry runs only log what would happen.
-7. **Backup Database**: Creates a timestamped gzipped backup of the current destination database in `db-backups/` before import.
-8. **Backup wp-content**: Creates a timestamped backup of the current destination wp-content directory before replacement.
-9. **Import Database**: Imports the database from the Duplicator archive.
-10. **Table Prefix Alignment**: Detects the table prefix from the imported database by verifying core WordPress tables (`options`, `posts`, `users`) exist with the same prefix. If the imported prefix differs from `wp-config.php`, automatically updates `wp-config.php` to match. Supports complex prefixes with underscores (e.g., `my_site_`, `wp_live_2024_`).
-11. **URL Alignment**: Detects the imported site URLs, performs `wp search-replace` to align all URL references to the destination URLs (captured in step 2), and updates the `home`/`siteurl` options.
-12. **Replace wp-content**: Removes the existing wp-content directory and replaces it completely with the wp-content from the archive (1:1 copy).
-13. **Post Tasks**: Flushes the Object Cache Pro cache via `wp redis flush` when available.
-14. **Cleanup**: Disables maintenance mode and removes the temporary extraction directory on success (keeps it on failure for debugging).
-15. **Rollback Instructions**: Logs detailed rollback commands showing how to restore both the database and wp-content backups if needed.
+### Archive Mode
+1. **Preflight**: Ensures the script runs from a WordPress root, verifies required binaries, confirms WordPress installation, validates the archive file exists.
+2. **Format Detection**: Auto-detects archive format (currently Duplicator only) by trying each adapter's validation function, or uses explicit `--archive-type` if provided.
+3. **Dependency Check**: Verifies format-specific tools are available (e.g., `unzip` for Duplicator).
+4. **URL Capture**: Captures current destination site URLs (`home` and `siteurl` options) before any operations.
+5. **Disk Space Check**: Validates that 3x the archive size is available (archive + extraction + buffer) and fails early if insufficient.
+6. **Extraction**: Extracts the archive to a temporary directory using the appropriate adapter's extract function.
+7. **Discovery**: Auto-detects the database file and wp-content directory using format-specific adapter functions with smart scoring based on presence of plugins/themes/uploads subdirectories.
+8. **Maintenance Mode**: Activates maintenance mode on the destination during a real import. Dry runs only log what would happen.
+9. **Backup Database**: Creates a timestamped gzipped backup of the current destination database in `db-backups/` before import.
+10. **Backup wp-content**: Creates a timestamped backup of the current destination wp-content directory before replacement.
+11. **Import Database**: Imports the database from the archive.
+12. **Table Prefix Alignment**: Detects the table prefix from the imported database by verifying core WordPress tables (`options`, `posts`, `users`) exist with the same prefix. If the imported prefix differs from `wp-config.php`, automatically updates `wp-config.php` to match. Supports complex prefixes with underscores (e.g., `my_site_`, `wp_live_2024_`).
+13. **URL Alignment**: Detects the imported site URLs, performs `wp search-replace` to align all URL references to the destination URLs (captured in step 4), and updates the `home`/`siteurl` options.
+14. **Replace wp-content**: Removes the existing wp-content directory and replaces it completely with the wp-content from the archive (1:1 copy).
+15. **Post Tasks**: Flushes the Object Cache Pro cache via `wp redis flush` when available.
+16. **Cleanup**: Disables maintenance mode and removes the temporary extraction directory on success (keeps it on failure for debugging).
+17. **Rollback Instructions**: Logs detailed rollback commands showing how to restore both the database and wp-content backups if needed.
 
 ## Directories and Logging
 
@@ -151,8 +167,8 @@ Common examples:
 - Real runs create `logs/` with timestamped log files (`migrate-wpcontent-push-*.log`) and `db-dumps/` for exported databases.
 - Dry runs do **not** create or modify directories; logging is routed to `/dev/null` to ensure a zero-impact preview.
 
-### Duplicator Mode
-- Real runs create `logs/` with timestamped log files (`migrate-duplicator-import-*.log`) and `db-backups/` for database backups before import.
+### Archive Mode
+- Real runs create `logs/` with timestamped log files (`migrate-archive-import-*.log`) and `db-backups/` for database backups before import.
 - Timestamped wp-content backups are created alongside the original wp-content directory (e.g., `wp-content.backup-20251009-123456`).
 - Temporary extraction directory is auto-created in `$TMPDIR` (typically `/tmp`) and removed on success.
 - Dry runs do **not** create or modify directories; logging is routed to `/dev/null` to ensure a zero-impact preview.
@@ -165,9 +181,9 @@ Common examples:
 - Maintenance commands run under `set -e`; if enabling or disabling maintenance fails the script aborts to prevent partial migrations.
 - Cache flushing is attempted but non-blocking; failures are logged and the run continues.
 
-### Duplicator Mode
+### Archive Mode
 - Both database and wp-content are backed up **before** any destructive operations occur.
-- Database backup is created as a gzipped SQL dump in `db-backups/pre-duplicator-backup_<timestamp>.sql.gz`.
+- Database backup is created as a gzipped SQL dump in `db-backups/pre-archive-backup_<timestamp>.sql.gz`.
 - wp-content backup is created as a complete timestamped copy (e.g., `wp-content.backup-<timestamp>`).
 - Comprehensive rollback instructions are logged showing exact commands to restore both backups.
 - Maintenance mode activation runs under `set -e`; if it fails the script aborts before making any changes.
@@ -190,7 +206,67 @@ Use the repo's Git helpers to keep changes small, reviewable, and easy to trace.
 - Install [ShellCheck](https://www.shellcheck.net/) to lint modifications; the current script is ShellCheck-clean.
 
 ## Development
+
+### Source Code Structure (v2+)
+
+Starting with v2.0.0, the codebase uses a modular source structure for easier maintenance:
+
+```
+src/
+├── header.sh         # Shebang, defaults, variable declarations
+├── lib/
+│   ├── core.sh       # Core utilities (log, err, validate_url)
+│   └── functions.sh  # All other functions
+└── main.sh           # Argument parsing and main execution
+```
+
+The single-file `wp-migrate.sh` at the repo root is built from these modular source files.
+
+### Building from Source
+
+If you modify files in `src/`, you must rebuild the script:
+
+```bash
+# Install dependencies (macOS/Linux)
+# - shellcheck (linting)
+# - make (build system)
+
+# Build the single-file script
+make build
+
+# This will:
+# 1. Run shellcheck on the concatenated source
+# 2. Concatenate src/ files into dist/wp-migrate.sh
+# 3. Copy to ./wp-migrate.sh (repo root)
+# 4. Generate SHA256 checksum
+```
+
+### Git Hook Setup (Recommended)
+
+To prevent accidentally committing source changes without rebuilding, install the pre-commit hook:
+
+```bash
+ln -s ../../.githooks/pre-commit .git/hooks/pre-commit
+```
+
+This hook will block commits if you modify `src/` files without updating both `wp-migrate.sh` and `wp-migrate.sh.sha256`.
+
+### Makefile Targets
+
+- `make build` - Build the single-file script from modular source
+- `make test` - Run shellcheck on the complete built script
+- `make clean` - Remove build artifacts (`dist/` directory)
+- `make help` - Show available targets
+
+### Contributing
+
 This project was developed with assistance from AI coding tools ([Claude Code](https://claude.com/claude-code)). Contributions are welcome!
+
+When contributing to v2+:
+1. Make changes in `src/` files (not `wp-migrate.sh` directly)
+2. Run `make build` to regenerate `wp-migrate.sh`
+3. Commit both the source files and built file
+4. Open a PR with your changes
 
 ## License
 MIT License - see [LICENSE](LICENSE) file for details.
