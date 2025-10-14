@@ -704,8 +704,8 @@ if $PRESERVE_DEST_PLUGINS; then
   detect_dest_themes_local
 
   # Get archive plugins/themes
-  detect_archive_plugins "$DUPLICATOR_WP_CONTENT"
-  detect_archive_themes "$DUPLICATOR_WP_CONTENT"
+  detect_archive_plugins "$ARCHIVE_WP_CONTENT"
+  detect_archive_themes "$ARCHIVE_WP_CONTENT"
 
   # Compute unique destination items (not in source/archive)
   array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
