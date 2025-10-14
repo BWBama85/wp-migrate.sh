@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Documentation**: Comprehensive overhaul of README.md Options section. Reorganized all flags into logical categories (Required, Database, Source Site, URL Overrides, Transfer, Preservation). Added missing documentation for `--stellarsites` and `--preserve-dest-plugins` flags. Enhanced descriptions with usage examples, default behavior explanations, and cross-references. All 15 flags now documented with clear, detailed descriptions.
+
+### Fixed
+- **Documentation**: Corrected `--stellarsites` description to match actual implementation. Changed from incorrect "Uses rsync --delete --ignore-errors" to accurate "excludes mu-plugins/ directory and mu-plugins.php loader file". The flag adds rsync exclusions (--exclude=/mu-plugins/ --exclude=/mu-plugins.php) rather than modifying rsync flags.
+
 ## [2.1.0] - 2025-10-14
 
 **🚀 Second Archive Format: Jetpack Backup Support**

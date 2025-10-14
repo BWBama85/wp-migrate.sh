@@ -108,31 +108,58 @@ Common examples:
 ### Common Options (both modes)
 | Flag | Description |
 | ---- | ----------- |
-| `--dry-run` | Preview the workflow. No files are created, maintenance mode is not toggled, and caches are left untouched. Database work is described rather than executed. |
+| `--dry-run` | Preview the workflow without making changes. No files are created, maintenance mode is not toggled, caches are left untouched, and database operations are described rather than executed. Safe to run on production sites. |
 | `--help` | Print usage information and exit. |
 | `--version` | Show version information and exit. |
 
 ### Push Mode Options
+
+#### Required Flags
 | Flag | Description |
 | ---- | ----------- |
-| `--dest-host <user@host>` | **Required.** SSH connection string for the destination server. |
-| `--dest-root </abs/path>` | **Required.** Absolute path to WordPress root on destination server. |
-| `--import-db` | (Deprecated) Explicitly request a destination DB import; the script already imports by default. |
-| `--no-import-db` | Skip importing the transferred SQL dump on the destination (manually import later; decompress first if the file ends in `.gz`). |
-| `--no-gzip` | Skip gzipping the database dump before transfer. |
-| `--no-maint-source` | Leave the source site out of maintenance mode during the migration. |
-| `--dest-domain <host>` | Override detection by forcing the destination domain (defaults to `https://<host>` unless other overrides are supplied). |
-| `--dest-home-url <url>` | Force the destination `home` URL used for post-import replacements. |
-| `--dest-site-url <url>` | Force the destination `siteurl` used for post-import replacements. |
-| `--rsync-opt <opt>` | Append an additional rsync option (can be passed multiple times). |
-| `--ssh-opt <opt>` | Append an extra SSH option (repeatable; options are safely quoted). |
+| `--dest-host <user@host>` | **Required.** SSH connection string for the destination server (e.g., `wp@example.com` or `user@192.168.1.100`). |
+| `--dest-root </abs/path>` | **Required.** Absolute path to WordPress root directory on destination server (e.g., `/var/www/html` or `/home/user/public_html`). |
+
+#### Database Options
+| Flag | Description |
+| ---- | ----------- |
+| `--import-db` | (Deprecated) Explicitly request database import on destination. The script imports by default, so this flag is no longer needed. |
+| `--no-import-db` | Skip importing the database on destination after transfer. The SQL dump will be transferred but not imported. Useful for manual review before import. If the dump is gzipped (`.gz`), decompress it first: `gunzip dump.sql.gz && wp db import dump.sql` |
+| `--no-gzip` | Skip gzipping the database dump before transfer. By default, the script gzips the dump to reduce transfer time. Use this flag if you prefer uncompressed dumps or have very fast network. |
+
+#### Source Site Options
+| Flag | Description |
+| ---- | ----------- |
+| `--no-maint-source` | Skip enabling maintenance mode on the source site during migration. By default, source site is placed in maintenance mode to prevent content changes during migration. Use this flag if you want the source site to remain accessible (not recommended for production migrations). |
+
+#### Destination URL Overrides
+| Flag | Description |
+| ---- | ----------- |
+| `--dest-domain <host>` | Override destination domain detection. By default, the script uses the SSH hostname. Specify custom domain for search-replace operations (e.g., `--dest-domain example.com`). Automatically prepends `https://` unless you provide full URL. |
+| `--dest-home-url <url>` | Force the destination `home` URL for search-replace operations. Overrides auto-detection. Must be full URL (e.g., `https://example.com`). The `home` option controls the site's front-end URL. |
+| `--dest-site-url <url>` | Force the destination `siteurl` for search-replace operations. Overrides auto-detection. Must be full URL (e.g., `https://example.com`). The `siteurl` option controls the WordPress admin URL. |
+
+#### Transfer Options
+| Flag | Description |
+| ---- | ----------- |
+| `--rsync-opt <opt>` | Append additional rsync option (can be specified multiple times). Useful for custom rsync behavior like bandwidth limiting (`--rsync-opt '--bwlimit=1000'`) or excluding patterns (`--rsync-opt '--exclude=*.log'`). |
+| `--ssh-opt <opt>` | Append additional SSH `-o` option (can be specified multiple times). Useful for SSH configuration like jump hosts (`--ssh-opt 'ProxyJump=bastion.example.com'`), custom ports (`--ssh-opt 'Port=2222'`), or key files (`--ssh-opt 'IdentityFile=~/.ssh/custom_key'`). |
 
 ### Archive Mode Options
+
+#### Required Flags
 | Flag | Description |
 | ---- | ----------- |
-| `--archive </path/to/backup>` | **Required.** Path to the backup archive file. Format is auto-detected (currently supports `duplicator` and `jetpack`; mutually exclusive with `--dest-host`). |
-| `--archive-type <type>` | **Optional.** Explicitly specify archive format (`duplicator` or `jetpack`). Useful when auto-detection fails. Available types are listed if detection fails. |
-| `--duplicator-archive </path/to/backup.zip>` | **Deprecated.** Use `--archive` instead. Still works for backward compatibility (treated as `--archive --archive-type=duplicator`). |
+| `--archive </path/to/backup>` | **Required.** Path to backup archive file or extracted directory. Supports Duplicator (ZIP) and Jetpack Backup (ZIP, TAR.GZ, TAR, or extracted directory). Format is auto-detected. Mutually exclusive with `--dest-host`. |
+| `--archive-type <type>` | **Optional.** Explicitly specify archive format: `duplicator` or `jetpack`. Useful when auto-detection fails or you want to skip detection. If not specified, the script tries each adapter's validation function to identify the format. |
+| `--duplicator-archive </path/to/backup.zip>` | **Deprecated.** Use `--archive` instead. Maintained for backward compatibility - internally converted to `--archive --archive-type=duplicator`. Will be removed in v3.0.0. |
+
+### Plugin/Theme Preservation Options (both modes)
+
+| Flag | Description |
+| ---- | ----------- |
+| `--preserve-dest-plugins` | Preserve destination plugins and themes that don't exist in the source. After wp-content sync, the script detects unique destination plugins/themes, restores them from backup, and automatically deactivates restored plugins (themes remain available but inactive). Useful for preserving host-specific plugins or custom configurations. Works in both push and archive modes. |
+| `--stellarsites` | Enable StellarSites managed hosting compatibility mode. Automatically enables `--preserve-dest-plugins` and excludes the destination `mu-plugins/` directory and `mu-plugins.php` loader file from being overwritten during wp-content sync. Prevents conflicts with StellarSites' protected mu-plugins system (e.g., `mu-plugins/stellarsites-cloud`). Recommended for StellarSites and similar managed WordPress hosts that provide system-level mu-plugins. Works in both push and archive modes. |
 
 ## Workflow Overview
 
