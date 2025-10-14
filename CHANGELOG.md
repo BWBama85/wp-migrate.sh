@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Documentation**: Comprehensive overhaul of README.md Options section. Reorganized all flags into logical categories (Required, Database, Source Site, URL Overrides, Transfer, Preservation). Added missing documentation for `--stellarsites` and `--preserve-dest-plugins` flags. Enhanced descriptions with usage examples, default behavior explanations, and cross-references. All 15 flags now documented with clear, detailed descriptions.
+
 ## [2.1.0] - 2025-10-14
 
 **🚀 Second Archive Format: Jetpack Backup Support**
