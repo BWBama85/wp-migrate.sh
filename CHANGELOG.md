@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2025-10-14
+
+**📚 Documentation-Only Release: Comprehensive Flag Documentation**
+
+This patch release significantly improves documentation quality with no code changes. All 15 flags are now properly documented with clear descriptions, usage examples, and logical organization.
+
 ### Changed
 - **Documentation**: Comprehensive overhaul of README.md Options section. Reorganized all flags into logical categories (Required, Database, Source Site, URL Overrides, Transfer, Preservation). Added missing documentation for `--stellarsites` and `--preserve-dest-plugins` flags. Enhanced descriptions with usage examples, default behavior explanations, and cross-references. All 15 flags now documented with clear, detailed descriptions.
 
