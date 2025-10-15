@@ -40,6 +40,7 @@ SSH_CONTROL_PATH=""
 
 DRY_RUN=false
 IMPORT_DB=true              # Automatically import DB on destination after transfer (disable with --no-import-db)
+SEARCH_REPLACE=true         # Automatically perform URL search-replace after DB import (disable with --no-search-replace)
 GZIP_DB=true                # Compress DB dump during transfer
 MAINTENANCE_ALWAYS=true     # Always enable maintenance mode during migration
 MAINTENANCE_SOURCE=true     # Allow skipping maintenance mode on the source (--no-maint-source)

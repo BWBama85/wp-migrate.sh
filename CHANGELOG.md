@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **--no-search-replace flag**: Added `--no-search-replace` flag to skip URL search-replace after database import. Useful when the destination domain should remain unchanged (e.g., restoring from backup to same site, or migrating between staging/production environments that share the same domain). When flag is set and URLs differ, the script logs a warning showing the URL mismatch but continues without performing search-replace operations. Works in both push mode (direct migration) and archive mode (backup restore).
+
 ## [2.3.0] - 2025-10-15
 
 **🔌 Third Archive Format + Critical Bug Fix**

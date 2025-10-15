@@ -18,6 +18,7 @@ while [[ $# -gt 0 ]]; do
     --trace) TRACE_MODE=true; VERBOSE=true; shift ;;
     --import-db) IMPORT_DB=true; shift ;;
     --no-import-db) IMPORT_DB=false; shift ;;
+    --no-search-replace) SEARCH_REPLACE=false; shift ;;
     --no-gzip) GZIP_DB=false; shift ;;
     --no-maint-source) MAINTENANCE_SOURCE=false; shift ;;
     --stellarsites) STELLARSITES_MODE=true; PRESERVE_DEST_PLUGINS=true; shift ;;
@@ -612,19 +613,26 @@ The wp-config.php has been restored to its original state for safety."
     fi
 
     if $URL_ALIGNMENT_REQUIRED; then
-      log "Aligning destination URLs via wp search-replace..."
-      log "Running $((${#SEARCH_REPLACE_ARGS[@]}/2)) search-replace operations"
+      if ! $SEARCH_REPLACE; then
+        log "Skipping URL alignment (--no-search-replace flag set)"
+        log "NOTE: Source and destination URLs differ but search-replace was skipped:"
+        log "  Source:      $SOURCE_DISPLAY_URL"
+        log "  Destination: $DEST_DISPLAY_URL"
+      else
+        log "Aligning destination URLs via wp search-replace..."
+        log "Running $((${#SEARCH_REPLACE_ARGS[@]}/2)) search-replace operations"
 
-      # Run search-replace for each old/new pair separately
-      # wp search-replace only accepts ONE pair per command
-      for ((i=0; i<${#SEARCH_REPLACE_ARGS[@]}; i+=2)); do
-        old="${SEARCH_REPLACE_ARGS[i]}"
-        new="${SEARCH_REPLACE_ARGS[i+1]}"
-        log "  Replacing: $old -> $new"
-        if ! wp_remote "$DEST_HOST" "$DEST_ROOT" search-replace "$old" "$new" "${SEARCH_REPLACE_FLAGS[@]}"; then
-          log "  WARNING: search-replace failed for: $old -> $new"
-        fi
-      done
+        # Run search-replace for each old/new pair separately
+        # wp search-replace only accepts ONE pair per command
+        for ((i=0; i<${#SEARCH_REPLACE_ARGS[@]}; i+=2)); do
+          old="${SEARCH_REPLACE_ARGS[i]}"
+          new="${SEARCH_REPLACE_ARGS[i+1]}"
+          log "  Replacing: $old -> $new"
+          if ! wp_remote "$DEST_HOST" "$DEST_ROOT" search-replace "$old" "$new" "${SEARCH_REPLACE_FLAGS[@]}"; then
+            log "  WARNING: search-replace failed for: $old -> $new"
+          fi
+        done
+      fi
 
       if [[ -n "$DEST_HOME_URL" ]]; then
         log "Ensuring destination home option remains: $DEST_HOME_URL"
@@ -1158,47 +1166,56 @@ else
   log "Imported site URL: $IMPORTED_SITE_URL"
 
   if [[ "$IMPORTED_HOME_URL" != "$ORIGINAL_DEST_HOME_URL" || "$IMPORTED_SITE_URL" != "$ORIGINAL_DEST_SITE_URL" ]]; then
-    log "Aligning URLs to destination via wp search-replace..."
-
-    # Build search-replace arguments
-    SEARCH_REPLACE_ARGS=()
-    add_url_alignment_variations "$IMPORTED_HOME_URL" "$ORIGINAL_DEST_HOME_URL"
-    add_url_alignment_variations "$IMPORTED_SITE_URL" "$ORIGINAL_DEST_SITE_URL"
-
-    IMPORTED_HOSTNAME="$(url_host_only "$IMPORTED_HOME_URL")"
-    DEST_HOSTNAME="$(url_host_only "$ORIGINAL_DEST_HOME_URL")"
-    if [[ -n "$IMPORTED_HOSTNAME" && -n "$DEST_HOSTNAME" ]]; then
-      add_url_alignment_variations "$IMPORTED_HOSTNAME" "$DEST_HOSTNAME"
-      add_url_alignment_variations "//$IMPORTED_HOSTNAME" "//$DEST_HOSTNAME"
-    fi
-
-    # Check for multisite
-    log_verbose "Checking for WordPress multisite..."
-    if wp_local core is-installed --network >/dev/null 2>&1; then
-      SEARCH_REPLACE_FLAGS+=(--network)
-      log_verbose "  ✓ Multisite detected (will use --network flag for search-replace)"
+    if ! $SEARCH_REPLACE; then
+      log "Skipping URL alignment (--no-search-replace flag set)"
+      log "NOTE: Imported and destination URLs differ but search-replace was skipped:"
+      log "  Imported home_url:    $IMPORTED_HOME_URL"
+      log "  Destination home_url: $ORIGINAL_DEST_HOME_URL"
+      log "  Imported site_url:    $IMPORTED_SITE_URL"
+      log "  Destination site_url: $ORIGINAL_DEST_SITE_URL"
     else
-      log_verbose "  Single-site installation"
-    fi
+      log "Aligning URLs to destination via wp search-replace..."
 
-    # Perform search-replace
-    log "Running $((${#SEARCH_REPLACE_ARGS[@]}/2)) search-replace operations..."
+      # Build search-replace arguments
+      SEARCH_REPLACE_ARGS=()
+      add_url_alignment_variations "$IMPORTED_HOME_URL" "$ORIGINAL_DEST_HOME_URL"
+      add_url_alignment_variations "$IMPORTED_SITE_URL" "$ORIGINAL_DEST_SITE_URL"
 
-    # Run search-replace for each old/new pair separately
-    # wp search-replace only accepts ONE pair per command
-    for ((i=0; i<${#SEARCH_REPLACE_ARGS[@]}; i+=2)); do
-      old="${SEARCH_REPLACE_ARGS[i]}"
-      new="${SEARCH_REPLACE_ARGS[i+1]}"
-      log "  Replacing: $old -> $new"
-      if ! wp_local search-replace "$old" "$new" "${SEARCH_REPLACE_FLAGS[@]}"; then
-        log "  WARNING: search-replace failed for: $old -> $new"
+      IMPORTED_HOSTNAME="$(url_host_only "$IMPORTED_HOME_URL")"
+      DEST_HOSTNAME="$(url_host_only "$ORIGINAL_DEST_HOME_URL")"
+      if [[ -n "$IMPORTED_HOSTNAME" && -n "$DEST_HOSTNAME" ]]; then
+        add_url_alignment_variations "$IMPORTED_HOSTNAME" "$DEST_HOSTNAME"
+        add_url_alignment_variations "//$IMPORTED_HOSTNAME" "//$DEST_HOSTNAME"
       fi
-    done
 
-    # Ensure destination URLs are set correctly
-    log "Ensuring destination URLs are set correctly..."
-    wp_local option update home "$ORIGINAL_DEST_HOME_URL" >/dev/null
-    wp_local option update siteurl "$ORIGINAL_DEST_SITE_URL" >/dev/null
+      # Check for multisite
+      log_verbose "Checking for WordPress multisite..."
+      if wp_local core is-installed --network >/dev/null 2>&1; then
+        SEARCH_REPLACE_FLAGS+=(--network)
+        log_verbose "  ✓ Multisite detected (will use --network flag for search-replace)"
+      else
+        log_verbose "  Single-site installation"
+      fi
+
+      # Perform search-replace
+      log "Running $((${#SEARCH_REPLACE_ARGS[@]}/2)) search-replace operations..."
+
+      # Run search-replace for each old/new pair separately
+      # wp search-replace only accepts ONE pair per command
+      for ((i=0; i<${#SEARCH_REPLACE_ARGS[@]}; i+=2)); do
+        old="${SEARCH_REPLACE_ARGS[i]}"
+        new="${SEARCH_REPLACE_ARGS[i+1]}"
+        log "  Replacing: $old -> $new"
+        if ! wp_local search-replace "$old" "$new" "${SEARCH_REPLACE_FLAGS[@]}"; then
+          log "  WARNING: search-replace failed for: $old -> $new"
+        fi
+      done
+
+      # Ensure destination URLs are set correctly
+      log "Ensuring destination URLs are set correctly..."
+      wp_local option update home "$ORIGINAL_DEST_HOME_URL" >/dev/null
+      wp_local option update siteurl "$ORIGINAL_DEST_SITE_URL" >/dev/null
+    fi
   else
     log "Imported URLs match destination URLs; no replacement needed."
   fi
