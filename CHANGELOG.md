@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Solid Backups adapter**: Added support for Solid Backups (formerly BackupBuddy/iThemes Backup) archive format. Handles ZIP archives containing full WordPress installation with split database files in `wp-content/uploads/backupbuddy_temp/{BACKUP_ID}/`. Database is stored as multiple SQL files (one per table) which are automatically consolidated during import. Signature detection via `importbuddy.php` and `backupbuddy_dat.php` files.
 
+### Fixed
+- **Critical: Dependency error message syntax error**: Fixed bash syntax error in `needs()` function that prevented dependency error messages from displaying. The issue was caused by multi-line strings inside `echo` commands within a case statement inside command substitution `$(...)`. Refactored to extract installation instructions into separate `get_install_instructions()` helper function using heredocs. Script now properly displays installation instructions when dependencies (wp-cli, rsync, ssh, gzip, unzip, tar, file) are missing. Bug introduced in v2.2.0 (PR #38).
+
 ## [2.2.0] - 2025-10-14
 
 **🔍 Observability & Error Guidance: Enhanced Logging & Troubleshooting**
