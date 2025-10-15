@@ -8,7 +8,7 @@ wp_local() {
 # ========================================
 
 # List of available adapters (add new adapters here)
-AVAILABLE_ADAPTERS=("duplicator" "jetpack")
+AVAILABLE_ADAPTERS=("duplicator" "jetpack" "solidbackups")
 
 # Verify adapter exists (adapter functions already loaded in built script)
 # Usage: load_adapter <adapter_name>
@@ -381,7 +381,8 @@ Archive extracted to: $extract_dir
 
 Expected database file patterns for $format_name:
 $([ "$format_name" = "Duplicator" ] && echo "  • dup-installer/dup-database__*.sql")
-$([ "$format_name" = "Jetpack" ] && echo "  • *.sql or */database.sql")
+$([ "$format_name" = "Jetpack Backup" ] && echo "  • sql/*.sql (multiple files)")
+$([ "$format_name" = "Solid Backups" ] && echo "  • wp-content/uploads/backupbuddy_temp/*/*.sql")
 
 Next steps:
   1. Inspect extracted archive contents:
@@ -390,7 +391,9 @@ Next steps:
        find \"$extract_dir\" -name \"*.sql\" -type f
   3. Verify this is a complete $format_name backup (not partial)
   4. If using wrong adapter, try specifying format:
-       --archive-type duplicator  # or jetpack
+       --archive-type duplicator
+       --archive-type jetpack
+       --archive-type solidbackups
   5. Check if archive was created correctly by backup plugin"
   fi
 
@@ -892,11 +895,12 @@ Required (choose one mode):
       Push mode: migrate from current host to destination via SSH
 
   --archive </path/to/backup>
-      Archive mode: import backup archive to current host (Duplicator, Jetpack, etc.)
+      Archive mode: import backup archive to current host
+      Supported formats: Duplicator, Jetpack Backup, Solid Backups/BackupBuddy
       (mutually exclusive with --dest-host)
 
   --archive-type <type>
-      Optional: Specify archive format (duplicator, jetpack, etc.)
+      Optional: Specify archive format (duplicator, jetpack, solidbackups)
       If not specified, format will be auto-detected
 
   --duplicator-archive </path/to/backup.zip>

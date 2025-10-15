@@ -21,6 +21,7 @@ test:
 	     src/lib/adapters/base.sh \
 	     src/lib/adapters/duplicator.sh \
 	     src/lib/adapters/jetpack.sh \
+	     src/lib/adapters/solidbackups.sh \
 	     src/lib/functions.sh \
 	     src/main.sh > dist/wp-migrate-temp.sh
 	@echo "Running shellcheck on complete script..."
@@ -37,6 +38,7 @@ build: test
 	     src/lib/adapters/base.sh \
 	     src/lib/adapters/duplicator.sh \
 	     src/lib/adapters/jetpack.sh \
+	     src/lib/adapters/solidbackups.sh \
 	     src/lib/functions.sh \
 	     src/main.sh > dist/wp-migrate.sh
 	@chmod +x dist/wp-migrate.sh

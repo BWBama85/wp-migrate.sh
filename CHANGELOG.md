@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Solid Backups adapter**: Added support for Solid Backups (formerly BackupBuddy/iThemes Backup) archive format. Handles ZIP archives containing full WordPress installation with split database files in `wp-content/uploads/backupbuddy_temp/{BACKUP_ID}/`. Database is stored as multiple SQL files (one per table) which are automatically consolidated during import. Signature detection via `importbuddy.php` and `backupbuddy_dat.php` files.
+
 ## [2.2.0] - 2025-10-14
 
 **🔍 Observability & Error Guidance: Enhanced Logging & Troubleshooting**
