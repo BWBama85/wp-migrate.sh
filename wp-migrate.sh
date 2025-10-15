@@ -96,6 +96,88 @@ TRACE_MODE=false
 
 err() { printf "ERROR: %s\n" "$*" >&2; exit 1; }
 
+# Get installation instructions for a missing dependency
+# Usage: get_install_instructions <command_name>
+# Returns: Installation instructions text
+get_install_instructions() {
+  local cmd="$1"
+  case "$cmd" in
+    wp)
+      cat << 'INSTRUCTIONS'
+  # WP-CLI (WordPress command-line tool)
+  # macOS: brew install wp-cli
+  # Linux: curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x wp-cli.phar && sudo mv wp-cli.phar /usr/local/bin/wp
+  # Verify: wp --version
+INSTRUCTIONS
+      ;;
+    rsync)
+      cat << 'INSTRUCTIONS'
+  # rsync (file synchronization tool)
+  # macOS: brew install rsync (or use built-in)
+  # Debian/Ubuntu: sudo apt-get install rsync
+  # RHEL/CentOS: sudo yum install rsync
+  # Verify: rsync --version
+INSTRUCTIONS
+      ;;
+    ssh)
+      cat << 'INSTRUCTIONS'
+  # SSH client
+  # macOS: built-in (check with: which ssh)
+  # Debian/Ubuntu: sudo apt-get install openssh-client
+  # RHEL/CentOS: sudo yum install openssh-clients
+  # Verify: ssh -V
+INSTRUCTIONS
+      ;;
+    gzip)
+      cat << 'INSTRUCTIONS'
+  # gzip (compression tool)
+  # Usually pre-installed on most systems
+  # macOS: built-in
+  # Debian/Ubuntu: sudo apt-get install gzip
+  # RHEL/CentOS: sudo yum install gzip
+  # Verify: gzip --version
+INSTRUCTIONS
+      ;;
+    unzip)
+      cat << 'INSTRUCTIONS'
+  # unzip (archive extraction tool for ZIP files)
+  # macOS: brew install unzip (or use built-in)
+  # Debian/Ubuntu: sudo apt-get install unzip
+  # RHEL/CentOS: sudo yum install unzip
+  # Verify: unzip -v
+INSTRUCTIONS
+      ;;
+    tar)
+      cat << 'INSTRUCTIONS'
+  # tar (archive tool)
+  # Usually pre-installed on most systems
+  # macOS: built-in
+  # Debian/Ubuntu: sudo apt-get install tar
+  # RHEL/CentOS: sudo yum install tar
+  # Verify: tar --version
+INSTRUCTIONS
+      ;;
+    file)
+      cat << 'INSTRUCTIONS'
+  # file (file type detection tool)
+  # macOS: brew install file (or use built-in)
+  # Debian/Ubuntu: sudo apt-get install file
+  # RHEL/CentOS: sudo yum install file
+  # Verify: file --version
+INSTRUCTIONS
+      ;;
+    *)
+      cat << INSTRUCTIONS
+  # Generic installation:
+  # Check your system's package manager
+  # macOS: brew install $cmd
+  # Debian/Ubuntu: sudo apt-get install $cmd
+  # RHEL/CentOS: sudo yum install $cmd
+INSTRUCTIONS
+      ;;
+  esac
+}
+
 needs() {
   local cmd="$1"
   log_verbose "Checking for required dependency: $cmd"
@@ -110,65 +192,7 @@ needs() {
 This command is required for migration to work.
 
 Installation instructions:
-$(case "$cmd" in
-  wp)
-    echo "  # WP-CLI (WordPress command-line tool)
-  # macOS: brew install wp-cli
-  # Linux: curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x wp-cli.phar && sudo mv wp-cli.phar /usr/local/bin/wp
-  # Verify: wp --version"
-    ;;
-  rsync)
-    echo "  # rsync (file synchronization tool)
-  # macOS: brew install rsync (or use built-in)
-  # Debian/Ubuntu: sudo apt-get install rsync
-  # RHEL/CentOS: sudo yum install rsync
-  # Verify: rsync --version"
-    ;;
-  ssh)
-    echo "  # SSH client
-  # macOS: built-in (check with: which ssh)
-  # Debian/Ubuntu: sudo apt-get install openssh-client
-  # RHEL/CentOS: sudo yum install openssh-clients
-  # Verify: ssh -V"
-    ;;
-  gzip)
-    echo "  # gzip (compression tool)
-  # Usually pre-installed on most systems
-  # macOS: built-in
-  # Debian/Ubuntu: sudo apt-get install gzip
-  # RHEL/CentOS: sudo yum install gzip
-  # Verify: gzip --version"
-    ;;
-  unzip)
-    echo "  # unzip (archive extraction tool for ZIP files)
-  # macOS: brew install unzip (or use built-in)
-  # Debian/Ubuntu: sudo apt-get install unzip
-  # RHEL/CentOS: sudo yum install unzip
-  # Verify: unzip -v"
-    ;;
-  tar)
-    echo "  # tar (archive tool)
-  # Usually pre-installed on most systems
-  # macOS: built-in
-  # Debian/Ubuntu: sudo apt-get install tar
-  # RHEL/CentOS: sudo yum install tar
-  # Verify: tar --version"
-    ;;
-  file)
-    echo "  # file (file type detection tool)
-  # macOS: brew install file (or use built-in)
-  # Debian/Ubuntu: sudo apt-get install file
-  # RHEL/CentOS: sudo yum install file
-  # Verify: file --version"
-    ;;
-  *)
-    echo "  # Generic installation:
-  # Check your system's package manager
-  # macOS: brew install $cmd
-  # Debian/Ubuntu: sudo apt-get install $cmd
-  # RHEL/CentOS: sudo yum install $cmd"
-    ;;
-esac)
+$(get_install_instructions "$cmd")
 
 After installation, verify with:
   which $cmd && $cmd --version"
