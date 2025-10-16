@@ -760,6 +760,32 @@ rsync "${RS_OPTS[@]}" -e "$ssh_cmd_content" \
   "$SRC_WP_CONTENT"/ \
   "$DEST_HOST":"$DST_WP_CONTENT"/ | tee -a "$LOG_FILE"
 
+# Restore excluded mu-plugins from backup (StellarSites mode)
+if $STELLARSITES_MODE && [[ -n "$DST_WP_CONTENT_BACKUP" ]]; then
+  if $DRY_RUN; then
+    log "[dry-run] Would restore mu-plugins/ and mu-plugins.php from backup"
+  else
+    log "Restoring excluded mu-plugins from backup..."
+    log_verbose "  Copying mu-plugins/ from $DST_WP_CONTENT_BACKUP"
+
+    # Restore mu-plugins directory if it exists in backup
+    if ssh_run "$DEST_HOST" "[ -d \"$DST_WP_CONTENT_BACKUP/mu-plugins\" ]"; then
+      ssh_run "$DEST_HOST" "cp -a \"$DST_WP_CONTENT_BACKUP/mu-plugins\" \"$DST_WP_CONTENT/\"" || {
+        log_warning "Failed to restore mu-plugins directory from backup"
+      }
+      log "  Restored: mu-plugins/"
+    fi
+
+    # Restore mu-plugins.php loader if it exists in backup
+    if ssh_run "$DEST_HOST" "[ -f \"$DST_WP_CONTENT_BACKUP/mu-plugins.php\" ]"; then
+      ssh_run "$DEST_HOST" "cp -a \"$DST_WP_CONTENT_BACKUP/mu-plugins.php\" \"$DST_WP_CONTENT/\"" || {
+        log_warning "Failed to restore mu-plugins.php from backup"
+      }
+      log "  Restored: mu-plugins.php"
+    fi
+  fi
+fi
+
 # Restore unique destination plugins/themes (if preserving)
 if $PRESERVE_DEST_PLUGINS && [[ -n "$DST_WP_CONTENT_BACKUP" ]]; then
   restore_dest_content_push "$DEST_HOST" "$DEST_ROOT" "$DST_WP_CONTENT_BACKUP"
