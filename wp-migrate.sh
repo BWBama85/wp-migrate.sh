@@ -2349,9 +2349,15 @@ if $DRY_RUN; then
   fi
   if $URL_ALIGNMENT_REQUIRED; then
     if $IMPORT_DB; then
-      for ((idx=0; idx<${#SEARCH_REPLACE_ARGS[@]}; idx+=2)); do
-        log "[dry-run] Would run wp search-replace '${SEARCH_REPLACE_ARGS[idx]}' '${SEARCH_REPLACE_ARGS[idx+1]}' on destination."
-      done
+      if ! $SEARCH_REPLACE; then
+        log "[dry-run] Would skip bulk search-replace (--no-search-replace flag set)"
+        log "[dry-run] Would update home and siteurl options only to destination URLs"
+        log "[dry-run] WARNING: Other URLs in content/metadata would remain unchanged"
+      else
+        for ((idx=0; idx<${#SEARCH_REPLACE_ARGS[@]}; idx+=2)); do
+          log "[dry-run] Would run wp search-replace '${SEARCH_REPLACE_ARGS[idx]}' '${SEARCH_REPLACE_ARGS[idx+1]}' on destination."
+        done
+      fi
     else
       log "[dry-run] Source and destination URLs differ but automatic alignment is skipped because --no-import-db is set."
     fi
@@ -3002,9 +3008,15 @@ fi
 
 # Phase 8: Get imported URLs and perform search-replace
 if $DRY_RUN; then
-  log "[dry-run] Would detect imported URLs and replace with destination URLs"
-  log "[dry-run]   Replace: <imported-home-url> -> $ORIGINAL_DEST_HOME_URL"
-  log "[dry-run]   Replace: <imported-site-url> -> $ORIGINAL_DEST_SITE_URL"
+  if ! $SEARCH_REPLACE; then
+    log "[dry-run] Would skip bulk search-replace (--no-search-replace flag set)"
+    log "[dry-run] Would update home and siteurl options only to destination URLs"
+    log "[dry-run] WARNING: Other URLs in content/metadata would remain unchanged"
+  else
+    log "[dry-run] Would detect imported URLs and replace with destination URLs"
+    log "[dry-run]   Replace: <imported-home-url> -> $ORIGINAL_DEST_HOME_URL"
+    log "[dry-run]   Replace: <imported-site-url> -> $ORIGINAL_DEST_SITE_URL"
+  fi
 else
   log "Detecting imported URLs..."
   IMPORTED_HOME_URL="$(wp_local option get home)"
