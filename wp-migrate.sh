@@ -2608,18 +2608,20 @@ if $STELLARSITES_MODE && [[ -n "$DST_WP_CONTENT_BACKUP" ]]; then
 
     # Restore mu-plugins directory if it exists in backup
     if ssh_run "$DEST_HOST" "[ -d \"$DST_WP_CONTENT_BACKUP/mu-plugins\" ]"; then
-      ssh_run "$DEST_HOST" "cp -a \"$DST_WP_CONTENT_BACKUP/mu-plugins\" \"$DST_WP_CONTENT/\"" || {
+      if ssh_run "$DEST_HOST" "cp -a \"$DST_WP_CONTENT_BACKUP/mu-plugins\" \"$DST_WP_CONTENT/\""; then
+        log "  Restored: mu-plugins/"
+      else
         log_warning "Failed to restore mu-plugins directory from backup"
-      }
-      log "  Restored: mu-plugins/"
+      fi
     fi
 
     # Restore mu-plugins.php loader if it exists in backup
     if ssh_run "$DEST_HOST" "[ -f \"$DST_WP_CONTENT_BACKUP/mu-plugins.php\" ]"; then
-      ssh_run "$DEST_HOST" "cp -a \"$DST_WP_CONTENT_BACKUP/mu-plugins.php\" \"$DST_WP_CONTENT/\"" || {
+      if ssh_run "$DEST_HOST" "cp -a \"$DST_WP_CONTENT_BACKUP/mu-plugins.php\" \"$DST_WP_CONTENT/\""; then
+        log "  Restored: mu-plugins.php"
+      else
         log_warning "Failed to restore mu-plugins.php from backup"
-      }
-      log "  Restored: mu-plugins.php"
+      fi
     fi
   fi
 fi
