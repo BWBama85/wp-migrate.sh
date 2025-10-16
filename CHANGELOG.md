@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **--no-search-replace flag**: Added `--no-search-replace` flag to skip URL search-replace after database import. Useful when the destination domain should remain unchanged (e.g., restoring from backup to same site, or migrating between staging/production environments that share the same domain). When flag is set and URLs differ, the script logs a warning showing the URL mismatch but continues without performing search-replace operations. Works in both push mode (direct migration) and archive mode (backup restore).
+- **--no-search-replace flag**: Added `--no-search-replace` flag to skip bulk search-replace operations while still updating home and siteurl options. Useful for faster migrations when you only need the site to load at the destination URL but don't need to replace URLs in post content, metadata, or other options. When flag is set, only the home and siteurl WordPress options are updated to destination URLs; all other content remains unchanged. The script logs a clear warning about this behavior and provides the manual wp search-replace command if needed later. Works in both push mode (direct migration) and archive mode (backup restore). Use cases: quick staging deployments, content migrations where URLs in posts don't matter, or situations where you'll run custom search-replace later.
 
 ## [2.3.0] - 2025-10-15
 

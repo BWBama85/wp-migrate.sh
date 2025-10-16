@@ -912,7 +912,7 @@ Options:
   --trace                   Show every command before execution (implies --verbose). Useful for debugging and reproducing issues.
   --import-db               (Deprecated) Explicitly import the DB on destination (default behavior)
   --no-import-db            Skip importing the DB on destination after transfer
-  --no-search-replace       Skip URL search-replace after DB import (useful when destination domain should remain unchanged)
+  --no-search-replace       Skip bulk search-replace but still update home/siteurl options (faster migrations when URL replacement in content is not needed)
   --no-gzip                 Don't gzip the DB dump (default is gzip on, push mode only)
   --no-maint-source         Skip enabling maintenance mode on the source site (push mode only)
   --stellarsites            Enable StellarSites compatibility mode (preserves protected mu-plugins, auto-enables --preserve-dest-plugins)

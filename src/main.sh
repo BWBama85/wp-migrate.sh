@@ -614,10 +614,19 @@ The wp-config.php has been restored to its original state for safety."
 
     if $URL_ALIGNMENT_REQUIRED; then
       if ! $SEARCH_REPLACE; then
-        log "Skipping URL alignment (--no-search-replace flag set)"
-        log "NOTE: Source and destination URLs differ but search-replace was skipped:"
-        log "  Source:      $SOURCE_DISPLAY_URL"
-        log "  Destination: $DEST_DISPLAY_URL"
+        log "Skipping bulk search-replace (--no-search-replace flag set)"
+        log "Setting home and siteurl options only..."
+
+        if [[ -n "$DEST_HOME_URL" ]]; then
+          wp_remote "$DEST_HOST" "$DEST_ROOT" option update home "$DEST_HOME_URL" >/dev/null
+        fi
+        if [[ -n "$DEST_SITE_URL" ]]; then
+          wp_remote "$DEST_HOST" "$DEST_ROOT" option update siteurl "$DEST_SITE_URL" >/dev/null
+        fi
+
+        log "WARNING: Only home and siteurl options were updated to destination URLs."
+        log "         Other URLs in post content, metadata, and options remain unchanged."
+        log "         If needed, run manual search-replace: wp search-replace '$SOURCE_DISPLAY_URL' '$DEST_DISPLAY_URL'"
       else
         log "Aligning destination URLs via wp search-replace..."
         log "Running $((${#SEARCH_REPLACE_ARGS[@]}/2)) search-replace operations"
@@ -1167,12 +1176,15 @@ else
 
   if [[ "$IMPORTED_HOME_URL" != "$ORIGINAL_DEST_HOME_URL" || "$IMPORTED_SITE_URL" != "$ORIGINAL_DEST_SITE_URL" ]]; then
     if ! $SEARCH_REPLACE; then
-      log "Skipping URL alignment (--no-search-replace flag set)"
-      log "NOTE: Imported and destination URLs differ but search-replace was skipped:"
-      log "  Imported home_url:    $IMPORTED_HOME_URL"
-      log "  Destination home_url: $ORIGINAL_DEST_HOME_URL"
-      log "  Imported site_url:    $IMPORTED_SITE_URL"
-      log "  Destination site_url: $ORIGINAL_DEST_SITE_URL"
+      log "Skipping bulk search-replace (--no-search-replace flag set)"
+      log "Setting home and siteurl options only..."
+
+      wp_local option update home "$ORIGINAL_DEST_HOME_URL" >/dev/null
+      wp_local option update siteurl "$ORIGINAL_DEST_SITE_URL" >/dev/null
+
+      log "WARNING: Only home and siteurl options were updated to destination URLs."
+      log "         Other URLs in post content, metadata, and options remain unchanged."
+      log "         If needed, run manual search-replace: wp search-replace '$IMPORTED_HOME_URL' '$ORIGINAL_DEST_HOME_URL'"
     else
       log "Aligning URLs to destination via wp search-replace..."
 
