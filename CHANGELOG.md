@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.2] - 2025-10-16
+
+**🚨 Critical Bug Fix: StellarSites mu-plugins Restoration**
+
+This patch release fixes a critical bug introduced in v2.4.1 where excluded mu-plugins files were never restored from backup in push mode, leaving StellarSites environments completely broken.
+
 ### Fixed
-- **CRITICAL: --stellarsites mu-plugins restoration in push mode**: Fixed critical bug where excluded mu-plugins files were never restored from backup in push mode, leaving StellarSites environments completely broken after migration. Push mode moves wp-content to backup, then rsync creates new wp-content with `--exclude=/mu-plugins/`. Previously, the excluded files stayed in the backup and were never copied back, resulting in missing `mu-plugins/` directory and `mu-plugins.php` loader file. Now properly restores both from backup after rsync completes, ensuring managed hosting environments have their required system plugins.
+- **CRITICAL: --stellarsites mu-plugins restoration in push mode**: Fixed critical bug where excluded mu-plugins files were never restored from backup in push mode, leaving StellarSites environments completely broken after migration. Push mode moves wp-content to backup, then rsync creates new wp-content with `--exclude=/mu-plugins/`. Previously, the excluded files stayed in the backup and were never copied back, resulting in missing `mu-plugins/` directory and `mu-plugins.php` loader file. Now properly restores both from backup after rsync completes, ensuring managed hosting environments have their required system plugins. Also fixed logging to only show success messages when restoration actually succeeds (not when it fails).
 
 ## [2.4.1] - 2025-10-16
 
