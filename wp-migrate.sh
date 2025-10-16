@@ -40,6 +40,7 @@ SSH_CONTROL_PATH=""
 
 DRY_RUN=false
 IMPORT_DB=true              # Automatically import DB on destination after transfer (disable with --no-import-db)
+SEARCH_REPLACE=true         # Automatically perform URL search-replace after DB import (disable with --no-search-replace)
 GZIP_DB=true                # Compress DB dump during transfer
 MAINTENANCE_ALWAYS=true     # Always enable maintenance mode during migration
 MAINTENANCE_SOURCE=true     # Allow skipping maintenance mode on the source (--no-maint-source)
@@ -1810,6 +1811,7 @@ Options:
   --trace                   Show every command before execution (implies --verbose). Useful for debugging and reproducing issues.
   --import-db               (Deprecated) Explicitly import the DB on destination (default behavior)
   --no-import-db            Skip importing the DB on destination after transfer
+  --no-search-replace       Skip bulk search-replace but still update home/siteurl options (faster migrations when URL replacement in content is not needed)
   --no-gzip                 Don't gzip the DB dump (default is gzip on, push mode only)
   --no-maint-source         Skip enabling maintenance mode on the source site (push mode only)
   --stellarsites            Enable StellarSites compatibility mode (preserves protected mu-plugins, auto-enables --preserve-dest-plugins)
@@ -1854,6 +1856,7 @@ while [[ $# -gt 0 ]]; do
     --trace) TRACE_MODE=true; VERBOSE=true; shift ;;
     --import-db) IMPORT_DB=true; shift ;;
     --no-import-db) IMPORT_DB=false; shift ;;
+    --no-search-replace) SEARCH_REPLACE=false; shift ;;
     --no-gzip) GZIP_DB=false; shift ;;
     --no-maint-source) MAINTENANCE_SOURCE=false; shift ;;
     --stellarsites) STELLARSITES_MODE=true; PRESERVE_DEST_PLUGINS=true; shift ;;
@@ -2346,9 +2349,15 @@ if $DRY_RUN; then
   fi
   if $URL_ALIGNMENT_REQUIRED; then
     if $IMPORT_DB; then
-      for ((idx=0; idx<${#SEARCH_REPLACE_ARGS[@]}; idx+=2)); do
-        log "[dry-run] Would run wp search-replace '${SEARCH_REPLACE_ARGS[idx]}' '${SEARCH_REPLACE_ARGS[idx+1]}' on destination."
-      done
+      if ! $SEARCH_REPLACE; then
+        log "[dry-run] Would skip bulk search-replace (--no-search-replace flag set)"
+        log "[dry-run] Would update home and siteurl options only to destination URLs"
+        log "[dry-run] WARNING: Other URLs in content/metadata would remain unchanged"
+      else
+        for ((idx=0; idx<${#SEARCH_REPLACE_ARGS[@]}; idx+=2)); do
+          log "[dry-run] Would run wp search-replace '${SEARCH_REPLACE_ARGS[idx]}' '${SEARCH_REPLACE_ARGS[idx+1]}' on destination."
+        done
+      fi
     else
       log "[dry-run] Source and destination URLs differ but automatic alignment is skipped because --no-import-db is set."
     fi
@@ -2448,27 +2457,43 @@ The wp-config.php has been restored to its original state for safety."
     fi
 
     if $URL_ALIGNMENT_REQUIRED; then
-      log "Aligning destination URLs via wp search-replace..."
-      log "Running $((${#SEARCH_REPLACE_ARGS[@]}/2)) search-replace operations"
+      if ! $SEARCH_REPLACE; then
+        log "Skipping bulk search-replace (--no-search-replace flag set)"
+        log "Setting home and siteurl options only..."
 
-      # Run search-replace for each old/new pair separately
-      # wp search-replace only accepts ONE pair per command
-      for ((i=0; i<${#SEARCH_REPLACE_ARGS[@]}; i+=2)); do
-        old="${SEARCH_REPLACE_ARGS[i]}"
-        new="${SEARCH_REPLACE_ARGS[i+1]}"
-        log "  Replacing: $old -> $new"
-        if ! wp_remote "$DEST_HOST" "$DEST_ROOT" search-replace "$old" "$new" "${SEARCH_REPLACE_FLAGS[@]}"; then
-          log "  WARNING: search-replace failed for: $old -> $new"
+        if [[ -n "$DEST_HOME_URL" ]]; then
+          wp_remote "$DEST_HOST" "$DEST_ROOT" option update home "$DEST_HOME_URL" >/dev/null
         fi
-      done
+        if [[ -n "$DEST_SITE_URL" ]]; then
+          wp_remote "$DEST_HOST" "$DEST_ROOT" option update siteurl "$DEST_SITE_URL" >/dev/null
+        fi
 
-      if [[ -n "$DEST_HOME_URL" ]]; then
-        log "Ensuring destination home option remains: $DEST_HOME_URL"
-        wp_remote "$DEST_HOST" "$DEST_ROOT" option update home "$DEST_HOME_URL" >/dev/null
-      fi
-      if [[ -n "$DEST_SITE_URL" ]]; then
-        log "Ensuring destination siteurl option remains: $DEST_SITE_URL"
-        wp_remote "$DEST_HOST" "$DEST_ROOT" option update siteurl "$DEST_SITE_URL" >/dev/null
+        log "WARNING: Only home and siteurl options were updated to destination URLs."
+        log "         Other URLs in post content, metadata, and options remain unchanged."
+        log "         If needed, run manual search-replace: wp search-replace '$SOURCE_DISPLAY_URL' '$DEST_DISPLAY_URL'"
+      else
+        log "Aligning destination URLs via wp search-replace..."
+        log "Running $((${#SEARCH_REPLACE_ARGS[@]}/2)) search-replace operations"
+
+        # Run search-replace for each old/new pair separately
+        # wp search-replace only accepts ONE pair per command
+        for ((i=0; i<${#SEARCH_REPLACE_ARGS[@]}; i+=2)); do
+          old="${SEARCH_REPLACE_ARGS[i]}"
+          new="${SEARCH_REPLACE_ARGS[i+1]}"
+          log "  Replacing: $old -> $new"
+          if ! wp_remote "$DEST_HOST" "$DEST_ROOT" search-replace "$old" "$new" "${SEARCH_REPLACE_FLAGS[@]}"; then
+            log "  WARNING: search-replace failed for: $old -> $new"
+          fi
+        done
+
+        if [[ -n "$DEST_HOME_URL" ]]; then
+          log "Ensuring destination home option remains: $DEST_HOME_URL"
+          wp_remote "$DEST_HOST" "$DEST_ROOT" option update home "$DEST_HOME_URL" >/dev/null
+        fi
+        if [[ -n "$DEST_SITE_URL" ]]; then
+          log "Ensuring destination siteurl option remains: $DEST_SITE_URL"
+          wp_remote "$DEST_HOST" "$DEST_ROOT" option update siteurl "$DEST_SITE_URL" >/dev/null
+        fi
       fi
     fi
   else
@@ -2983,9 +3008,15 @@ fi
 
 # Phase 8: Get imported URLs and perform search-replace
 if $DRY_RUN; then
-  log "[dry-run] Would detect imported URLs and replace with destination URLs"
-  log "[dry-run]   Replace: <imported-home-url> -> $ORIGINAL_DEST_HOME_URL"
-  log "[dry-run]   Replace: <imported-site-url> -> $ORIGINAL_DEST_SITE_URL"
+  if ! $SEARCH_REPLACE; then
+    log "[dry-run] Would skip bulk search-replace (--no-search-replace flag set)"
+    log "[dry-run] Would update home and siteurl options only to destination URLs"
+    log "[dry-run] WARNING: Other URLs in content/metadata would remain unchanged"
+  else
+    log "[dry-run] Would detect imported URLs and replace with destination URLs"
+    log "[dry-run]   Replace: <imported-home-url> -> $ORIGINAL_DEST_HOME_URL"
+    log "[dry-run]   Replace: <imported-site-url> -> $ORIGINAL_DEST_SITE_URL"
+  fi
 else
   log "Detecting imported URLs..."
   IMPORTED_HOME_URL="$(wp_local option get home)"
@@ -2994,47 +3025,59 @@ else
   log "Imported site URL: $IMPORTED_SITE_URL"
 
   if [[ "$IMPORTED_HOME_URL" != "$ORIGINAL_DEST_HOME_URL" || "$IMPORTED_SITE_URL" != "$ORIGINAL_DEST_SITE_URL" ]]; then
-    log "Aligning URLs to destination via wp search-replace..."
+    if ! $SEARCH_REPLACE; then
+      log "Skipping bulk search-replace (--no-search-replace flag set)"
+      log "Setting home and siteurl options only..."
 
-    # Build search-replace arguments
-    SEARCH_REPLACE_ARGS=()
-    add_url_alignment_variations "$IMPORTED_HOME_URL" "$ORIGINAL_DEST_HOME_URL"
-    add_url_alignment_variations "$IMPORTED_SITE_URL" "$ORIGINAL_DEST_SITE_URL"
+      wp_local option update home "$ORIGINAL_DEST_HOME_URL" >/dev/null
+      wp_local option update siteurl "$ORIGINAL_DEST_SITE_URL" >/dev/null
 
-    IMPORTED_HOSTNAME="$(url_host_only "$IMPORTED_HOME_URL")"
-    DEST_HOSTNAME="$(url_host_only "$ORIGINAL_DEST_HOME_URL")"
-    if [[ -n "$IMPORTED_HOSTNAME" && -n "$DEST_HOSTNAME" ]]; then
-      add_url_alignment_variations "$IMPORTED_HOSTNAME" "$DEST_HOSTNAME"
-      add_url_alignment_variations "//$IMPORTED_HOSTNAME" "//$DEST_HOSTNAME"
-    fi
-
-    # Check for multisite
-    log_verbose "Checking for WordPress multisite..."
-    if wp_local core is-installed --network >/dev/null 2>&1; then
-      SEARCH_REPLACE_FLAGS+=(--network)
-      log_verbose "  ✓ Multisite detected (will use --network flag for search-replace)"
+      log "WARNING: Only home and siteurl options were updated to destination URLs."
+      log "         Other URLs in post content, metadata, and options remain unchanged."
+      log "         If needed, run manual search-replace: wp search-replace '$IMPORTED_HOME_URL' '$ORIGINAL_DEST_HOME_URL'"
     else
-      log_verbose "  Single-site installation"
-    fi
+      log "Aligning URLs to destination via wp search-replace..."
 
-    # Perform search-replace
-    log "Running $((${#SEARCH_REPLACE_ARGS[@]}/2)) search-replace operations..."
+      # Build search-replace arguments
+      SEARCH_REPLACE_ARGS=()
+      add_url_alignment_variations "$IMPORTED_HOME_URL" "$ORIGINAL_DEST_HOME_URL"
+      add_url_alignment_variations "$IMPORTED_SITE_URL" "$ORIGINAL_DEST_SITE_URL"
 
-    # Run search-replace for each old/new pair separately
-    # wp search-replace only accepts ONE pair per command
-    for ((i=0; i<${#SEARCH_REPLACE_ARGS[@]}; i+=2)); do
-      old="${SEARCH_REPLACE_ARGS[i]}"
-      new="${SEARCH_REPLACE_ARGS[i+1]}"
-      log "  Replacing: $old -> $new"
-      if ! wp_local search-replace "$old" "$new" "${SEARCH_REPLACE_FLAGS[@]}"; then
-        log "  WARNING: search-replace failed for: $old -> $new"
+      IMPORTED_HOSTNAME="$(url_host_only "$IMPORTED_HOME_URL")"
+      DEST_HOSTNAME="$(url_host_only "$ORIGINAL_DEST_HOME_URL")"
+      if [[ -n "$IMPORTED_HOSTNAME" && -n "$DEST_HOSTNAME" ]]; then
+        add_url_alignment_variations "$IMPORTED_HOSTNAME" "$DEST_HOSTNAME"
+        add_url_alignment_variations "//$IMPORTED_HOSTNAME" "//$DEST_HOSTNAME"
       fi
-    done
 
-    # Ensure destination URLs are set correctly
-    log "Ensuring destination URLs are set correctly..."
-    wp_local option update home "$ORIGINAL_DEST_HOME_URL" >/dev/null
-    wp_local option update siteurl "$ORIGINAL_DEST_SITE_URL" >/dev/null
+      # Check for multisite
+      log_verbose "Checking for WordPress multisite..."
+      if wp_local core is-installed --network >/dev/null 2>&1; then
+        SEARCH_REPLACE_FLAGS+=(--network)
+        log_verbose "  ✓ Multisite detected (will use --network flag for search-replace)"
+      else
+        log_verbose "  Single-site installation"
+      fi
+
+      # Perform search-replace
+      log "Running $((${#SEARCH_REPLACE_ARGS[@]}/2)) search-replace operations..."
+
+      # Run search-replace for each old/new pair separately
+      # wp search-replace only accepts ONE pair per command
+      for ((i=0; i<${#SEARCH_REPLACE_ARGS[@]}; i+=2)); do
+        old="${SEARCH_REPLACE_ARGS[i]}"
+        new="${SEARCH_REPLACE_ARGS[i+1]}"
+        log "  Replacing: $old -> $new"
+        if ! wp_local search-replace "$old" "$new" "${SEARCH_REPLACE_FLAGS[@]}"; then
+          log "  WARNING: search-replace failed for: $old -> $new"
+        fi
+      done
+
+      # Ensure destination URLs are set correctly
+      log "Ensuring destination URLs are set correctly..."
+      wp_local option update home "$ORIGINAL_DEST_HOME_URL" >/dev/null
+      wp_local option update siteurl "$ORIGINAL_DEST_SITE_URL" >/dev/null
+    fi
   else
     log "Imported URLs match destination URLs; no replacement needed."
   fi
