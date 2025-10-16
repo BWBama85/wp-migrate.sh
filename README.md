@@ -193,7 +193,7 @@ Common examples:
 1. **Preflight**: Ensures the script runs from a WordPress root, verifies required binaries, confirms WordPress installation, validates the archive file exists.
 2. **Format Detection**: Auto-detects archive format (Duplicator, Jetpack Backup, or Solid Backups) by trying each adapter's validation function. Each adapter checks for format-specific signature files:
    - **Duplicator**: Looks for `installer.php` and `dup-installer/` directory
-   - **Jetpack Backup**: Looks for `SQL_SCRIPT_MU_PLUGIN_DIR`, `REVISION_ID`, or `sql/` directory
+   - **Jetpack Backup**: Looks for `meta.json` + `sql/wp_options.sql` (archives) or `sql/` + `meta.json` + `wp-content/` (extracted directories)
    - **Solid Backups**: Looks for `importbuddy.php` or `backupbuddy_dat.php` signature files
    - Alternatively, use explicit `--archive-type` to skip auto-detection
 3. **Dependency Check**: Verifies format-specific tools are available (e.g., `unzip` for ZIP archives, `tar` for TAR/GZ archives).
