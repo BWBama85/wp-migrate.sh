@@ -3,7 +3,7 @@
 `wp-migrate.sh` migrates WordPress sites in two modes:
 
 1. **Push mode**: Pushes a WordPress site's `wp-content` directory and database export from a source server to a destination server via SSH.
-2. **Archive mode**: Imports WordPress backup archives (currently supports **Duplicator** and **Jetpack Backup**; designed to support UpdraftPlus and other formats in future releases) directly on the destination server without requiring SSH access to the source.
+2. **Archive mode**: Imports WordPress backup archives (currently supports **Duplicator**, **Jetpack Backup**, and **Solid Backups** (formerly BackupBuddy); designed to support UpdraftPlus and other formats in future releases) directly on the destination server without requiring SSH access to the source.
 
 Both modes coordinate the entire workflow, including maintenance mode, database handling, file sync, and cache maintenance.
 
@@ -13,7 +13,7 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - Verifies WordPress installations on both source and destination before proceeding.
 - Enables maintenance mode on both sides during a real migration to minimise downtime (skip the source with `--no-maint-source`).
 - Exports the database, transfers it to the destination, and imports it by default (disable with `--no-import-db`; gzipped dumps are decompressed automatically).
-- Rewrites migrated URLs so the destination keeps its own domain via `wp search-replace` (skipped for dry runs or `--no-import-db`).
+- Rewrites migrated URLs so the destination keeps its own domain via `wp search-replace` (skipped for dry runs or `--no-import-db`; use `--no-search-replace` to skip bulk search-replace and only update home/siteurl options).
 - Creates a timestamped backup of the destination `wp-content` directory before replacing it.
 - Syncs the entire `wp-content` tree with rsync archive mode; files on the destination are overwritten.
 - **Excludes `object-cache.php`** to preserve destination caching infrastructure and prevent fatal errors from missing PHP extensions (Redis, Memcache, etc.).
@@ -21,14 +21,17 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - Supports a comprehensive dry-run mode that previews every step without mutating either server.
 
 ### Archive Mode
-- Imports WordPress backup archives (currently supports **Duplicator** and **Jetpack Backup**; designed to support additional formats).
+- Imports WordPress backup archives (currently supports **Duplicator**, **Jetpack Backup**, and **Solid Backups**; designed to support additional formats).
+  - **Duplicator**: ZIP archives with `dup-installer/dup-database__*.sql` structure
+  - **Jetpack Backup**: ZIP archives with `sql/*.sql` multi-file structure
+  - **Solid Backups** (formerly BackupBuddy): ZIP archives with split SQL files in `wp-content/uploads/backupbuddy_temp/{BACKUP_ID}/` (one file per table, automatically consolidated during import)
 - **Extensible adapter system** makes adding new backup formats simple (see [src/lib/adapters/README.md](src/lib/adapters/README.md) for contributor guide).
 - **Auto-detects backup format** or accepts explicit `--archive-type` for manual override.
 - Automatically extracts and detects database and wp-content from archives with smart directory scoring.
 - Pre-flight disk space validation ensures 3x archive size is available (archive + extraction + buffer).
 - Creates timestamped backups of both the destination database and wp-content before any destructive operations.
 - Automatically detects and aligns table prefix if the imported database uses a different prefix than the destination's `wp-config.php` (supports complex prefixes with underscores like `my_site_`, `wp_live_2024_`).
-- Automatically detects imported site URLs and performs search-replace to align with the destination site URLs.
+- Automatically detects imported site URLs and performs search-replace to align with the destination site URLs (use `--no-search-replace` to skip bulk search-replace and only update home/siteurl options).
 - **Removes `object-cache.php`** from imported archive to preserve destination caching infrastructure and prevent fatal errors from missing PHP extensions (Redis, Memcache, etc.).
 - Provides comprehensive rollback instructions with exact commands to restore both backups if needed.
 - Auto-cleanup of temporary extraction directory on success; kept on failure for debugging.
@@ -86,11 +89,15 @@ Common examples:
 
   # Jetpack Backup
   ./wp-migrate.sh --archive /backups/jetpack-backup.tar.gz
+
+  # Solid Backups (formerly BackupBuddy)
+  ./wp-migrate.sh --archive /backups/solidbackups-full.zip
   ```
 - Import with explicit format specification:
   ```bash
   ./wp-migrate.sh --archive /backups/site.zip --archive-type duplicator
   ./wp-migrate.sh --archive /backups/backup.tar.gz --archive-type jetpack
+  ./wp-migrate.sh --archive /backups/backup.zip --archive-type solidbackups
   ```
 - Preview import without making changes (dry run):
   ```bash
@@ -101,7 +108,7 @@ Common examples:
   ./wp-migrate.sh --duplicator-archive /backups/site.zip
   ```
 
-**Note:** Currently supports **Duplicator** and **Jetpack Backup** archives. The architecture supports adding UpdraftPlus and other formats—contributors can add adapters following the guide in [src/lib/adapters/README.md](src/lib/adapters/README.md).
+**Note:** Currently supports **Duplicator**, **Jetpack Backup**, and **Solid Backups** archives. The extensible adapter architecture supports adding UpdraftPlus and other formats—contributors can add adapters following the guide in [src/lib/adapters/README.md](src/lib/adapters/README.md).
 
 ## Options
 
@@ -127,6 +134,7 @@ Common examples:
 | ---- | ----------- |
 | `--import-db` | (Deprecated) Explicitly request database import on destination. The script imports by default, so this flag is no longer needed. |
 | `--no-import-db` | Skip importing the database on destination after transfer. The SQL dump will be transferred but not imported. Useful for manual review before import. If the dump is gzipped (`.gz`), decompress it first: `gunzip dump.sql.gz && wp db import dump.sql` |
+| `--no-search-replace` | Skip bulk search-replace operations but still update `home` and `siteurl` options to destination URLs. Useful for faster migrations when you only need the site to load at destination but don't need to replace URLs in post content, metadata, or other options. **Warning:** Only `home` and `siteurl` WordPress options are updated; all other content (posts, metadata, serialized options) remains unchanged. The script logs the manual `wp search-replace` command if you need to run it later. |
 | `--no-gzip` | Skip gzipping the database dump before transfer. By default, the script gzips the dump to reduce transfer time. Use this flag if you prefer uncompressed dumps or have very fast network. |
 
 #### Source Site Options
@@ -152,9 +160,14 @@ Common examples:
 #### Required Flags
 | Flag | Description |
 | ---- | ----------- |
-| `--archive </path/to/backup>` | **Required.** Path to backup archive file or extracted directory. Supports Duplicator (ZIP) and Jetpack Backup (ZIP, TAR.GZ, TAR, or extracted directory). Format is auto-detected. Mutually exclusive with `--dest-host`. |
-| `--archive-type <type>` | **Optional.** Explicitly specify archive format: `duplicator` or `jetpack`. Useful when auto-detection fails or you want to skip detection. If not specified, the script tries each adapter's validation function to identify the format. |
+| `--archive </path/to/backup>` | **Required.** Path to backup archive file or extracted directory. Supports Duplicator (ZIP), Jetpack Backup (ZIP, TAR.GZ, TAR, or extracted directory), and Solid Backups (ZIP or extracted directory). Format is auto-detected. Mutually exclusive with `--dest-host`. |
+| `--archive-type <type>` | **Optional.** Explicitly specify archive format: `duplicator`, `jetpack`, or `solidbackups`. Useful when auto-detection fails or you want to skip detection. If not specified, the script tries each adapter's validation function to identify the format. |
 | `--duplicator-archive </path/to/backup.zip>` | **Deprecated.** Use `--archive` instead. Maintained for backward compatibility - internally converted to `--archive --archive-type=duplicator`. Will be removed in v3.0.0. |
+
+#### Database Options
+| Flag | Description |
+| ---- | ----------- |
+| `--no-search-replace` | Skip bulk search-replace operations but still update `home` and `siteurl` options to destination URLs. Useful for faster migrations when you only need the site to load at destination but don't need to replace URLs in post content, metadata, or other options. **Warning:** Only `home` and `siteurl` WordPress options are updated; all other content (posts, metadata, serialized options) remains unchanged. The script logs the manual `wp search-replace` command if you need to run it later. |
 
 ### Plugin/Theme Preservation Options (both modes)
 
@@ -170,7 +183,7 @@ Common examples:
 2. **Discovery**: Determines source and destination `wp-content` paths and logs disk usage details.
 3. **Maintenance Mode**: Activates maintenance on both sides during a real migration (`wp maintenance-mode activate`). Dry runs only log what would happen.
 4. **Database Step**:
-   - Real run: Exports the source DB (optionally gzipped), stores it in `db-dumps/`, creates the destination `db-imports` directory, transfers the dump, and imports it by default (gzipped files are expanded on the destination first; use `--no-import-db` to skip). When domains differ, it aligns the destination database back to its original URL with `wp search-replace` and resets the `home`/`siteurl` options. Supply `--dest-domain`, `--dest-home-url`, or `--dest-site-url` if you need to override the detected destination values.
+   - Real run: Exports the source DB (optionally gzipped), stores it in `db-dumps/`, creates the destination `db-imports` directory, transfers the dump, and imports it by default (gzipped files are expanded on the destination first; use `--no-import-db` to skip). When domains differ, it aligns the destination database back to its original URL with `wp search-replace` and resets the `home`/`siteurl` options. Use `--no-search-replace` to skip bulk search-replace and only update `home`/`siteurl` options (faster but leaves URLs in content unchanged). Supply `--dest-domain`, `--dest-home-url`, or `--dest-site-url` if you need to override the detected destination values.
    - Dry run: Logs the planned export, transfer, import, and any pending URL replacements without creating `db-dumps/` or touching the destination.
 5. **File Sync**: Builds rsync options (archive mode, compression, link preservation, no ownership/permission changes) and syncs `wp-content` from source to destination. Dry runs leverage `rsync --dry-run --itemize-changes`.
 6. **Post Tasks**: Flushes the destination Object Cache Pro cache via `wp redis flush` when the command exists. Dry runs skip execution and log intent.
@@ -178,19 +191,27 @@ Common examples:
 
 ### Archive Mode
 1. **Preflight**: Ensures the script runs from a WordPress root, verifies required binaries, confirms WordPress installation, validates the archive file exists.
-2. **Format Detection**: Auto-detects archive format (Duplicator or Jetpack) by trying each adapter's validation function, or uses explicit `--archive-type` if provided.
-3. **Dependency Check**: Verifies format-specific tools are available (e.g., `unzip` for Duplicator, `tar` for Jetpack).
+2. **Format Detection**: Auto-detects archive format (Duplicator, Jetpack Backup, or Solid Backups) by trying each adapter's validation function. Each adapter checks for format-specific signature files:
+   - **Duplicator**: Looks for `installer.php` and `dup-installer/` directory
+   - **Jetpack Backup**: Looks for `SQL_SCRIPT_MU_PLUGIN_DIR`, `REVISION_ID`, or `sql/` directory
+   - **Solid Backups**: Looks for `importbuddy.php` or `backupbuddy_dat.php` signature files
+   - Alternatively, use explicit `--archive-type` to skip auto-detection
+3. **Dependency Check**: Verifies format-specific tools are available (e.g., `unzip` for ZIP archives, `tar` for TAR/GZ archives).
 4. **URL Capture**: Captures current destination site URLs (`home` and `siteurl` options) before any operations.
 5. **Disk Space Check**: Validates that 3x the archive size is available (archive + extraction + buffer) and fails early if insufficient.
 6. **Extraction**: Extracts the archive to a temporary directory using the appropriate adapter's extract function.
-7. **Discovery**: Auto-detects the database file and wp-content directory using format-specific adapter functions with smart scoring based on presence of plugins/themes/uploads subdirectories.
+7. **Discovery**: Auto-detects the database file and wp-content directory using format-specific adapter functions:
+   - **Duplicator**: Single SQL file in `dup-installer/dup-database__*.sql`
+   - **Jetpack Backup**: Multiple SQL files in `sql/*.sql` directory
+   - **Solid Backups**: Split SQL files (one per table) in `wp-content/uploads/backupbuddy_temp/{BACKUP_ID}/`, automatically consolidated during import
+   - Smart directory scoring based on presence of plugins/themes/uploads subdirectories
 8. **Maintenance Mode**: Activates maintenance mode on the destination during a real import. Dry runs only log what would happen.
 9. **Backup Database**: Creates a timestamped gzipped backup of the current destination database in `db-backups/` before import.
 10. **Backup wp-content**: Creates a timestamped backup of the current destination wp-content directory before replacement.
-11. **Import Database**: Imports the database from the archive.
+11. **Import Database**: Imports the database from the archive (Solid Backups split SQL files are consolidated first).
 12. **Table Prefix Alignment**: Detects the table prefix from the imported database by verifying core WordPress tables (`options`, `posts`, `users`) exist with the same prefix. If the imported prefix differs from `wp-config.php`, automatically updates `wp-config.php` to match. Supports complex prefixes with underscores (e.g., `my_site_`, `wp_live_2024_`).
-13. **URL Alignment**: Detects the imported site URLs, performs `wp search-replace` to align all URL references to the destination URLs (captured in step 4), and updates the `home`/`siteurl` options.
-14. **Replace wp-content**: Removes the existing wp-content directory and replaces it completely with the wp-content from the archive (1:1 copy).
+13. **URL Alignment**: Detects the imported site URLs, performs `wp search-replace` to align all URL references to the destination URLs (captured in step 4), and updates the `home`/`siteurl` options. Use `--no-search-replace` to skip bulk search-replace and only update `home`/`siteurl` options (faster but leaves URLs in content unchanged).
+14. **Replace wp-content**: Removes the existing wp-content directory and replaces it completely with the wp-content from the archive (1:1 copy). The `object-cache.php` file is excluded to preserve destination caching infrastructure.
 15. **Post Tasks**: Flushes the Object Cache Pro cache via `wp redis flush` when available.
 16. **Cleanup**: Disables maintenance mode and removes the temporary extraction directory on success (keeps it on failure for debugging).
 17. **Rollback Instructions**: Logs detailed rollback commands showing how to restore both the database and wp-content backups if needed.
