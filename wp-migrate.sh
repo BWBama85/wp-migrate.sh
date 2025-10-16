@@ -2571,6 +2571,15 @@ fi
 RS_OPTS+=( --exclude=/object-cache.php )
 log "Excluding object-cache.php drop-in from transfer (preserves destination caching setup)"
 
+# StellarSites mode: Exclude mu-plugins directory and loader file
+if $STELLARSITES_MODE; then
+  # Managed hosts ship mu-plugins.php to bootstrap their protected mu-plugins
+  # Must exclude both the directory and the loader, or rsync will overwrite the loader
+  RS_OPTS+=(--exclude=/mu-plugins/ --exclude=/mu-plugins.php)
+  log "StellarSites mode: Preserving destination mu-plugins directory and loader"
+  log_verbose "  Excluding: mu-plugins/ mu-plugins.php (StellarSites protected files)"
+fi
+
 # Extra rsync opts
 if [[ ${#EXTRA_RSYNC_OPTS[@]} -gt 0 ]]; then
   RS_OPTS+=( "${EXTRA_RSYNC_OPTS[@]}" )
