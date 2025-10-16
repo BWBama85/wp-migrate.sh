@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] - 2025-10-16
+
+**🐛 Bug Fix: StellarSites Push Mode**
+
+This patch release fixes a critical bug where the `--stellarsites` flag didn't work correctly in push mode.
+
 ### Fixed
 - **--stellarsites flag in push mode**: Fixed `--stellarsites` flag to properly exclude `mu-plugins/` directory and `mu-plugins.php` loader file in push mode. Previously, the flag only worked correctly in archive mode. In push mode, it would auto-enable `--preserve-dest-plugins` but fail to exclude the protected mu-plugins files, causing rsync to attempt overwriting them and triggering permission errors on managed hosts. Now both push and archive modes correctly exclude mu-plugins files when `--stellarsites` is set, matching the documented behavior of "Works in both push and archive modes."
 
