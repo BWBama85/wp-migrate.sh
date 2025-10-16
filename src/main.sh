@@ -632,15 +632,15 @@ The wp-config.php has been restored to its original state for safety."
             log "  WARNING: search-replace failed for: $old -> $new"
           fi
         done
-      fi
 
-      if [[ -n "$DEST_HOME_URL" ]]; then
-        log "Ensuring destination home option remains: $DEST_HOME_URL"
-        wp_remote "$DEST_HOST" "$DEST_ROOT" option update home "$DEST_HOME_URL" >/dev/null
-      fi
-      if [[ -n "$DEST_SITE_URL" ]]; then
-        log "Ensuring destination siteurl option remains: $DEST_SITE_URL"
-        wp_remote "$DEST_HOST" "$DEST_ROOT" option update siteurl "$DEST_SITE_URL" >/dev/null
+        if [[ -n "$DEST_HOME_URL" ]]; then
+          log "Ensuring destination home option remains: $DEST_HOME_URL"
+          wp_remote "$DEST_HOST" "$DEST_ROOT" option update home "$DEST_HOME_URL" >/dev/null
+        fi
+        if [[ -n "$DEST_SITE_URL" ]]; then
+          log "Ensuring destination siteurl option remains: $DEST_SITE_URL"
+          wp_remote "$DEST_HOST" "$DEST_ROOT" option update siteurl "$DEST_SITE_URL" >/dev/null
+        fi
       fi
     fi
   else
