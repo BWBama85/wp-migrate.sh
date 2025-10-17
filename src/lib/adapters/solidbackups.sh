@@ -13,32 +13,50 @@
 # Validate if this archive is a Solid Backups backup
 # Usage: adapter_solidbackups_validate <archive_path>
 # Returns: 0 if valid Solid Backups archive, 1 otherwise
+# Sets: ADAPTER_VALIDATION_ERRORS array with failure reasons on error
 adapter_solidbackups_validate() {
   local archive="$1"
+  local errors=()
 
   # Handle both archives and extracted directories
   if [[ -d "$archive" ]]; then
     # Already extracted directory - check for backupbuddy_temp structure
-    if [[ -d "$archive/wp-content/uploads/backupbuddy_temp" ]]; then
-      # Look for importbuddy.php signature file in any subdirectory
-      if find "$archive/wp-content/uploads/backupbuddy_temp" -maxdepth 2 -type f -name "importbuddy.php" 2>/dev/null | grep -q .; then
-        return 0
-      fi
-      # Fallback: Check for backupbuddy_dat.php (importbuddy is often downloaded separately)
-      if find "$archive/wp-content/uploads/backupbuddy_temp" -maxdepth 2 -type f -name "backupbuddy_dat.php" 2>/dev/null | grep -q .; then
-        return 0
-      fi
+    if [[ ! -d "$archive/wp-content/uploads/backupbuddy_temp" ]]; then
+      errors+=("Extracted dir missing wp-content/uploads/backupbuddy_temp/")
+      ADAPTER_VALIDATION_ERRORS+=("Solid Backups: ${errors[*]}")
+      return 1
     fi
+
+    # Look for importbuddy.php signature file in any subdirectory
+    if find "$archive/wp-content/uploads/backupbuddy_temp" -maxdepth 2 -type f -name "importbuddy.php" 2>/dev/null | grep -q .; then
+      return 0
+    fi
+
+    # Fallback: Check for backupbuddy_dat.php (importbuddy is often downloaded separately)
+    if find "$archive/wp-content/uploads/backupbuddy_temp" -maxdepth 2 -type f -name "backupbuddy_dat.php" 2>/dev/null | grep -q .; then
+      return 0
+    fi
+
+    errors+=("Missing importbuddy.php or backupbuddy_dat.php in backupbuddy_temp/")
+    ADAPTER_VALIDATION_ERRORS+=("Solid Backups: ${errors[*]}")
     return 1
   fi
 
   # Check file exists
-  [[ -f "$archive" ]] || return 1
+  if [[ ! -f "$archive" ]]; then
+    errors+=("File does not exist")
+    ADAPTER_VALIDATION_ERRORS+=("Solid Backups: ${errors[*]}")
+    return 1
+  fi
 
   # Check if it's a ZIP file
   local archive_type
   archive_type=$(adapter_base_get_archive_type "$archive")
-  [[ "$archive_type" == "zip" ]] || return 1
+  if [[ "$archive_type" != "zip" ]]; then
+    errors+=("Not a ZIP archive (found: $archive_type)")
+    ADAPTER_VALIDATION_ERRORS+=("Solid Backups: ${errors[*]}")
+    return 1
+  fi
 
   # Check for Solid Backups signature: importbuddy.php in backupbuddy_temp
   if adapter_base_archive_contains "$archive" "backupbuddy_temp.*importbuddy.php"; then
@@ -50,6 +68,8 @@ adapter_solidbackups_validate() {
     return 0
   fi
 
+  errors+=("Missing backupbuddy_temp/ with importbuddy.php or backupbuddy_dat.php")
+  ADAPTER_VALIDATION_ERRORS+=("Solid Backups: ${errors[*]}")
   return 1
 }
 

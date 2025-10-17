@@ -12,16 +12,26 @@
 # Validate if this archive is a Duplicator backup
 # Usage: adapter_duplicator_validate <archive_path>
 # Returns: 0 if valid Duplicator archive, 1 otherwise
+# Sets: ADAPTER_VALIDATION_ERRORS array with failure reasons on error
 adapter_duplicator_validate() {
   local archive="$1"
+  local errors=()
 
   # Check file exists
-  [[ -f "$archive" ]] || return 1
+  if [[ ! -f "$archive" ]]; then
+    errors+=("File does not exist")
+    ADAPTER_VALIDATION_ERRORS+=("Duplicator: ${errors[*]}")
+    return 1
+  fi
 
   # Check if it's a ZIP file
   local archive_type
   archive_type=$(adapter_base_get_archive_type "$archive")
-  [[ "$archive_type" == "zip" ]] || return 1
+  if [[ "$archive_type" != "zip" ]]; then
+    errors+=("Not a ZIP archive (found: $archive_type)")
+    ADAPTER_VALIDATION_ERRORS+=("Duplicator: ${errors[*]}")
+    return 1
+  fi
 
   # Check for Duplicator signature file (installer.php)
   if adapter_base_archive_contains "$archive" "installer.php"; then
@@ -33,6 +43,8 @@ adapter_duplicator_validate() {
     return 0
   fi
 
+  errors+=("Missing installer.php and dup-installer/dup-database__ pattern")
+  ADAPTER_VALIDATION_ERRORS+=("Duplicator: ${errors[*]}")
   return 1
 }
 
