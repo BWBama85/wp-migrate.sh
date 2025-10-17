@@ -1,0 +1,287 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop, feature/*, fix/* ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  shellcheck:
+    name: ShellCheck Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck via Make
+        run: make test
+
+      - name: Verify built script exists
+        run: |
+          if [ ! -f wp-migrate.sh ]; then
+            echo "ERROR: wp-migrate.sh not found in repository"
+            exit 1
+          fi
+          if [ ! -f wp-migrate.sh.sha256 ]; then
+            echo "ERROR: wp-migrate.sh.sha256 not found in repository"
+            exit 1
+          fi
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: shellcheck
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify script is executable
+        run: |
+          if [ ! -x wp-migrate.sh ]; then
+            echo "ERROR: wp-migrate.sh is not executable"
+            exit 1
+          fi
+
+      - name: Run test suite
+        run: ./test-wp-migrate.sh
+
+      - name: Test help output
+        run: ./wp-migrate.sh --help
+
+      - name: Test version output
+        run: ./wp-migrate.sh --version
+
+  compatibility:
+    name: Bash Compatibility (${{ matrix.bash-version }})
+    runs-on: ubuntu-latest
+    needs: shellcheck
+    strategy:
+      matrix:
+        bash-version: ['3.2', '4.0', '4.4', '5.0', '5.1']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Bash ${{ matrix.bash-version }}
+        run: |
+          # Use Docker to test different Bash versions
+          docker pull bash:${{ matrix.bash-version }}
+
+      - name: Test script syntax with Bash ${{ matrix.bash-version }}
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace bash:${{ matrix.bash-version }} bash -n wp-migrate.sh
+
+      - name: Test help with Bash ${{ matrix.bash-version }}
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace bash:${{ matrix.bash-version }} ./wp-migrate.sh --help
+
+  build-validation:
+    name: Build Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Verify source files haven't changed without rebuild
+        run: |
+          # Save current built file checksums
+          cp wp-migrate.sh wp-migrate.sh.backup
+          cp wp-migrate.sh.sha256 wp-migrate.sh.sha256.backup
+
+          # Rebuild from source
+          make clean
+          make build
+
+          # Compare checksums
+          if ! diff wp-migrate.sh.backup wp-migrate.sh; then
+            echo "ERROR: Built script differs from committed version"
+            echo "This means source files were modified without running 'make build'"
+            echo ""
+            echo "To fix:"
+            echo "  1. Run: make build"
+            echo "  2. Commit both src/ changes and wp-migrate.sh"
+            exit 1
+          fi
+
+          echo "✓ Build validation passed - source and built files are in sync"
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Scan for secrets
+        run: |
+          # Check for common secret patterns
+          if grep -r -E '(password|secret|api[_-]?key|token).*=.*(["'\''][^"'\'']+["'\'']|[^[:space:]]+)' \
+             --include="*.sh" \
+             --exclude-dir=".git" \
+             src/ wp-migrate.sh | grep -v -E '(Password|password.*:)'; then
+            echo "WARNING: Potential secrets found in code"
+            exit 1
+          fi
+          echo "✓ No secrets detected"
+
+      - name: Check for unsafe practices
+        run: |
+          # Check for eval usage (can be dangerous)
+          if grep -n "eval " src/*.sh src/lib/*.sh 2>/dev/null | grep -v "wp eval"; then
+            echo "WARNING: Direct eval usage found (non-wp-cli)"
+            echo "Review these instances for security implications"
+            # Don't fail, just warn
+          fi
+
+          # Check for curl/wget without validation
+          if grep -n -E "(curl|wget).*\|.*bash" src/*.sh src/lib/*.sh 2>/dev/null; then
+            echo "ERROR: Piping curl/wget to bash is unsafe"
+            exit 1
+          fi
+
+          echo "✓ No unsafe practices detected"
+
+  macos-compatibility:
+    name: macOS Compatibility
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check Bash version
+        run: bash --version
+
+      - name: Test script syntax
+        run: bash -n wp-migrate.sh
+
+      - name: Run test suite
+        run: ./test-wp-migrate.sh
+
+      - name: Test help output
+        run: ./wp-migrate.sh --help
+
+      - name: Verify BSD compatibility
+        run: |
+          # macOS uses BSD tools, verify key commands work
+          stat -f%z wp-migrate.sh  # BSD stat format
+          echo "✓ BSD stat works"
+
+  documentation:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify CHANGELOG updated
+        if: github.event_name == 'pull_request'
+        run: |
+          if ! git diff origin/main -- CHANGELOG.md | grep -q "^+"; then
+            echo "⚠️  WARNING: CHANGELOG.md doesn't appear to be updated"
+            echo "Please add an entry under [Unreleased] section"
+            # Don't fail, just warn (some PRs might not need CHANGELOG updates)
+          else
+            echo "✓ CHANGELOG.md updated"
+          fi
+
+      - name: Check for broken markdown links
+        run: |
+          # Basic check for broken relative links in README
+          for file in README.md CHANGELOG.md; do
+            if [ -f "$file" ]; then
+              # Extract markdown links [text](path)
+              grep -oP '\[.*?\]\(\K[^)]+' "$file" | while read -r link; do
+                # Skip external URLs and anchors
+                if [[ "$link" =~ ^https?:// ]] || [[ "$link" =~ ^# ]]; then
+                  continue
+                fi
+                # Check if file exists
+                if [ ! -e "$link" ]; then
+                  echo "WARNING: Broken link in $file: $link"
+                fi
+              done
+            fi
+          done
+
+      - name: Verify README has examples
+        run: |
+          if ! grep -q "^\`\`\`bash" README.md; then
+            echo "WARNING: README.md has no bash code examples"
+          else
+            echo "✓ README.md contains usage examples"
+          fi
+
+  integration-smoke-test:
+    name: Integration Smoke Test
+    runs-on: ubuntu-latest
+    needs: [shellcheck, unit-tests]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install WP-CLI
+        run: |
+          curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+          chmod +x wp-cli.phar
+          sudo mv wp-cli.phar /usr/local/bin/wp
+          wp --version
+
+      - name: Test dry-run modes
+        run: |
+          # These should fail gracefully (not in WP directory), but not crash
+          ./wp-migrate.sh --dest-host fake@example.com --dest-root /tmp --dry-run 2>&1 | tee output.log
+          if grep -q "wp-config.php not found" output.log; then
+            echo "✓ Push mode dry-run validation working"
+          else
+            echo "ERROR: Expected wp-config.php validation"
+            exit 1
+          fi
+
+      - name: Test archive mode validation
+        run: |
+          # Create a fake archive file to test validation
+          echo "fake archive" > test-archive.zip
+          ./wp-migrate.sh --archive test-archive.zip 2>&1 | tee output.log || true
+          if grep -q "wp-config.php not found" output.log; then
+            echo "✓ Archive mode validation working"
+          else
+            echo "ERROR: Expected wp-config.php validation"
+            exit 1
+          fi
+          rm -f test-archive.zip
+
+  summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [shellcheck, unit-tests, compatibility, build-validation, security-scan, macos-compatibility, documentation, integration-smoke-test]
+    if: always()
+    steps:
+      - name: Check all jobs status
+        run: |
+          echo "All test jobs completed"
+          echo "ShellCheck: ${{ needs.shellcheck.result }}"
+          echo "Unit Tests: ${{ needs.unit-tests.result }}"
+          echo "Compatibility: ${{ needs.compatibility.result }}"
+          echo "Build Validation: ${{ needs.build-validation.result }}"
+          echo "Security Scan: ${{ needs.security-scan.result }}"
+          echo "macOS: ${{ needs.macos-compatibility.result }}"
+          echo "Documentation: ${{ needs.documentation.result }}"
+          echo "Integration: ${{ needs.integration-smoke-test.result }}"
+
+      - name: Fail if any job failed
+        if: |
+          needs.shellcheck.result == 'failure' ||
+          needs.unit-tests.result == 'failure' ||
+          needs.compatibility.result == 'failure' ||
+          needs.build-validation.result == 'failure' ||
+          needs.security-scan.result == 'failure' ||
+          needs.macos-compatibility.result == 'failure' ||
+          needs.integration-smoke-test.result == 'failure'
+        run: exit 1

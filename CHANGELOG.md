@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **CI/CD Pipeline**: Comprehensive GitHub Actions workflow with 8 test jobs covering ShellCheck linting, unit tests, Bash compatibility (3.2-5.1), build validation, security scanning, macOS compatibility, documentation checks, and integration smoke tests. Automated testing runs on every push and pull request to main/develop branches.
+
 ## [2.4.2] - 2025-10-16
 
 **🚨 Critical Bug Fix: StellarSites mu-plugins Restoration**
