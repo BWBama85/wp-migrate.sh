@@ -39,21 +39,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Verify script is executable
+      - name: Make scripts executable
         run: |
-          if [ ! -x wp-migrate.sh ]; then
-            echo "ERROR: wp-migrate.sh is not executable"
-            exit 1
-          fi
+          chmod +x wp-migrate.sh test-wp-migrate.sh
 
       - name: Run test suite
-        run: ./test-wp-migrate.sh
+        run: bash test-wp-migrate.sh
 
       - name: Test help output
-        run: ./wp-migrate.sh --help
+        run: bash wp-migrate.sh --help
 
       - name: Test version output
-        run: ./wp-migrate.sh --version
+        run: bash wp-migrate.sh --version
 
   compatibility:
     name: Bash Compatibility (${{ matrix.bash-version }})
@@ -77,7 +74,7 @@ jobs:
 
       - name: Test help with Bash ${{ matrix.bash-version }}
         run: |
-          docker run --rm -v "$PWD:/workspace" -w /workspace bash:${{ matrix.bash-version }} ./wp-migrate.sh --help
+          docker run --rm -v "$PWD:/workspace" -w /workspace bash:${{ matrix.bash-version }} bash wp-migrate.sh --help
 
   build-validation:
     name: Build Validation
@@ -155,6 +152,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Make scripts executable
+        run: |
+          chmod +x wp-migrate.sh test-wp-migrate.sh
+
       - name: Check Bash version
         run: bash --version
 
@@ -162,10 +163,10 @@ jobs:
         run: bash -n wp-migrate.sh
 
       - name: Run test suite
-        run: ./test-wp-migrate.sh
+        run: bash test-wp-migrate.sh
 
       - name: Test help output
-        run: ./wp-migrate.sh --help
+        run: bash wp-migrate.sh --help
 
       - name: Verify BSD compatibility
         run: |
@@ -226,6 +227,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Make scripts executable
+        run: |
+          chmod +x wp-migrate.sh test-wp-migrate.sh
+
       - name: Install WP-CLI
         run: |
           curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
@@ -236,7 +241,7 @@ jobs:
       - name: Test dry-run modes
         run: |
           # These should fail gracefully (not in WP directory), but not crash
-          ./wp-migrate.sh --dest-host fake@example.com --dest-root /tmp --dry-run 2>&1 | tee output.log
+          bash wp-migrate.sh --dest-host fake@example.com --dest-root /tmp --dry-run 2>&1 | tee output.log
           if grep -q "wp-config.php not found" output.log; then
             echo "✓ Push mode dry-run validation working"
           else
@@ -248,7 +253,7 @@ jobs:
         run: |
           # Create a fake archive file to test validation
           echo "fake archive" > test-archive.zip
-          ./wp-migrate.sh --archive test-archive.zip 2>&1 | tee output.log || true
+          bash wp-migrate.sh --archive test-archive.zip 2>&1 | tee output.log || true
           if grep -q "wp-config.php not found" output.log; then
             echo "✓ Archive mode validation working"
           else
