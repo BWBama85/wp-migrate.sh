@@ -91,14 +91,10 @@ INSTRUCTIONS
 }
 
 needs() {
-  local cmd="$1"
-  log_verbose "Checking for required dependency: $cmd"
-  if command -v "$cmd" >/dev/null 2>&1; then
-    local cmd_path
-    cmd_path=$(command -v "$cmd")
-    log_verbose "  ✓ Found: $cmd_path"
-    return 0
-  else
+  local cmd="$1" min_version="${2:-}"
+  log_verbose "Checking for required dependency: $cmd${min_version:+ (>= $min_version)}"
+
+  if ! command -v "$cmd" >/dev/null 2>&1; then
     err "Missing required dependency: $cmd
 
 This command is required for migration to work.
@@ -109,6 +105,107 @@ $(get_install_instructions "$cmd")
 After installation, verify with:
   which $cmd && $cmd --version"
   fi
+
+  local cmd_path
+  cmd_path=$(command -v "$cmd")
+  log_verbose "  ✓ Found: $cmd_path"
+
+  # Check version if minimum specified
+  if [[ -n "$min_version" ]]; then
+    check_version "$cmd" "$min_version" || return 1
+  fi
+
+  return 0
+}
+
+# Check if command meets minimum version requirement
+# Usage: check_version <command> <min_version>
+# Returns: 0 if version >= min_version, 1 otherwise
+check_version() {
+  local cmd="$1" min_version="$2"
+  local current_version
+
+  # Get version based on command
+  case "$cmd" in
+    wp)
+      # WP-CLI: "WP-CLI 2.8.1"
+      current_version=$(wp --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+      ;;
+    rsync)
+      # rsync: "rsync  version 3.2.3"
+      current_version=$(rsync --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+      ;;
+    ssh)
+      # OpenSSH: "OpenSSH_8.6p1"
+      current_version=$(ssh -V 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+      ;;
+    bash)
+      # Bash: "GNU bash, version 5.1.16"
+      current_version=$(bash --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+      ;;
+    *)
+      # Generic version detection
+      current_version=$($cmd --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+      ;;
+  esac
+
+  if [[ -z "$current_version" ]]; then
+    log_verbose "  ⚠️  Could not detect $cmd version (continuing anyway)"
+    return 0  # Don't fail if we can't detect version
+  fi
+
+  log_verbose "  Version: $current_version (min: $min_version)"
+
+  # Compare versions (simple numeric comparison)
+  if version_compare "$current_version" "$min_version"; then
+    log_verbose "  ✓ Version requirement met"
+    return 0
+  else
+    log_warning "$cmd version $current_version is below recommended minimum $min_version
+
+Current version: $current_version
+Minimum recommended: $min_version
+
+While the script may still work, you may encounter issues with older versions.
+
+To upgrade:
+$(get_install_instructions "$cmd")
+
+Continuing anyway..."
+    return 0  # Warn but don't fail
+  fi
+}
+
+# Compare two semantic versions
+# Usage: version_compare <version1> <version2>
+# Returns: 0 if version1 >= version2, 1 otherwise
+version_compare() {
+  local ver1="$1" ver2="$2"
+
+  # Split versions into components
+  IFS='.' read -r -a v1 <<< "$ver1"
+  IFS='.' read -r -a v2 <<< "$ver2"
+
+  # Compare major version
+  if [[ ${v1[0]:-0} -gt ${v2[0]:-0} ]]; then
+    return 0
+  elif [[ ${v1[0]:-0} -lt ${v2[0]:-0} ]]; then
+    return 1
+  fi
+
+  # Compare minor version
+  if [[ ${v1[1]:-0} -gt ${v2[1]:-0} ]]; then
+    return 0
+  elif [[ ${v1[1]:-0} -lt ${v2[1]:-0} ]]; then
+    return 1
+  fi
+
+  # Compare patch version
+  if [[ ${v1[2]:-0} -ge ${v2[2]:-0} ]]; then
+    return 0
+  fi
+
+  return 1
 }
 
 validate_url() {

@@ -3,6 +3,9 @@
 # -----------------------------
 # Shared helper functions available to all adapters
 
+# Global variable to store detailed validation failure reasons
+ADAPTER_VALIDATION_ERRORS=()
+
 # Score a directory based on WordPress structure
 # Returns: score (0-3 based on plugins, themes, uploads subdirectories present)
 adapter_base_score_wp_content() {
