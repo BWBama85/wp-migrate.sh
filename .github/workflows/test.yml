@@ -43,6 +43,17 @@ jobs:
         run: |
           chmod +x wp-migrate.sh test-wp-migrate.sh
 
+      - name: Debug - Check files
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo "=== Files present ==="
+          ls -la *.sh
+          echo "=== Test wp-migrate.sh directly ==="
+          ./wp-migrate.sh --help || echo "Direct execution failed with code $?"
+          echo "=== Test with bash ==="
+          bash wp-migrate.sh --help || echo "Bash execution failed with code $?"
+
       - name: Run test suite
         shell: bash {0}
         run: ./test-wp-migrate.sh
