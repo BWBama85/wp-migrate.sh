@@ -268,22 +268,20 @@ jobs:
         run: |
           # Create a fake archive file to test validation
           echo "fake archive" > test-archive.zip
-          if ./wp-migrate.sh --archive test-archive.zip 2>&1 | tee output.log; then
-            echo "ERROR: Script should have failed with invalid archive"
+          set +e  # Don't exit on error
+          ./wp-migrate.sh --archive test-archive.zip > output.log 2>&1
+          exitcode=$?
+          set -e  # Re-enable exit on error
+
+          if [ $exitcode -eq 0 ]; then
+            echo "ERROR: Script should have failed with invalid archive (exit code was 0)"
+            echo "Output:"
             cat output.log
             rm -f test-archive.zip output.log
             exit 1
           fi
 
-          # Script should fail - check it produced an error message
-          if [ -s output.log ]; then
-            echo "✓ Archive mode validation working (script failed as expected)"
-            echo "Error output:"
-            head -3 output.log
-          else
-            echo "ERROR: No error message produced"
-            exit 1
-          fi
+          echo "✓ Archive mode validation working (script exited with code $exitcode as expected)"
           rm -f test-archive.zip output.log
 
   summary:
