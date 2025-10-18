@@ -44,7 +44,8 @@ jobs:
           chmod +x wp-migrate.sh test-wp-migrate.sh
 
       - name: Run test suite
-        run: bash test-wp-migrate.sh
+        shell: bash {0}
+        run: ./test-wp-migrate.sh
 
       - name: Test help output
         run: bash wp-migrate.sh --help
@@ -163,7 +164,8 @@ jobs:
         run: bash -n wp-migrate.sh
 
       - name: Run test suite
-        run: bash test-wp-migrate.sh
+        shell: bash {0}
+        run: ./test-wp-migrate.sh
 
       - name: Test help output
         run: bash wp-migrate.sh --help
@@ -239,9 +241,10 @@ jobs:
           wp --version
 
       - name: Test dry-run modes
+        shell: bash {0}
         run: |
           # These should fail gracefully (not in WP directory), but not crash
-          bash wp-migrate.sh --dest-host fake@example.com --dest-root /tmp --dry-run 2>&1 | tee output.log
+          ./wp-migrate.sh --dest-host fake@example.com --dest-root /tmp --dry-run 2>&1 | tee output.log
           if grep -q "wp-config.php not found" output.log; then
             echo "✓ Push mode dry-run validation working"
           else
@@ -250,10 +253,11 @@ jobs:
           fi
 
       - name: Test archive mode validation
+        shell: bash {0}
         run: |
           # Create a fake archive file to test validation
           echo "fake archive" > test-archive.zip
-          bash wp-migrate.sh --archive test-archive.zip 2>&1 | tee output.log || true
+          ./wp-migrate.sh --archive test-archive.zip 2>&1 | tee output.log || true
           if grep -q "wp-config.php not found" output.log; then
             echo "✓ Archive mode validation working"
           else
