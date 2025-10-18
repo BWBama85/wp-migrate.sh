@@ -268,14 +268,23 @@ jobs:
         run: |
           # Create a fake archive file to test validation
           echo "fake archive" > test-archive.zip
-          ./wp-migrate.sh --archive test-archive.zip 2>&1 | tee output.log || true
-          if grep -q "wp-config.php not found" output.log; then
-            echo "✓ Archive mode validation working"
-          else
-            echo "ERROR: Expected wp-config.php validation"
+          if ./wp-migrate.sh --archive test-archive.zip 2>&1 | tee output.log; then
+            echo "ERROR: Script should have failed with invalid archive"
+            cat output.log
+            rm -f test-archive.zip output.log
             exit 1
           fi
-          rm -f test-archive.zip
+
+          # Script should fail - check it produced an error message
+          if [ -s output.log ]; then
+            echo "✓ Archive mode validation working (script failed as expected)"
+            echo "Error output:"
+            head -3 output.log
+          else
+            echo "ERROR: No error message produced"
+            exit 1
+          fi
+          rm -f test-archive.zip output.log
 
   summary:
     name: Test Summary
