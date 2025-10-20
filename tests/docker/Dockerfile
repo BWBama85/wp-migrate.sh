@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     less \
     rsync \
-    mysql-client \
+    default-mysql-client \
     openssh-client \
     sudo \
     unzip \
