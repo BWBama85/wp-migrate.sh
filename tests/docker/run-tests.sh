@@ -44,24 +44,26 @@ test_header() {
   echo -e "${YELLOW}Test: $1${NC}"
 }
 
-# Function to wait for WordPress to be ready
+# Function to wait for WordPress environment to be ready (WP-CLI + DB connectivity)
+# This checks if the container is ready for wp core install, NOT if WP is installed
 wait_for_wordpress() {
   local container=$1
   local max_wait=60
   local waited=0
 
-  echo "Waiting for WordPress in $container to be ready..."
+  echo "Waiting for WordPress environment in $container to be ready..."
 
   while [ $waited -lt $max_wait ]; do
-    if $DOCKER_COMPOSE exec -T "$container" wp core is-installed --allow-root 2>/dev/null; then
-      echo "  WordPress is ready in $container"
+    # Check if WP-CLI can connect to database (works before installation)
+    if $DOCKER_COMPOSE exec -T "$container" wp db check --allow-root 2>/dev/null; then
+      echo "  WordPress environment ready in $container (WP-CLI + DB accessible)"
       return 0
     fi
     sleep 2
     ((waited+=2))
   done
 
-  echo "  ERROR: WordPress in $container did not become ready in ${max_wait}s"
+  echo "  ERROR: WordPress environment in $container did not become ready in ${max_wait}s"
   return 1
 }
 
