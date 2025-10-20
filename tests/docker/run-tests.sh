@@ -201,7 +201,9 @@ else
   fail "Duplicator archive not detected" "Expected 'Archive format: Duplicator' in output"
 fi
 
+set -x  # Enable tracing
 echo "About to start test 2"
+set +x  # Disable tracing
 
 # ============================================================================
 # TEST 2: Archive Mode - Jetpack Format
