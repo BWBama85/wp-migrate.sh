@@ -33,10 +33,10 @@ RUN chown -R www-data:www-data /var/www/html
 COPY wp-migrate.sh /usr/local/bin/wp-migrate.sh
 RUN chmod +x /usr/local/bin/wp-migrate.sh
 
-# Create directory for test fixtures
+# Create directory for test fixtures and copy them
+# Note: COPY with wildcards doesn't fail if no files match (unlike COPY with specific files)
 RUN mkdir -p /opt/test-fixtures
-COPY tests/fixtures/*.zip /opt/test-fixtures/ 2>/dev/null || true
-COPY tests/fixtures/*.tar.gz /opt/test-fixtures/ 2>/dev/null || true
+COPY tests/fixtures/*.zip tests/fixtures/*.tar.gz /opt/test-fixtures/
 
 WORKDIR /var/www/html
 
