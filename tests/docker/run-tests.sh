@@ -209,18 +209,24 @@ fi
 # ============================================================================
 test_header "Archive Mode - Jetpack format import"
 
+echo "DEBUG: Starting Jetpack test..."
 set +e
 output=$($DOCKER_COMPOSE exec -T dest-wp bash -c "
   cd /var/www/html && \
   wp-migrate.sh --archive /opt/test-fixtures/jetpack-minimal.tar.gz --dry-run --verbose
 " 2>&1)
+test2_exit=$?
 set -e
+echo "DEBUG: Jetpack command completed with exit code: $test2_exit"
 
 if echo "$output" | grep -q "Archive format: Jetpack"; then
   pass "Jetpack archive detected in dry-run mode"
 else
   fail "Jetpack archive not detected"
+  echo "DEBUG: First 5 lines of Jetpack output:"
+  echo "$output" | head -5 | sed 's/^/  /'
 fi
+echo "DEBUG: Jetpack test complete"
 
 # ============================================================================
 # TEST 3: Archive Mode - Solid Backups Format
