@@ -42,6 +42,7 @@ SSH_CONTROL_PATH=""
 
 DRY_RUN=false
 QUIET_MODE=false            # Suppress progress indicators (--quiet flag)
+YES_MODE=false              # Skip confirmation prompts (--yes flag)
 IMPORT_DB=true              # Automatically import DB on destination after transfer (disable with --no-import-db)
 SEARCH_REPLACE=true         # Automatically perform URL search-replace after DB import (disable with --no-search-replace)
 GZIP_DB=true                # Compress DB dump during transfer

@@ -42,6 +42,7 @@ SSH_CONTROL_PATH=""
 
 DRY_RUN=false
 QUIET_MODE=false            # Suppress progress indicators (--quiet flag)
+YES_MODE=false              # Skip confirmation prompts (--yes flag)
 IMPORT_DB=true              # Automatically import DB on destination after transfer (disable with --no-import-db)
 SEARCH_REPLACE=true         # Automatically perform URL search-replace after DB import (disable with --no-search-replace)
 GZIP_DB=true                # Compress DB dump during transfer
@@ -2154,15 +2155,19 @@ rollback_migration() {
     return 0
   fi
 
-  # Confirmation prompt
-  log ""
-  log "⚠️  WARNING: This will replace your current site with the backup."
-  log ""
-  read -p "Are you sure you want to proceed with rollback? (yes/no): " -r
-  echo
-  if [[ ! "$REPLY" =~ ^[Yy][Ee][Ss]$ ]]; then
-    log "Rollback cancelled by user."
-    exit 0
+  # Confirmation prompt (skip if --yes flag is set)
+  if ! $YES_MODE; then
+    log ""
+    log "⚠️  WARNING: This will replace your current site with the backup."
+    log ""
+    read -p "Are you sure you want to proceed with rollback? (yes/no): " -r
+    echo
+    if [[ ! "$REPLY" =~ ^[Yy][Ee][Ss]$ ]]; then
+      log "Rollback cancelled by user."
+      exit 0
+    fi
+  else
+    log "Skipping confirmation prompt (--yes flag set)"
   fi
 
   # Rollback database
@@ -2255,6 +2260,7 @@ Required (choose one mode):
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
   --quiet                   Suppress progress indicators for long-running operations (useful for non-interactive scripts)
+  --yes                     Skip confirmation prompts (useful for automation; use with caution)
   --verbose                 Show additional details (dependency checks, command construction, detection process)
   --trace                   Show every command before execution (implies --verbose). Useful for debugging and reproducing issues.
   --import-db               (Deprecated) Explicitly import the DB on destination (default behavior)
@@ -2301,6 +2307,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run) DRY_RUN=true; shift ;;
     --quiet) QUIET_MODE=true; shift ;;
+    --yes) YES_MODE=true; shift ;;
     --rollback) ROLLBACK_MODE=true; shift ;;
     --rollback-backup) ROLLBACK_BACKUP_PATH="${2:-}"; shift 2 ;;
     --verbose) VERBOSE=true; shift ;;

@@ -15,6 +15,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run) DRY_RUN=true; shift ;;
     --quiet) QUIET_MODE=true; shift ;;
+    --yes) YES_MODE=true; shift ;;
     --rollback) ROLLBACK_MODE=true; shift ;;
     --rollback-backup) ROLLBACK_BACKUP_PATH="${2:-}"; shift 2 ;;
     --verbose) VERBOSE=true; shift ;;
