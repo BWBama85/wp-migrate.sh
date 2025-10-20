@@ -180,14 +180,10 @@ INSTRUCTIONS
 }
 
 needs() {
-  local cmd="$1"
-  log_verbose "Checking for required dependency: $cmd"
-  if command -v "$cmd" >/dev/null 2>&1; then
-    local cmd_path
-    cmd_path=$(command -v "$cmd")
-    log_verbose "  ✓ Found: $cmd_path"
-    return 0
-  else
+  local cmd="$1" min_version="${2:-}"
+  log_verbose "Checking for required dependency: $cmd${min_version:+ (>= $min_version)}"
+
+  if ! command -v "$cmd" >/dev/null 2>&1; then
     err "Missing required dependency: $cmd
 
 This command is required for migration to work.
@@ -198,6 +194,107 @@ $(get_install_instructions "$cmd")
 After installation, verify with:
   which $cmd && $cmd --version"
   fi
+
+  local cmd_path
+  cmd_path=$(command -v "$cmd")
+  log_verbose "  ✓ Found: $cmd_path"
+
+  # Check version if minimum specified
+  if [[ -n "$min_version" ]]; then
+    check_version "$cmd" "$min_version" || return 1
+  fi
+
+  return 0
+}
+
+# Check if command meets minimum version requirement
+# Usage: check_version <command> <min_version>
+# Returns: 0 if version >= min_version, 1 otherwise
+check_version() {
+  local cmd="$1" min_version="$2"
+  local current_version
+
+  # Get version based on command
+  case "$cmd" in
+    wp)
+      # WP-CLI: "WP-CLI 2.8.1"
+      current_version=$(wp --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+      ;;
+    rsync)
+      # rsync: "rsync  version 3.2.3"
+      current_version=$(rsync --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+      ;;
+    ssh)
+      # OpenSSH: "OpenSSH_8.6p1"
+      current_version=$(ssh -V 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+      ;;
+    bash)
+      # Bash: "GNU bash, version 5.1.16"
+      current_version=$(bash --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+      ;;
+    *)
+      # Generic version detection
+      current_version=$($cmd --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+      ;;
+  esac
+
+  if [[ -z "$current_version" ]]; then
+    log_verbose "  ⚠️  Could not detect $cmd version (continuing anyway)"
+    return 0  # Don't fail if we can't detect version
+  fi
+
+  log_verbose "  Version: $current_version (min: $min_version)"
+
+  # Compare versions (simple numeric comparison)
+  if version_compare "$current_version" "$min_version"; then
+    log_verbose "  ✓ Version requirement met"
+    return 0
+  else
+    log_warning "$cmd version $current_version is below recommended minimum $min_version
+
+Current version: $current_version
+Minimum recommended: $min_version
+
+While the script may still work, you may encounter issues with older versions.
+
+To upgrade:
+$(get_install_instructions "$cmd")
+
+Continuing anyway..."
+    return 0  # Warn but don't fail
+  fi
+}
+
+# Compare two semantic versions
+# Usage: version_compare <version1> <version2>
+# Returns: 0 if version1 >= version2, 1 otherwise
+version_compare() {
+  local ver1="$1" ver2="$2"
+
+  # Split versions into components
+  IFS='.' read -r -a v1 <<< "$ver1"
+  IFS='.' read -r -a v2 <<< "$ver2"
+
+  # Compare major version
+  if [[ ${v1[0]:-0} -gt ${v2[0]:-0} ]]; then
+    return 0
+  elif [[ ${v1[0]:-0} -lt ${v2[0]:-0} ]]; then
+    return 1
+  fi
+
+  # Compare minor version
+  if [[ ${v1[1]:-0} -gt ${v2[1]:-0} ]]; then
+    return 0
+  elif [[ ${v1[1]:-0} -lt ${v2[1]:-0} ]]; then
+    return 1
+  fi
+
+  # Compare patch version
+  if [[ ${v1[2]:-0} -ge ${v2[2]:-0} ]]; then
+    return 0
+  fi
+
+  return 1
 }
 
 validate_url() {
@@ -299,6 +396,9 @@ log_trace() {
 # -----------------------------
 # Shared helper functions available to all adapters
 
+# Global variable to store detailed validation failure reasons
+ADAPTER_VALIDATION_ERRORS=()
+
 # Score a directory based on WordPress structure
 # Returns: score (0-3 based on plugins, themes, uploads subdirectories present)
 adapter_base_score_wp_content() {
@@ -399,16 +499,26 @@ adapter_base_get_archive_type() {
 # Validate if this archive is a Duplicator backup
 # Usage: adapter_duplicator_validate <archive_path>
 # Returns: 0 if valid Duplicator archive, 1 otherwise
+# Sets: ADAPTER_VALIDATION_ERRORS array with failure reasons on error
 adapter_duplicator_validate() {
   local archive="$1"
+  local errors=()
 
   # Check file exists
-  [[ -f "$archive" ]] || return 1
+  if [[ ! -f "$archive" ]]; then
+    errors+=("File does not exist")
+    ADAPTER_VALIDATION_ERRORS+=("Duplicator: ${errors[*]}")
+    return 1
+  fi
 
   # Check if it's a ZIP file
   local archive_type
   archive_type=$(adapter_base_get_archive_type "$archive")
-  [[ "$archive_type" == "zip" ]] || return 1
+  if [[ "$archive_type" != "zip" ]]; then
+    errors+=("Not a ZIP archive (found: $archive_type)")
+    ADAPTER_VALIDATION_ERRORS+=("Duplicator: ${errors[*]}")
+    return 1
+  fi
 
   # Check for Duplicator signature file (installer.php)
   if adapter_base_archive_contains "$archive" "installer.php"; then
@@ -420,6 +530,8 @@ adapter_duplicator_validate() {
     return 0
   fi
 
+  errors+=("Missing installer.php and dup-installer/dup-database__ pattern")
+  ADAPTER_VALIDATION_ERRORS+=("Duplicator: ${errors[*]}")
   return 1
 }
 
@@ -503,33 +615,66 @@ adapter_duplicator_get_dependencies() {
 # Validate if this archive is a Jetpack backup
 # Usage: adapter_jetpack_validate <archive_path>
 # Returns: 0 if valid Jetpack archive, 1 otherwise
+# Sets: ADAPTER_VALIDATION_ERRORS array with failure reasons on error
 adapter_jetpack_validate() {
   local archive="$1"
+  local errors=()
 
   # Handle both archives and extracted directories
   if [[ -d "$archive" ]]; then
     # Already extracted directory
-    [[ -d "$archive/sql" ]] || return 1
-    [[ -f "$archive/meta.json" ]] || return 1
-    [[ -d "$archive/wp-content" ]] || return 1
+    if [[ ! -d "$archive/sql" ]]; then
+      errors+=("Extracted dir missing sql/ directory")
+    fi
+    if [[ ! -f "$archive/meta.json" ]]; then
+      errors+=("Extracted dir missing meta.json")
+    fi
+    if [[ ! -d "$archive/wp-content" ]]; then
+      errors+=("Extracted dir missing wp-content/")
+    fi
+
+    if [[ ${#errors[@]} -gt 0 ]]; then
+      ADAPTER_VALIDATION_ERRORS+=("Jetpack: ${errors[*]}")
+      return 1
+    fi
     return 0
   fi
 
   # Check file exists
-  [[ -f "$archive" ]] || return 1
+  if [[ ! -f "$archive" ]]; then
+    errors+=("File does not exist")
+    ADAPTER_VALIDATION_ERRORS+=("Jetpack: ${errors[*]}")
+    return 1
+  fi
 
   # Check if it's a supported archive format
   local archive_type
   archive_type=$(adapter_base_get_archive_type "$archive")
-  [[ "$archive_type" == "zip" || "$archive_type" == "tar.gz" || "$archive_type" == "tar" ]] || return 1
-
-  # Check for Jetpack signature: meta.json + sql/ directory
-  if adapter_base_archive_contains "$archive" "meta.json"; then
-    if adapter_base_archive_contains "$archive" "sql/wp_options.sql"; then
-      return 0
-    fi
+  if [[ "$archive_type" != "zip" && "$archive_type" != "tar.gz" && "$archive_type" != "tar" ]]; then
+    errors+=("Unsupported format: $archive_type (need ZIP, TAR, or TAR.GZ)")
+    ADAPTER_VALIDATION_ERRORS+=("Jetpack: ${errors[*]}")
+    return 1
   fi
 
+  # Check for Jetpack signature: meta.json + sql/ directory
+  local has_meta=false has_sql=false
+  if adapter_base_archive_contains "$archive" "meta.json"; then
+    has_meta=true
+  else
+    errors+=("Missing meta.json")
+  fi
+
+  if adapter_base_archive_contains "$archive" "sql/wp_options.sql"; then
+    has_sql=true
+  else
+    errors+=("Missing sql/wp_options.sql")
+  fi
+
+  if [[ "$has_meta" == true && "$has_sql" == true ]]; then
+    return 0
+  fi
+
+  ADAPTER_VALIDATION_ERRORS+=("Jetpack: ${errors[*]}")
   return 1
 }
 
@@ -720,32 +865,50 @@ adapter_jetpack_get_dependencies() {
 # Validate if this archive is a Solid Backups backup
 # Usage: adapter_solidbackups_validate <archive_path>
 # Returns: 0 if valid Solid Backups archive, 1 otherwise
+# Sets: ADAPTER_VALIDATION_ERRORS array with failure reasons on error
 adapter_solidbackups_validate() {
   local archive="$1"
+  local errors=()
 
   # Handle both archives and extracted directories
   if [[ -d "$archive" ]]; then
     # Already extracted directory - check for backupbuddy_temp structure
-    if [[ -d "$archive/wp-content/uploads/backupbuddy_temp" ]]; then
-      # Look for importbuddy.php signature file in any subdirectory
-      if find "$archive/wp-content/uploads/backupbuddy_temp" -maxdepth 2 -type f -name "importbuddy.php" 2>/dev/null | grep -q .; then
-        return 0
-      fi
-      # Fallback: Check for backupbuddy_dat.php (importbuddy is often downloaded separately)
-      if find "$archive/wp-content/uploads/backupbuddy_temp" -maxdepth 2 -type f -name "backupbuddy_dat.php" 2>/dev/null | grep -q .; then
-        return 0
-      fi
+    if [[ ! -d "$archive/wp-content/uploads/backupbuddy_temp" ]]; then
+      errors+=("Extracted dir missing wp-content/uploads/backupbuddy_temp/")
+      ADAPTER_VALIDATION_ERRORS+=("Solid Backups: ${errors[*]}")
+      return 1
     fi
+
+    # Look for importbuddy.php signature file in any subdirectory
+    if find "$archive/wp-content/uploads/backupbuddy_temp" -maxdepth 2 -type f -name "importbuddy.php" 2>/dev/null | grep -q .; then
+      return 0
+    fi
+
+    # Fallback: Check for backupbuddy_dat.php (importbuddy is often downloaded separately)
+    if find "$archive/wp-content/uploads/backupbuddy_temp" -maxdepth 2 -type f -name "backupbuddy_dat.php" 2>/dev/null | grep -q .; then
+      return 0
+    fi
+
+    errors+=("Missing importbuddy.php or backupbuddy_dat.php in backupbuddy_temp/")
+    ADAPTER_VALIDATION_ERRORS+=("Solid Backups: ${errors[*]}")
     return 1
   fi
 
   # Check file exists
-  [[ -f "$archive" ]] || return 1
+  if [[ ! -f "$archive" ]]; then
+    errors+=("File does not exist")
+    ADAPTER_VALIDATION_ERRORS+=("Solid Backups: ${errors[*]}")
+    return 1
+  fi
 
   # Check if it's a ZIP file
   local archive_type
   archive_type=$(adapter_base_get_archive_type "$archive")
-  [[ "$archive_type" == "zip" ]] || return 1
+  if [[ "$archive_type" != "zip" ]]; then
+    errors+=("Not a ZIP archive (found: $archive_type)")
+    ADAPTER_VALIDATION_ERRORS+=("Solid Backups: ${errors[*]}")
+    return 1
+  fi
 
   # Check for Solid Backups signature: importbuddy.php in backupbuddy_temp
   if adapter_base_archive_contains "$archive" "backupbuddy_temp.*importbuddy.php"; then
@@ -757,6 +920,8 @@ adapter_solidbackups_validate() {
     return 0
   fi
 
+  errors+=("Missing backupbuddy_temp/ with importbuddy.php or backupbuddy_dat.php")
+  ADAPTER_VALIDATION_ERRORS+=("Solid Backups: ${errors[*]}")
   return 1
 }
 
@@ -1971,11 +2136,25 @@ Next steps:
     ARCHIVE_ADAPTER="$ARCHIVE_TYPE"
   else
     # Auto-detect adapter from archive
+    # Reset validation errors before detection
+    ADAPTER_VALIDATION_ERRORS=()
     ARCHIVE_ADAPTER=$(detect_adapter "$ARCHIVE_FILE")
     if [[ -z "$ARCHIVE_ADAPTER" ]]; then
+      # Build detailed error message with validation failures
+      detailed_errors=""
+      if [[ ${#ADAPTER_VALIDATION_ERRORS[@]} -gt 0 ]]; then
+        detailed_errors="
+
+Validation failures:"
+        for error in "${ADAPTER_VALIDATION_ERRORS[@]}"; do
+          detailed_errors+="
+  ✗ $error"
+        done
+      fi
+
       err "Unable to auto-detect archive format for: $ARCHIVE_FILE
 
-The archive doesn't match any known backup plugin format.
+The archive doesn't match any known backup plugin format.${detailed_errors}
 
 Supported formats:
   • Duplicator Pro/Lite (.zip with installer.php)

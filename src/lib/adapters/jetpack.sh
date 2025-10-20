@@ -15,33 +15,66 @@
 # Validate if this archive is a Jetpack backup
 # Usage: adapter_jetpack_validate <archive_path>
 # Returns: 0 if valid Jetpack archive, 1 otherwise
+# Sets: ADAPTER_VALIDATION_ERRORS array with failure reasons on error
 adapter_jetpack_validate() {
   local archive="$1"
+  local errors=()
 
   # Handle both archives and extracted directories
   if [[ -d "$archive" ]]; then
     # Already extracted directory
-    [[ -d "$archive/sql" ]] || return 1
-    [[ -f "$archive/meta.json" ]] || return 1
-    [[ -d "$archive/wp-content" ]] || return 1
+    if [[ ! -d "$archive/sql" ]]; then
+      errors+=("Extracted dir missing sql/ directory")
+    fi
+    if [[ ! -f "$archive/meta.json" ]]; then
+      errors+=("Extracted dir missing meta.json")
+    fi
+    if [[ ! -d "$archive/wp-content" ]]; then
+      errors+=("Extracted dir missing wp-content/")
+    fi
+
+    if [[ ${#errors[@]} -gt 0 ]]; then
+      ADAPTER_VALIDATION_ERRORS+=("Jetpack: ${errors[*]}")
+      return 1
+    fi
     return 0
   fi
 
   # Check file exists
-  [[ -f "$archive" ]] || return 1
+  if [[ ! -f "$archive" ]]; then
+    errors+=("File does not exist")
+    ADAPTER_VALIDATION_ERRORS+=("Jetpack: ${errors[*]}")
+    return 1
+  fi
 
   # Check if it's a supported archive format
   local archive_type
   archive_type=$(adapter_base_get_archive_type "$archive")
-  [[ "$archive_type" == "zip" || "$archive_type" == "tar.gz" || "$archive_type" == "tar" ]] || return 1
-
-  # Check for Jetpack signature: meta.json + sql/ directory
-  if adapter_base_archive_contains "$archive" "meta.json"; then
-    if adapter_base_archive_contains "$archive" "sql/wp_options.sql"; then
-      return 0
-    fi
+  if [[ "$archive_type" != "zip" && "$archive_type" != "tar.gz" && "$archive_type" != "tar" ]]; then
+    errors+=("Unsupported format: $archive_type (need ZIP, TAR, or TAR.GZ)")
+    ADAPTER_VALIDATION_ERRORS+=("Jetpack: ${errors[*]}")
+    return 1
   fi
 
+  # Check for Jetpack signature: meta.json + sql/ directory
+  local has_meta=false has_sql=false
+  if adapter_base_archive_contains "$archive" "meta.json"; then
+    has_meta=true
+  else
+    errors+=("Missing meta.json")
+  fi
+
+  if adapter_base_archive_contains "$archive" "sql/wp_options.sql"; then
+    has_sql=true
+  else
+    errors+=("Missing sql/wp_options.sql")
+  fi
+
+  if [[ "$has_meta" == true && "$has_sql" == true ]]; then
+    return 0
+  fi
+
+  ADAPTER_VALIDATION_ERRORS+=("Jetpack: ${errors[*]}")
   return 1
 }
 

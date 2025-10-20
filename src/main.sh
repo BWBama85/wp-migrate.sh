@@ -133,11 +133,25 @@ Next steps:
     ARCHIVE_ADAPTER="$ARCHIVE_TYPE"
   else
     # Auto-detect adapter from archive
+    # Reset validation errors before detection
+    ADAPTER_VALIDATION_ERRORS=()
     ARCHIVE_ADAPTER=$(detect_adapter "$ARCHIVE_FILE")
     if [[ -z "$ARCHIVE_ADAPTER" ]]; then
+      # Build detailed error message with validation failures
+      detailed_errors=""
+      if [[ ${#ADAPTER_VALIDATION_ERRORS[@]} -gt 0 ]]; then
+        detailed_errors="
+
+Validation failures:"
+        for error in "${ADAPTER_VALIDATION_ERRORS[@]}"; do
+          detailed_errors+="
+  ✗ $error"
+        done
+      fi
+
       err "Unable to auto-detect archive format for: $ARCHIVE_FILE
 
-The archive doesn't match any known backup plugin format.
+The archive doesn't match any known backup plugin format.${detailed_errors}
 
 Supported formats:
   • Duplicator Pro/Lite (.zip with installer.php)
