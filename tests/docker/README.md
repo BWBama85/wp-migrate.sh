@@ -74,7 +74,7 @@ docker-compose up -d
 
 # Wait for WordPress environment to be ready (WP-CLI + DB, takes ~30s)
 # This checks database connectivity, not whether WordPress is installed
-docker-compose exec source-wp wp db check --allow-root
+docker-compose exec source-wp wp db query 'SELECT 1' --allow-root
 
 # Install WordPress manually if needed
 docker-compose exec source-wp bash -c "

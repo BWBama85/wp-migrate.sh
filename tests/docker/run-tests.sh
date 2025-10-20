@@ -54,8 +54,8 @@ wait_for_wordpress() {
   echo "Waiting for WordPress environment in $container to be ready..."
 
   while [ $waited -lt $max_wait ]; do
-    # Check if WP-CLI can connect to database (works before installation)
-    if $DOCKER_COMPOSE exec -T "$container" wp db check --allow-root 2>/dev/null; then
+    # Check if WP-CLI can connect to database using a simple query (works before WP installation)
+    if $DOCKER_COMPOSE exec -T "$container" wp db query 'SELECT 1' --allow-root 2>/dev/null >/dev/null; then
       echo "  WordPress environment ready in $container (WP-CLI + DB accessible)"
       return 0
     fi
@@ -197,39 +197,27 @@ fi
 
 if echo "$output" | grep -q "Archive format: Duplicator"; then
   pass "Duplicator archive detected in dry-run mode"
-  echo "DEBUG: Test 1 passed, about to finish if block"
 else
   fail "Duplicator archive not detected" "Expected 'Archive format: Duplicator' in output"
-  # Show first 10 lines of output for debugging
-  echo "  First 10 lines of output (exit code: $exit_code):"
-  echo "$output" | head -10 | sed 's/^/    /'
-  echo "DEBUG: Test 1 failed, about to finish if block"
 fi
-echo "DEBUG: Test 1 if block completed"
 
 # ============================================================================
 # TEST 2: Archive Mode - Jetpack Format
 # ============================================================================
 test_header "Archive Mode - Jetpack format import"
 
-echo "DEBUG: Starting Jetpack test..."
 set +e
 output=$($DOCKER_COMPOSE exec -T dest-wp bash -c "
   cd /var/www/html && \
   wp-migrate.sh --archive /opt/test-fixtures/jetpack-minimal.tar.gz --dry-run --verbose
 " 2>&1)
-test2_exit=$?
 set -e
-echo "DEBUG: Jetpack command completed with exit code: $test2_exit"
 
 if echo "$output" | grep -q "Archive format: Jetpack"; then
   pass "Jetpack archive detected in dry-run mode"
 else
   fail "Jetpack archive not detected"
-  echo "DEBUG: First 5 lines of Jetpack output:"
-  echo "$output" | head -5 | sed 's/^/  /'
 fi
-echo "DEBUG: Jetpack test complete"
 
 # ============================================================================
 # TEST 3: Archive Mode - Solid Backups Format
