@@ -197,12 +197,15 @@ fi
 
 if echo "$output" | grep -q "Archive format: Duplicator"; then
   pass "Duplicator archive detected in dry-run mode"
+  echo "DEBUG: Test 1 passed, about to finish if block"
 else
   fail "Duplicator archive not detected" "Expected 'Archive format: Duplicator' in output"
   # Show first 10 lines of output for debugging
   echo "  First 10 lines of output (exit code: $exit_code):"
   echo "$output" | head -10 | sed 's/^/    /'
+  echo "DEBUG: Test 1 failed, about to finish if block"
 fi
+echo "DEBUG: Test 1 if block completed"
 
 # ============================================================================
 # TEST 2: Archive Mode - Jetpack Format
