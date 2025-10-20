@@ -209,10 +209,14 @@ fi
 # ============================================================================
 test_header "Archive Mode - Jetpack format import"
 
-if $DOCKER_COMPOSE exec -T dest-wp bash -c "
+set +e
+output=$($DOCKER_COMPOSE exec -T dest-wp bash -c "
   cd /var/www/html && \
   wp-migrate.sh --archive /opt/test-fixtures/jetpack-minimal.tar.gz --dry-run --verbose
-" 2>&1 | grep -q "Archive format: Jetpack"; then
+" 2>&1)
+set -e
+
+if echo "$output" | grep -q "Archive format: Jetpack"; then
   pass "Jetpack archive detected in dry-run mode"
 else
   fail "Jetpack archive not detected"
@@ -223,10 +227,14 @@ fi
 # ============================================================================
 test_header "Archive Mode - Solid Backups format import"
 
-if $DOCKER_COMPOSE exec -T dest-wp bash -c "
+set +e
+output=$($DOCKER_COMPOSE exec -T dest-wp bash -c "
   cd /var/www/html && \
   wp-migrate.sh --archive /opt/test-fixtures/solidbackups-minimal.zip --dry-run --verbose
-" 2>&1 | grep -q "Archive format: Solid Backups"; then
+" 2>&1)
+set -e
+
+if echo "$output" | grep -q "Archive format: Solid Backups"; then
   pass "Solid Backups archive detected in dry-run mode"
 else
   fail "Solid Backups archive not detected"
