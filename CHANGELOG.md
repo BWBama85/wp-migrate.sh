@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Integration Test Infrastructure**: Minimal test archives for Duplicator, Jetpack, and Solid Backups formats with automated format detection tests. Includes 3 test fixtures (< 5KB total) and integration test script that validates each adapter correctly identifies its format. CI/CD workflow updated to run integration tests on every push. See `tests/fixtures/README.md` for details.
 
+### Fixed
+- **Archive type detection for tar.gz files**: Fixed critical bug in `adapter_base_get_archive_type()` where the function checked for "zip" before "gzip", causing tar.gz files (like Jetpack backups) to be misidentified as ZIP archives. Since "gzip" contains the substring "zip", the condition `*"zip"*` matched first and returned "zip" instead of "tar.gz". This broke Jetpack archive validation completely as the script attempted to use `unzip` on tar.gz files. Fixed by reordering conditions to check for gzip/compressed before zip. (Discovered during PR #54 code review)
+
 ## [2.5.0] - 2025-10-20
 
 **⚡ Quality & Diagnostics**
