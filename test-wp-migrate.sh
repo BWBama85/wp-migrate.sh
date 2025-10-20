@@ -19,14 +19,14 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 pass() {
-  ((TESTS_PASSED++))
-  ((TESTS_RUN++))
+  ((TESTS_PASSED++)) || true
+  ((TESTS_RUN++)) || true
   printf "${GREEN}✓${NC} %s\n" "$1"
 }
 
 fail() {
-  ((TESTS_FAILED++))
-  ((TESTS_RUN++))
+  ((TESTS_FAILED++)) || true
+  ((TESTS_RUN++)) || true
   printf "${RED}✗${NC} %s\n" "$1"
   [[ -n "${2:-}" ]] && printf "  Error: %s\n" "$2"
 }
