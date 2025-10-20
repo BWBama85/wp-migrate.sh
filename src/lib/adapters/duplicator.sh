@@ -55,8 +55,18 @@ adapter_duplicator_extract() {
   local archive="$1" dest="$2"
 
   log_trace "unzip -q \"$archive\" -d \"$dest\""
-  if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-    return 1
+
+  # Show progress if pv is available and not in quiet mode
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+    local archive_size
+    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | unzip -q - -d "$dest" 2>/dev/null; then
+      return 1
+    fi
+  else
+    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
+      return 1
+    fi
   fi
 
   return 0

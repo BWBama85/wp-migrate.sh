@@ -14,6 +14,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --quiet) QUIET_MODE=true; shift ;;
     --verbose) VERBOSE=true; shift ;;
     --trace) TRACE_MODE=true; VERBOSE=true; shift ;;
     --import-db) IMPORT_DB=true; shift ;;
@@ -1067,7 +1068,14 @@ else
   log "Database reset complete (all tables dropped)"
 
   # Import the database
-  wp_local db import "$ARCHIVE_DB_FILE"
+  log "Importing database (this may take a few minutes for large databases)..."
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+    # Show progress with pv
+    DB_SIZE=$(stat -f%z "$ARCHIVE_DB_FILE" 2>/dev/null || stat -c%s "$ARCHIVE_DB_FILE" 2>/dev/null)
+    pv -N "Database import" -s "$DB_SIZE" "$ARCHIVE_DB_FILE" | wp_local db import -
+  else
+    wp_local db import "$ARCHIVE_DB_FILE"
+  fi
   log "Database imported successfully"
 
   # Detect the prefix from the imported database
@@ -1310,8 +1318,8 @@ else
   # Build rsync command with appropriate options
   # Always use --delete to ensure destination matches archive (removes stale files)
   log_verbose "Building rsync options for archive sync..."
-  RSYNC_OPTS=(-a --delete)
-  log_verbose "  Base options: -a --delete"
+  RSYNC_OPTS=(-a --delete --info=progress2)
+  log_verbose "  Base options: -a --delete --info=progress2"
 
   # Use root-anchored exclusions (leading /) to only match files at wp-content root
   # Without /, rsync would exclude these filenames at ANY depth (e.g., plugins/foo/object-cache.php)

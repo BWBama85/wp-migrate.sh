@@ -97,20 +97,50 @@ adapter_jetpack_extract() {
   local archive_type
   archive_type=$(adapter_base_get_archive_type "$archive")
 
+  # Show progress if pv is available and not in quiet mode
+  local use_pv=false
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+    use_pv=true
+  fi
+
   if [[ "$archive_type" == "zip" ]]; then
     log_trace "unzip -q \"$archive\" -d \"$dest\""
-    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-      return 1
+    if $use_pv; then
+      local archive_size
+      archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+      if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | unzip -q - -d "$dest" 2>/dev/null; then
+        return 1
+      fi
+    else
+      if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
+        return 1
+      fi
     fi
   elif [[ "$archive_type" == "tar.gz" ]]; then
     log_trace "tar -xzf \"$archive\" -C \"$dest\""
-    if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
-      return 1
+    if $use_pv; then
+      local archive_size
+      archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+      if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xzf - -C "$dest" 2>/dev/null; then
+        return 1
+      fi
+    else
+      if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
+        return 1
+      fi
     fi
   elif [[ "$archive_type" == "tar" ]]; then
     log_trace "tar -xf \"$archive\" -C \"$dest\""
-    if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
-      return 1
+    if $use_pv; then
+      local archive_size
+      archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+      if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xf - -C "$dest" 2>/dev/null; then
+        return 1
+      fi
+    else
+      if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
+        return 1
+      fi
     fi
   else
     return 1

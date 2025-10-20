@@ -39,6 +39,7 @@ SSH_CONTROL_DIR=""
 SSH_CONTROL_PATH=""
 
 DRY_RUN=false
+QUIET_MODE=false            # Suppress progress indicators (--quiet flag)
 IMPORT_DB=true              # Automatically import DB on destination after transfer (disable with --no-import-db)
 SEARCH_REPLACE=true         # Automatically perform URL search-replace after DB import (disable with --no-search-replace)
 GZIP_DB=true                # Compress DB dump during transfer
@@ -562,8 +563,18 @@ adapter_duplicator_extract() {
   local archive="$1" dest="$2"
 
   log_trace "unzip -q \"$archive\" -d \"$dest\""
-  if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-    return 1
+
+  # Show progress if pv is available and not in quiet mode
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+    local archive_size
+    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | unzip -q - -d "$dest" 2>/dev/null; then
+      return 1
+    fi
+  else
+    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
+      return 1
+    fi
   fi
 
   return 0
@@ -717,20 +728,50 @@ adapter_jetpack_extract() {
   local archive_type
   archive_type=$(adapter_base_get_archive_type "$archive")
 
+  # Show progress if pv is available and not in quiet mode
+  local use_pv=false
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+    use_pv=true
+  fi
+
   if [[ "$archive_type" == "zip" ]]; then
     log_trace "unzip -q \"$archive\" -d \"$dest\""
-    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-      return 1
+    if $use_pv; then
+      local archive_size
+      archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+      if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | unzip -q - -d "$dest" 2>/dev/null; then
+        return 1
+      fi
+    else
+      if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
+        return 1
+      fi
     fi
   elif [[ "$archive_type" == "tar.gz" ]]; then
     log_trace "tar -xzf \"$archive\" -C \"$dest\""
-    if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
-      return 1
+    if $use_pv; then
+      local archive_size
+      archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+      if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xzf - -C "$dest" 2>/dev/null; then
+        return 1
+      fi
+    else
+      if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
+        return 1
+      fi
     fi
   elif [[ "$archive_type" == "tar" ]]; then
     log_trace "tar -xf \"$archive\" -C \"$dest\""
-    if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
-      return 1
+    if $use_pv; then
+      local archive_size
+      archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+      if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xf - -C "$dest" 2>/dev/null; then
+        return 1
+      fi
+    else
+      if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
+        return 1
+      fi
     fi
   else
     return 1
@@ -962,8 +1003,18 @@ adapter_solidbackups_extract() {
 
   # Extract ZIP archive
   log_trace "unzip -q \"$archive\" -d \"$dest\""
-  if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-    return 1
+
+  # Show progress if pv is available and not in quiet mode
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+    local archive_size
+    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | unzip -q - -d "$dest" 2>/dev/null; then
+      return 1
+    fi
+  else
+    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
+      return 1
+    fi
   fi
 
   return 0
@@ -1963,6 +2014,74 @@ print_version() {
   printf "wp-migrate.sh version %s\n" "$version"
 }
 
+# ========================================
+# Progress Indicator System
+# ========================================
+
+# Check if pv is available for progress monitoring
+has_pv() {
+  command -v pv >/dev/null 2>&1
+}
+
+# Wrap a command with progress indicator if pv is available
+# Usage: run_with_progress <description> <command...>
+# Example: run_with_progress "Extracting archive" unzip -q archive.zip -d dest/
+run_with_progress() {
+  local description="$1"
+  shift
+
+  # If --quiet flag is set, suppress progress output
+  if $QUIET_MODE; then
+    "$@"
+    return $?
+  fi
+
+  log "$description..."
+
+  # If pv is available and we're in an interactive terminal, use it for progress
+  if has_pv && [[ -t 1 ]]; then
+    # pv will show progress bar
+    "$@" 2>&1 | pv -N "$description" -l -s 1000 >/dev/null
+    return "${PIPESTATUS[0]}"
+  else
+    # Fallback: just run the command and show completion message
+    if "$@"; then
+      log "  ✓ $description complete"
+      return 0
+    else
+      local exit_code=$?
+      log "  ✗ $description failed (exit code: $exit_code)"
+      return $exit_code
+    fi
+  fi
+}
+
+# Pipe data through pv with progress indicator
+# Usage: cat file | pipe_progress "Description" | consumer
+# Or: pipe_progress "Description" size_in_bytes < file > output
+pipe_progress() {
+  local description="$1"
+  local size="${2:-}"
+
+  # If --quiet flag is set, just pass through
+  if $QUIET_MODE; then
+    cat
+    return 0
+  fi
+
+  # If pv is available and we're in an interactive terminal, use it
+  if has_pv && [[ -t 2 ]]; then
+    if [[ -n "$size" ]]; then
+      pv -N "$description" -s "$size"
+    else
+      pv -N "$description" -l
+    fi
+  else
+    # Fallback: just pass through without progress
+    cat
+  fi
+}
+
 print_usage() {
   cat <<USAGE
 Usage:
@@ -1992,6 +2111,7 @@ Required (choose one mode):
 
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
+  --quiet                   Suppress progress indicators for long-running operations (useful for non-interactive scripts)
   --verbose                 Show additional details (dependency checks, command construction, detection process)
   --trace                   Show every command before execution (implies --verbose). Useful for debugging and reproducing issues.
   --import-db               (Deprecated) Explicitly import the DB on destination (default behavior)
@@ -2037,6 +2157,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --quiet) QUIET_MODE=true; shift ;;
     --verbose) VERBOSE=true; shift ;;
     --trace) TRACE_MODE=true; VERBOSE=true; shift ;;
     --import-db) IMPORT_DB=true; shift ;;
@@ -3090,7 +3211,14 @@ else
   log "Database reset complete (all tables dropped)"
 
   # Import the database
-  wp_local db import "$ARCHIVE_DB_FILE"
+  log "Importing database (this may take a few minutes for large databases)..."
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+    # Show progress with pv
+    DB_SIZE=$(stat -f%z "$ARCHIVE_DB_FILE" 2>/dev/null || stat -c%s "$ARCHIVE_DB_FILE" 2>/dev/null)
+    pv -N "Database import" -s "$DB_SIZE" "$ARCHIVE_DB_FILE" | wp_local db import -
+  else
+    wp_local db import "$ARCHIVE_DB_FILE"
+  fi
   log "Database imported successfully"
 
   # Detect the prefix from the imported database
@@ -3333,8 +3461,8 @@ else
   # Build rsync command with appropriate options
   # Always use --delete to ensure destination matches archive (removes stale files)
   log_verbose "Building rsync options for archive sync..."
-  RSYNC_OPTS=(-a --delete)
-  log_verbose "  Base options: -a --delete"
+  RSYNC_OPTS=(-a --delete --info=progress2)
+  log_verbose "  Base options: -a --delete --info=progress2"
 
   # Use root-anchored exclusions (leading /) to only match files at wp-content root
   # Without /, rsync would exclude these filenames at ANY depth (e.g., plugins/foo/object-cache.php)

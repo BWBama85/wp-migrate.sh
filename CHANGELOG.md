@@ -8,10 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Progress Indicators**: Real-time progress bars for long-running operations when `pv` (pipe viewer) is installed. Shows progress for database imports, archive extraction (all 3 formats), and file synchronization operations. Falls back gracefully to standard output when `pv` is not available. Progress can be suppressed with the new `--quiet` flag for non-interactive scripts. Improves user experience by providing feedback during migrations that may take several minutes.
+- **--quiet flag**: New flag to suppress progress indicators for long-running operations. Useful for non-interactive scripts or automated migrations where progress output is not desired.
 - **Integration Test Infrastructure**: Minimal test archives for Duplicator, Jetpack, and Solid Backups formats with automated format detection tests. Includes 3 test fixtures (< 5KB total) and integration test script that validates each adapter correctly identifies its format. CI/CD workflow updated to run integration tests on every push. See `tests/fixtures/README.md` for details.
 
 ### Fixed
 - **Archive type detection for tar.gz files**: Fixed critical bug in `adapter_base_get_archive_type()` where the function checked for "zip" before "gzip", causing tar.gz files (like Jetpack backups) to be misidentified as ZIP archives. Since "gzip" contains the substring "zip", the condition `*"zip"*` matched first and returned "zip" instead of "tar.gz". This broke Jetpack archive validation completely as the script attempted to use `unzip` on tar.gz files. Fixed by reordering conditions to check for gzip/compressed before zip. (Discovered during PR #54 code review)
+
+### Changed
+- **rsync progress in archive mode**: Added `--info=progress2` flag to rsync when syncing wp-content from archive to destination, matching the behavior already present in push mode. Provides consistent progress reporting across both migration modes.
 
 ## [2.5.0] - 2025-10-20
 

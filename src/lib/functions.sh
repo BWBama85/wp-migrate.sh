@@ -879,6 +879,74 @@ print_version() {
   printf "wp-migrate.sh version %s\n" "$version"
 }
 
+# ========================================
+# Progress Indicator System
+# ========================================
+
+# Check if pv is available for progress monitoring
+has_pv() {
+  command -v pv >/dev/null 2>&1
+}
+
+# Wrap a command with progress indicator if pv is available
+# Usage: run_with_progress <description> <command...>
+# Example: run_with_progress "Extracting archive" unzip -q archive.zip -d dest/
+run_with_progress() {
+  local description="$1"
+  shift
+
+  # If --quiet flag is set, suppress progress output
+  if $QUIET_MODE; then
+    "$@"
+    return $?
+  fi
+
+  log "$description..."
+
+  # If pv is available and we're in an interactive terminal, use it for progress
+  if has_pv && [[ -t 1 ]]; then
+    # pv will show progress bar
+    "$@" 2>&1 | pv -N "$description" -l -s 1000 >/dev/null
+    return "${PIPESTATUS[0]}"
+  else
+    # Fallback: just run the command and show completion message
+    if "$@"; then
+      log "  ✓ $description complete"
+      return 0
+    else
+      local exit_code=$?
+      log "  ✗ $description failed (exit code: $exit_code)"
+      return $exit_code
+    fi
+  fi
+}
+
+# Pipe data through pv with progress indicator
+# Usage: cat file | pipe_progress "Description" | consumer
+# Or: pipe_progress "Description" size_in_bytes < file > output
+pipe_progress() {
+  local description="$1"
+  local size="${2:-}"
+
+  # If --quiet flag is set, just pass through
+  if $QUIET_MODE; then
+    cat
+    return 0
+  fi
+
+  # If pv is available and we're in an interactive terminal, use it
+  if has_pv && [[ -t 2 ]]; then
+    if [[ -n "$size" ]]; then
+      pv -N "$description" -s "$size"
+    else
+      pv -N "$description" -l
+    fi
+  else
+    # Fallback: just pass through without progress
+    cat
+  fi
+}
+
 print_usage() {
   cat <<USAGE
 Usage:
@@ -908,6 +976,7 @@ Required (choose one mode):
 
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
+  --quiet                   Suppress progress indicators for long-running operations (useful for non-interactive scripts)
   --verbose                 Show additional details (dependency checks, command construction, detection process)
   --trace                   Show every command before execution (implies --verbose). Useful for debugging and reproducing issues.
   --import-db               (Deprecated) Explicitly import the DB on destination (default behavior)
