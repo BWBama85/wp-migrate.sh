@@ -41,6 +41,15 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - Auto-cleanup of temporary extraction directory on success; kept on failure for debugging.
 - Supports dry-run mode to preview the import workflow without making any changes.
 
+### Rollback Mode
+- **One-command rollback** to undo migrations using backups created during archive mode operations.
+- **Auto-detects latest backups** from `db-backups/` directory and `wp-content.backup-*` directories.
+- **Confirmation prompt** before proceeding (bypass with explicit "yes" response).
+- **Dry-run support** to preview rollback plan without making changes.
+- **Explicit backup specification** via `--rollback-backup` for manual control.
+- Restores both database and wp-content atomically.
+- Provides clear error messages if backups are not found or restoration fails.
+
 ## Requirements
 
 ### Push Mode
@@ -134,6 +143,27 @@ Common examples:
   ```
 
 **Note:** Currently supports **Duplicator**, **Jetpack Backup**, and **Solid Backups** archives. The extensible adapter architecture supports adding UpdraftPlus and other formats—contributors can add adapters following the guide in [src/lib/adapters/README.md](src/lib/adapters/README.md).
+
+### Rollback Mode
+```bash
+./wp-migrate.sh --rollback [options]
+```
+
+Common examples:
+- Rollback to latest backup (with confirmation prompt):
+  ```bash
+  ./wp-migrate.sh --rollback
+  ```
+- Preview rollback without making changes:
+  ```bash
+  ./wp-migrate.sh --rollback --dry-run
+  ```
+- Rollback using specific backup file:
+  ```bash
+  ./wp-migrate.sh --rollback --rollback-backup db-backups/pre-archive-backup_20251020-164523.sql.gz
+  ```
+
+**Note:** Rollback mode works with backups created during archive mode migrations. Backups are automatically created in `db-backups/` (database) and `wp-content.backup-TIMESTAMP` (files) before any destructive operations.
 
 ## Options
 
