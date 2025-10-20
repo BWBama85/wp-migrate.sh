@@ -49,10 +49,11 @@ test_header "Test: Duplicator archive format detection"
 # We just need to see if it detected the format
 output=$("$SCRIPT" --archive "$FIXTURES/duplicator-minimal.zip" --verbose 2>&1 || true)
 
-if echo "$output" | grep -qi "duplicator"; then
-  pass "Duplicator format detected in verbose output"
+# Look for success marker: "✓ Matched duplicator format" or "Archive format: Duplicator"
+if echo "$output" | grep -q "✓ Matched duplicator format\|Archive format: Duplicator"; then
+  pass "Duplicator format correctly detected"
 else
-  fail "Duplicator format not detected" "Expected 'duplicator' in output"
+  fail "Duplicator format not detected" "Expected '✓ Matched duplicator format' or 'Archive format: Duplicator'"
 fi
 
 # -------------------------------------------------------------------
@@ -62,10 +63,11 @@ test_header "Test: Jetpack archive format detection"
 
 output=$("$SCRIPT" --archive "$FIXTURES/jetpack-minimal.tar.gz" --verbose 2>&1 || true)
 
-if echo "$output" | grep -qi "jetpack"; then
-  pass "Jetpack format detected in verbose output"
+# Look for success marker: "✓ Matched jetpack format" or "Archive format: Jetpack"
+if echo "$output" | grep -q "✓ Matched jetpack format\|Archive format: Jetpack"; then
+  pass "Jetpack format correctly detected"
 else
-  fail "Jetpack format not detected" "Expected 'jetpack' in output"
+  fail "Jetpack format not detected" "Expected '✓ Matched jetpack format' or 'Archive format: Jetpack'"
 fi
 
 # -------------------------------------------------------------------
@@ -75,10 +77,11 @@ test_header "Test: Solid Backups archive format detection"
 
 output=$("$SCRIPT" --archive "$FIXTURES/solidbackups-minimal.zip" --verbose 2>&1 || true)
 
-if echo "$output" | grep -qi "solid"; then
-  pass "Solid Backups format detected in verbose output"
+# Look for success marker: "✓ Matched solidbackups format" or "Archive format: Solid"
+if echo "$output" | grep -q "✓ Matched solidbackups format\|Archive format: Solid"; then
+  pass "Solid Backups format correctly detected"
 else
-  fail "Solid Backups format not detected" "Expected 'solid' in output"
+  fail "Solid Backups format not detected" "Expected '✓ Matched solidbackups format' or 'Archive format: Solid'"
 fi
 
 # -------------------------------------------------------------------
