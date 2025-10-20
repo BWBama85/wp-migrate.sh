@@ -179,15 +179,18 @@ echo "  Test content added"
 # ============================================================================
 test_header "Archive Mode - Duplicator format import"
 
-# Import Duplicator archive
+# Import Duplicator archive (disable errexit temporarily to capture output even on failure)
+set +e
 output=$($DOCKER_COMPOSE exec -T dest-wp bash -c "
   cd /var/www/html && \
   wp-migrate.sh --archive /opt/test-fixtures/duplicator-minimal.zip --dry-run --verbose
 " 2>&1)
+exit_code=$?
+set -e
 
 # Debug: show output if verbose
 if [[ "${VERBOSE:-}" == "1" ]]; then
-  echo "=== Duplicator Test Output ==="
+  echo "=== Duplicator Test Output (exit code: $exit_code) ==="
   echo "$output"
   echo "=============================="
 fi
@@ -197,7 +200,7 @@ if echo "$output" | grep -q "Archive format: Duplicator"; then
 else
   fail "Duplicator archive not detected" "Expected 'Archive format: Duplicator' in output"
   # Show first 10 lines of output for debugging
-  echo "  First 10 lines of output:"
+  echo "  First 10 lines of output (exit code: $exit_code):"
   echo "$output" | head -10 | sed 's/^/    /'
 fi
 
