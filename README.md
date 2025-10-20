@@ -18,6 +18,7 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - Rewrites migrated URLs so the destination keeps its own domain via `wp search-replace` (skipped for dry runs or `--no-import-db`; use `--no-search-replace` to skip bulk search-replace and only update home/siteurl options).
 - Creates a timestamped backup of the destination `wp-content` directory before replacing it.
 - Syncs the entire `wp-content` tree with rsync archive mode; files on the destination are overwritten.
+- **Shows real-time progress bars** for database transfers and file synchronization when `pv` is installed (optional dependency).
 - **Excludes `object-cache.php`** to preserve destination caching infrastructure and prevent fatal errors from missing PHP extensions (Redis, Memcache, etc.).
 - Optionally flushes the destination Object Cache Pro/Redis cache when `wp redis` is available.
 - Supports a comprehensive dry-run mode that previews every step without mutating either server.
@@ -30,6 +31,7 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - **Extensible adapter system** makes adding new backup formats simple (see [src/lib/adapters/README.md](src/lib/adapters/README.md) for contributor guide).
 - **Auto-detects backup format** or accepts explicit `--archive-type` for manual override.
 - Automatically extracts and detects database and wp-content from archives with smart directory scoring.
+- **Shows real-time progress bars** for archive extraction, database imports, and file synchronization when `pv` is installed. ZIP extraction progress requires `bsdtar` (optional dependency).
 - Pre-flight disk space validation ensures 3x archive size is available (archive + extraction + buffer).
 - Creates timestamped backups of both the destination database and wp-content before any destructive operations.
 - Automatically detects and aligns table prefix if the imported database uses a different prefix than the destination's `wp-config.php` (supports complex prefixes with underscores like `my_site_`, `wp_live_2024_`).
@@ -55,6 +57,27 @@ Run the script from the WordPress root on the source server (where `wp-config.ph
 - `unzip` and `tar` (for archive format extraction - Duplicator uses ZIP, Jetpack uses TAR.GZ)
 
 Run the script from the WordPress root on the destination server (where `wp-config.php` lives). The backup archive must be accessible on the filesystem.
+
+### Optional Dependencies
+
+These tools are optional but provide enhanced functionality when installed:
+
+- **`pv` (Pipe Viewer)**: Enables real-time progress bars for long-running operations including database imports, archive extraction, and file synchronization. Without `pv`, operations complete successfully but without progress feedback.
+  - Install: `apt-get install pv` (Debian/Ubuntu) or `brew install pv` (macOS)
+
+- **`bsdtar` (BSD tar)**: Enables progress bars for ZIP archive extraction when combined with `pv`. Standard `unzip` doesn't support reading from stdin (required for progress piping), but `bsdtar` does. Without `bsdtar`, ZIP extraction works correctly but without progress feedback, while tar-based archives (Jetpack tar.gz) still show progress via GNU tar.
+  - Install: `apt-get install libarchive-tools` (Debian/Ubuntu) or `brew install libarchive` (macOS)
+  - Note: On macOS, `bsdtar` is typically pre-installed
+
+**Progress Matrix:**
+
+| Archive Format | pv | bsdtar | Progress Shown? |
+|----------------|-----|--------|-----------------|
+| ZIP (Duplicator, Solid Backups) | ✅ | ✅ | ✅ Yes |
+| ZIP | ✅ | ❌ | ❌ No (but works) |
+| ZIP | ❌ | - | ❌ No |
+| tar.gz/tar (Jetpack) | ✅ | - | ✅ Yes (via GNU tar) |
+| tar.gz/tar | ❌ | - | ❌ No |
 
 ## Usage
 
@@ -118,6 +141,7 @@ Common examples:
 | Flag | Description |
 | ---- | ----------- |
 | `--dry-run` | Preview the workflow without making changes. No files are created, maintenance mode is not toggled, caches are left untouched, and database operations are described rather than executed. Safe to run on production sites. |
+| `--quiet` | Suppress progress indicators for long-running operations. Useful for non-interactive scripts or automated migrations where progress output is not desired. Operations complete normally but without real-time progress bars even if `pv` is installed. |
 | `--verbose` | Show additional details during migration. Displays dependency checks, command construction, archive detection process, and other diagnostic information. Useful for understanding what the script is doing and troubleshooting issues. Can be combined with `--dry-run` to preview detailed workflow. |
 | `--trace` | Show every command before execution (implies `--verbose`). Displays exact commands (rsync, wp-cli, ssh, etc.) with all arguments before running them. Useful for debugging, filing bug reports, or manually reproducing operations. Output can be copied/pasted to run commands manually. |
 | `--help` | Print usage information and exit. |
