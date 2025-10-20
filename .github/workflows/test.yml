@@ -309,7 +309,7 @@ jobs:
         if: always()
         run: |
           cd tests/docker
-          docker-compose down -v || true
+          docker compose down -v || true
 
   summary:
     name: Test Summary

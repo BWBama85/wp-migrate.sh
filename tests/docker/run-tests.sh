@@ -53,7 +53,7 @@ wait_for_wordpress() {
   echo "Waiting for WordPress in $container to be ready..."
 
   while [ $waited -lt $max_wait ]; do
-    if docker-compose exec -T "$container" wp core is-installed --allow-root 2>/dev/null; then
+    if $DOCKER_COMPOSE exec -T "$container" wp core is-installed --allow-root 2>/dev/null; then
       echo "  WordPress is ready in $container"
       return 0
     fi
@@ -73,7 +73,7 @@ install_wordpress() {
 
   echo "Installing WordPress in $container..."
 
-  docker-compose exec -T "$container" bash -c "
+  $DOCKER_COMPOSE exec -T "$container" bash -c "
     cd /var/www/html && \
     wp core install \
       --url='$url' \
@@ -85,7 +85,7 @@ install_wordpress() {
       --skip-email
   " 2>&1 | grep -v "Warning:" || true
 
-  if docker-compose exec -T "$container" wp core is-installed --allow-root 2>/dev/null; then
+  if $DOCKER_COMPOSE exec -T "$container" wp core is-installed --allow-root 2>/dev/null; then
     echo "  WordPress installed successfully in $container"
     return 0
   else
@@ -94,11 +94,28 @@ install_wordpress() {
   fi
 }
 
+# Detect docker compose command (supports both docker-compose and docker compose)
+DOCKER_COMPOSE="docker compose"
+if ! command -v docker &> /dev/null; then
+  echo -e "${RED}ERROR: Docker is not installed${NC}"
+  exit 1
+fi
+
+# Check if we should use docker-compose (legacy) or docker compose (modern)
+if command -v docker-compose &> /dev/null; then
+  DOCKER_COMPOSE="docker-compose"
+elif ! docker compose version &> /dev/null; then
+  echo -e "${RED}ERROR: Neither 'docker compose' nor 'docker-compose' is available${NC}"
+  exit 1
+fi
+
+echo "Using: $DOCKER_COMPOSE"
+
 # Cleanup function
 cleanup() {
   echo ""
   echo "Cleaning up Docker containers..."
-  docker-compose down -v 2>/dev/null || true
+  $DOCKER_COMPOSE down -v 2>/dev/null || true
 }
 
 # Trap cleanup on exit
@@ -106,7 +123,7 @@ trap cleanup EXIT
 
 # Start containers
 echo "Starting Docker containers..."
-if ! docker-compose up -d --build; then
+if ! $DOCKER_COMPOSE up -d --build; then
   echo -e "${RED}ERROR: Failed to start Docker containers${NC}"
   exit 1
 fi
@@ -139,7 +156,7 @@ fi
 # Add some test content to source
 echo ""
 echo "Adding test content to source WordPress..."
-docker-compose exec -T source-wp bash -c "
+$DOCKER_COMPOSE exec -T source-wp bash -c "
   cd /var/www/html && \
   wp post create \
     --post_title='Test Post 1' \
@@ -161,7 +178,7 @@ echo "  Test content added"
 test_header "Archive Mode - Duplicator format import"
 
 # Import Duplicator archive
-if docker-compose exec -T dest-wp bash -c "
+if $DOCKER_COMPOSE exec -T dest-wp bash -c "
   cd /var/www/html && \
   wp-migrate.sh --archive /opt/test-fixtures/duplicator-minimal.zip --dry-run --verbose
 " 2>&1 | grep -q "Archive format: Duplicator"; then
@@ -175,7 +192,7 @@ fi
 # ============================================================================
 test_header "Archive Mode - Jetpack format import"
 
-if docker-compose exec -T dest-wp bash -c "
+if $DOCKER_COMPOSE exec -T dest-wp bash -c "
   cd /var/www/html && \
   wp-migrate.sh --archive /opt/test-fixtures/jetpack-minimal.tar.gz --dry-run --verbose
 " 2>&1 | grep -q "Archive format: Jetpack"; then
@@ -189,7 +206,7 @@ fi
 # ============================================================================
 test_header "Archive Mode - Solid Backups format import"
 
-if docker-compose exec -T dest-wp bash -c "
+if $DOCKER_COMPOSE exec -T dest-wp bash -c "
   cd /var/www/html && \
   wp-migrate.sh --archive /opt/test-fixtures/solidbackups-minimal.zip --dry-run --verbose
 " 2>&1 | grep -q "Archive format: Solid Backups"; then
@@ -204,7 +221,7 @@ fi
 test_header "WordPress environment verification"
 
 # Check source WordPress
-if docker-compose exec -T source-wp bash -c "
+if $DOCKER_COMPOSE exec -T source-wp bash -c "
   wp post list --format=count --allow-root
 " 2>&1 | grep -q "2"; then
   pass "Source WordPress has test posts"
@@ -213,7 +230,7 @@ else
 fi
 
 # Check destination WordPress exists
-if docker-compose exec -T dest-wp wp core is-installed --allow-root 2>/dev/null; then
+if $DOCKER_COMPOSE exec -T dest-wp wp core is-installed --allow-root 2>/dev/null; then
   pass "Destination WordPress is installed"
 else
   fail "Destination WordPress not installed"
@@ -224,13 +241,13 @@ fi
 # ============================================================================
 test_header "WP-CLI availability in containers"
 
-if docker-compose exec -T source-wp wp --version --allow-root 2>&1 | grep -q "WP-CLI"; then
+if $DOCKER_COMPOSE exec -T source-wp wp --version --allow-root 2>&1 | grep -q "WP-CLI"; then
   pass "WP-CLI available in source container"
 else
   fail "WP-CLI not available in source container"
 fi
 
-if docker-compose exec -T dest-wp wp --version --allow-root 2>&1 | grep -q "WP-CLI"; then
+if $DOCKER_COMPOSE exec -T dest-wp wp --version --allow-root 2>&1 | grep -q "WP-CLI"; then
   pass "WP-CLI available in dest container"
 else
   fail "WP-CLI not available in dest container"
@@ -241,13 +258,13 @@ fi
 # ============================================================================
 test_header "wp-migrate.sh script availability"
 
-if docker-compose exec -T source-wp wp-migrate.sh --version 2>&1 | grep -q "wp-migrate.sh"; then
+if $DOCKER_COMPOSE exec -T source-wp wp-migrate.sh --version 2>&1 | grep -q "wp-migrate.sh"; then
   pass "wp-migrate.sh available in source container"
 else
   fail "wp-migrate.sh not available in source container"
 fi
 
-if docker-compose exec -T dest-wp wp-migrate.sh --version 2>&1 | grep -q "wp-migrate.sh"; then
+if $DOCKER_COMPOSE exec -T dest-wp wp-migrate.sh --version 2>&1 | grep -q "wp-migrate.sh"; then
   pass "wp-migrate.sh available in dest container"
 else
   fail "wp-migrate.sh not available in dest container"
