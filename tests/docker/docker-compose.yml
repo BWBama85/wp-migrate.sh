@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # Source WordPress instance (will migrate FROM this)
+  source-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: wordpress_source
+      MYSQL_USER: wpuser
+      MYSQL_PASSWORD: wppass
+    volumes:
+      - source-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  source-wp:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+    depends_on:
+      source-db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: source-db
+      WORDPRESS_DB_USER: wpuser
+      WORDPRESS_DB_PASSWORD: wppass
+      WORDPRESS_DB_NAME: wordpress_source
+      WORDPRESS_TABLE_PREFIX: wp_
+    ports:
+      - "8080:80"
+    volumes:
+      - source-wp-data:/var/www/html
+      - ../../wp-migrate.sh:/usr/local/bin/wp-migrate.sh:ro
+      - ../../tests/fixtures:/opt/test-fixtures:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Destination WordPress instance (will migrate TO this)
+  dest-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: wordpress_dest
+      MYSQL_USER: wpuser
+      MYSQL_PASSWORD: wppass
+    volumes:
+      - dest-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dest-wp:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+    depends_on:
+      dest-db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: dest-db
+      WORDPRESS_DB_USER: wpuser
+      WORDPRESS_DB_PASSWORD: wppass
+      WORDPRESS_DB_NAME: wordpress_dest
+      WORDPRESS_TABLE_PREFIX: wp_
+    ports:
+      - "8081:80"
+    volumes:
+      - dest-wp-data:/var/www/html
+      - ../../wp-migrate.sh:/usr/local/bin/wp-migrate.sh:ro
+      - ../../tests/fixtures:/opt/test-fixtures:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  source-db-data:
+  source-wp-data:
+  dest-db-data:
+  dest-wp-data:
