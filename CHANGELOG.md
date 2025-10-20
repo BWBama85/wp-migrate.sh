@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 This minor release adds automated testing infrastructure and significantly improves error diagnostics.
 
 ### Added
-- **CI/CD Pipeline**: Comprehensive GitHub Actions workflow with 13 test jobs covering ShellCheck linting, unit tests, Bash compatibility (3.2-5.1), build validation, security scanning, macOS compatibility, documentation checks, and integration smoke tests. Automated testing runs on every push and pull request to main/develop branches.
+- **CI/CD Pipeline**: Comprehensive GitHub Actions workflow with 9 job types (13 total job runs with matrix expansion) covering ShellCheck linting, unit tests, Bash compatibility matrix (3.2, 4.0, 4.4, 5.0, 5.1), build validation, security scanning, macOS compatibility, documentation checks, and integration smoke tests. Automated testing runs on every push and pull request to main/develop branches.
 - **Enhanced adapter diagnostics**: Archive format detection now provides detailed validation failure reasons for each adapter when auto-detection fails. Error messages show specific reasons why Duplicator, Jetpack, and Solid Backups adapters rejected the archive (e.g., "Missing installer.php", "Not a ZIP archive", "Missing meta.json"), making troubleshooting much easier.
 - **Dependency version checking**: Optional version validation for critical dependencies (wp-cli, rsync, ssh, bash). The `needs()` function now accepts a minimum version parameter and warns users if they're running older versions that may cause issues. Version checking uses semantic version comparison and provides upgrade instructions when needed.
 
