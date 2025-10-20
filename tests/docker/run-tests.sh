@@ -201,6 +201,8 @@ else
   fail "Duplicator archive not detected" "Expected 'Archive format: Duplicator' in output"
 fi
 
+echo "About to start test 2"
+
 # ============================================================================
 # TEST 2: Archive Mode - Jetpack Format
 # ============================================================================
