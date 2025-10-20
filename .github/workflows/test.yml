@@ -302,6 +302,9 @@ jobs:
       - name: Run Docker integration tests
         run: |
           cd tests/docker
+          echo "=== Checking run-tests.sh content around line 204 ==="
+          sed -n '200,210p' run-tests.sh
+          echo "=== End check ==="
           chmod +x run-tests.sh
           ./run-tests.sh
 
