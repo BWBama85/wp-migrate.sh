@@ -1,5 +1,7 @@
 # wp-migrate.sh
 
+![Tests](https://github.com/BWBama85/wp-migrate.sh/workflows/Tests/badge.svg)
+
 `wp-migrate.sh` migrates WordPress sites in two modes:
 
 1. **Push mode**: Pushes a WordPress site's `wp-content` directory and database export from a source server to a destination server via SSH.
