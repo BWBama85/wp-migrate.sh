@@ -562,16 +562,17 @@ adapter_duplicator_validate() {
 adapter_duplicator_extract() {
   local archive="$1" dest="$2"
 
-  log_trace "unzip -q \"$archive\" -d \"$dest\""
-
-  # Show progress if pv is available and not in quiet mode
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+  # Try bsdtar with progress if available (supports stdin)
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
+    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
     local archive_size
     archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | unzip -q - -d "$dest" 2>/dev/null; then
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
       return 1
     fi
   else
+    # Fallback to unzip (no progress - unzip doesn't support stdin)
+    log_trace "unzip -q \"$archive\" -d \"$dest\""
     if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
       return 1
     fi
@@ -728,47 +729,53 @@ adapter_jetpack_extract() {
   local archive_type
   archive_type=$(adapter_base_get_archive_type "$archive")
 
-  # Show progress if pv is available and not in quiet mode
-  local use_pv=false
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
-    use_pv=true
+  # Determine if we can use bsdtar with progress
+  local use_bsdtar_progress=false
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
+    use_bsdtar_progress=true
   fi
 
-  if [[ "$archive_type" == "zip" ]]; then
+  # If bsdtar is available with progress, use it for all formats (supports stdin)
+  if $use_bsdtar_progress; then
+    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
+    local archive_size
+    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
+      return 1
+    fi
+  # Otherwise use format-specific extractors
+  elif [[ "$archive_type" == "zip" ]]; then
+    # unzip doesn't support stdin, so no progress
     log_trace "unzip -q \"$archive\" -d \"$dest\""
-    if $use_pv; then
-      local archive_size
-      archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-      if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | unzip -q - -d "$dest" 2>/dev/null; then
-        return 1
-      fi
-    else
-      if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-        return 1
-      fi
+    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
+      return 1
     fi
   elif [[ "$archive_type" == "tar.gz" ]]; then
-    log_trace "tar -xzf \"$archive\" -C \"$dest\""
-    if $use_pv; then
+    # tar supports stdin, so we can show progress
+    if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+      log_trace "pv \"$archive\" | tar -xzf - -C \"$dest\""
       local archive_size
       archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
       if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xzf - -C "$dest" 2>/dev/null; then
         return 1
       fi
     else
+      log_trace "tar -xzf \"$archive\" -C \"$dest\""
       if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
         return 1
       fi
     fi
   elif [[ "$archive_type" == "tar" ]]; then
-    log_trace "tar -xf \"$archive\" -C \"$dest\""
-    if $use_pv; then
+    # tar supports stdin, so we can show progress
+    if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+      log_trace "pv \"$archive\" | tar -xf - -C \"$dest\""
       local archive_size
       archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
       if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xf - -C "$dest" 2>/dev/null; then
         return 1
       fi
     else
+      log_trace "tar -xf \"$archive\" -C \"$dest\""
       if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
         return 1
       fi
@@ -1002,16 +1009,17 @@ adapter_solidbackups_extract() {
   fi
 
   # Extract ZIP archive
-  log_trace "unzip -q \"$archive\" -d \"$dest\""
-
-  # Show progress if pv is available and not in quiet mode
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+  # Try bsdtar with progress if available (supports stdin)
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
+    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
     local archive_size
     archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | unzip -q - -d "$dest" 2>/dev/null; then
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
       return 1
     fi
   else
+    # Fallback to unzip (no progress - unzip doesn't support stdin)
+    log_trace "unzip -q \"$archive\" -d \"$dest\""
     if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
       return 1
     fi

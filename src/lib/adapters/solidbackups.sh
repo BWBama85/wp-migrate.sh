@@ -89,16 +89,17 @@ adapter_solidbackups_extract() {
   fi
 
   # Extract ZIP archive
-  log_trace "unzip -q \"$archive\" -d \"$dest\""
-
-  # Show progress if pv is available and not in quiet mode
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+  # Try bsdtar with progress if available (supports stdin)
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
+    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
     local archive_size
     archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | unzip -q - -d "$dest" 2>/dev/null; then
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
       return 1
     fi
   else
+    # Fallback to unzip (no progress - unzip doesn't support stdin)
+    log_trace "unzip -q \"$archive\" -d \"$dest\""
     if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
       return 1
     fi

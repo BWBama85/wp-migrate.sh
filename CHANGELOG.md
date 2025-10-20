@@ -8,8 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Progress Indicators**: Real-time progress bars for long-running operations when `pv` (pipe viewer) is installed. Shows progress for database imports, archive extraction (all 3 formats), and file synchronization operations. Falls back gracefully to standard output when `pv` is not available. Progress can be suppressed with the new `--quiet` flag for non-interactive scripts. Improves user experience by providing feedback during migrations that may take several minutes.
+- **Progress Indicators with bsdtar support**: Real-time progress bars for long-running operations when `pv` (pipe viewer) is installed. Shows progress for database imports, archive extraction, and file synchronization operations. Archive extraction uses `bsdtar` when available (supports progress for all formats via stdin), falling back to format-specific tools (`unzip` for ZIP, `tar` for tar.gz/tar) when `bsdtar` is not installed. Progress for ZIP archives requires `bsdtar` since standard `unzip` doesn't support stdin. Progress can be suppressed with the new `--quiet` flag for non-interactive scripts.
 - **--quiet flag**: New flag to suppress progress indicators for long-running operations. Useful for non-interactive scripts or automated migrations where progress output is not desired.
+- **Optional bsdtar support**: When `bsdtar` is installed, archive extraction shows progress bars for all formats (ZIP, tar.gz, tar). Without `bsdtar`, ZIP extraction works correctly but without progress (since standard `unzip` doesn't support stdin), while tar-based formats still show progress via GNU tar.
 - **Integration Test Infrastructure**: Minimal test archives for Duplicator, Jetpack, and Solid Backups formats with automated format detection tests. Includes 3 test fixtures (< 5KB total) and integration test script that validates each adapter correctly identifies its format. CI/CD workflow updated to run integration tests on every push. See `tests/fixtures/README.md` for details.
 
 ### Fixed
