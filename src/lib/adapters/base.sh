@@ -60,16 +60,35 @@ adapter_base_archive_contains() {
 
   archive_type=$(adapter_base_get_archive_type "$archive")
 
-  if [[ "$archive_type" == "zip" ]]; then
-    unzip -l "$archive" 2>/dev/null | grep -q "$pattern" && return 0
-  elif [[ "$archive_type" == "tar.gz" ]]; then
-    # Gzip-compressed tar: use -z flag
-    tar -tzf "$archive" 2>/dev/null | grep -q "$pattern" && return 0
-  elif [[ "$archive_type" == "tar" ]]; then
-    # Uncompressed tar: no compression flag
-    tar -tf "$archive" 2>/dev/null | grep -q "$pattern" && return 0
+  # Temporarily disable pipefail to avoid SIGPIPE (141) errors
+  # when grep -q exits early, causing unzip/tar to receive SIGPIPE
+  local pipefail_was_set=false
+  if [[ "$SHELLOPTS" =~ pipefail ]]; then
+    pipefail_was_set=true
+    set +o pipefail
   fi
 
+  if [[ "$archive_type" == "zip" ]]; then
+    if unzip -l "$archive" 2>/dev/null | grep -q "$pattern"; then
+      [[ "$pipefail_was_set" == true ]] && set -o pipefail
+      return 0
+    fi
+  elif [[ "$archive_type" == "tar.gz" ]]; then
+    # Gzip-compressed tar: use -z flag
+    if tar -tzf "$archive" 2>/dev/null | grep -q "$pattern"; then
+      [[ "$pipefail_was_set" == true ]] && set -o pipefail
+      return 0
+    fi
+  elif [[ "$archive_type" == "tar" ]]; then
+    # Uncompressed tar: no compression flag
+    if tar -tf "$archive" 2>/dev/null | grep -q "$pattern"; then
+      [[ "$pipefail_was_set" == true ]] && set -o pipefail
+      return 0
+    fi
+  fi
+
+  # Restore pipefail if it was set
+  [[ "$pipefail_was_set" == true ]] && set -o pipefail
   return 1
 }
 
@@ -82,10 +101,11 @@ adapter_base_get_archive_type() {
 
   file_output=$(file -b "$archive" 2>/dev/null | tr '[:upper:]' '[:lower:]')
 
-  if [[ "$file_output" == *"zip"* ]]; then
-    echo "zip"
-  elif [[ "$file_output" == *"gzip"* ]] || [[ "$file_output" == *"compressed"* ]]; then
+  # Check gzip/compressed BEFORE zip (since "gzip" contains "zip" substring)
+  if [[ "$file_output" == *"gzip"* ]] || [[ "$file_output" == *"compressed"* ]]; then
     echo "tar.gz"
+  elif [[ "$file_output" == *"zip"* ]]; then
+    echo "zip"
   elif [[ "$file_output" == *"tar"* ]]; then
     echo "tar"
   else

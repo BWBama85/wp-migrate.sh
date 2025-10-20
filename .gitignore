@@ -5,6 +5,10 @@
 *.tar.gz
 *.sql
 
+# Exception: Test fixtures (minimal archives for integration tests)
+!tests/fixtures/*.zip
+!tests/fixtures/*.tar.gz
+
 # Duplicator backup samples for testing
 test-backups/
 sample-backups/

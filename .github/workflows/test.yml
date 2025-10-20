@@ -284,6 +284,12 @@ jobs:
           echo "✓ Archive mode validation working (script exited with code $exitcode as expected)"
           rm -f test-archive.zip output.log
 
+      - name: Run integration tests
+        shell: bash {0}
+        run: |
+          chmod +x tests/integration/test-archive-detection.sh
+          ./tests/integration/test-archive-detection.sh
+
   summary:
     name: Test Summary
     runs-on: ubuntu-latest

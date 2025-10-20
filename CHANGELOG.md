@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Integration Test Infrastructure**: Minimal test archives for Duplicator, Jetpack, and Solid Backups formats with automated format detection tests. Includes 3 test fixtures (< 5KB total) and integration test script that validates each adapter correctly identifies its format. CI/CD workflow updated to run integration tests on every push. See `tests/fixtures/README.md` for details.
+
 ## [2.5.0] - 2025-10-20
 
 **⚡ Quality & Diagnostics**
