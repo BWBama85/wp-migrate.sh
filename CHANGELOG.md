@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2025-10-20
+
+**🎯 UX & Safety Improvements**
+
+This minor release adds migration preview with confirmation prompts, rollback command, and progress indicators for better user experience and migration safety.
+
 ### Added
 - **Migration Preview with Confirmation**: Pre-migration summary displays detailed information before starting migration operations. Shows source/destination URLs, database size, file counts, estimated disk space usage, and planned operations list. Includes confirmation prompt "Proceed with migration? [y/N]" (skip with `--yes` or `--dry-run`). Works in both push mode (shows SSH connection details, rsync size, URL alignment plans) and archive mode (shows archive format, extraction size, backup locations). Helps prevent migration mistakes by giving users a chance to review and confirm before making changes.
 - **Rollback Command**: New `--rollback` flag to automatically restore from backups created during previous migrations. Auto-detects latest backups from `db-backups/` and `wp-content.backup-*` directories. Includes confirmation prompt (skip with `--yes` for automation), dry-run support, and explicit backup path specification via `--rollback-backup`. Makes it easy to undo a migration if something goes wrong. Works for archive mode migrations (restores both database and wp-content from local backups).
