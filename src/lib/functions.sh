@@ -1011,6 +1011,25 @@ rollback_migration() {
 
   # Confirmation prompt (skip if --yes flag is set)
   if ! $YES_MODE; then
+    # Detect non-interactive stdin (CI/cron/piped input)
+    if [[ ! -t 0 ]]; then
+      err "Interactive confirmation required but stdin is not a terminal.
+
+This rollback requires user confirmation before proceeding.
+
+Running in non-interactive context (CI/cron/pipeline) detected.
+
+Solutions:
+  1. Add --yes flag to skip confirmation (recommended for automation):
+       ./wp-migrate.sh --rollback --yes
+
+  2. Use --dry-run to preview without confirmation:
+       ./wp-migrate.sh --rollback --dry-run
+
+Note: Earlier versions ran without confirmation. To restore that behavior,
+add --yes to your automation scripts."
+    fi
+
     log ""
     log "⚠️  WARNING: This will replace your current site with the backup."
     log ""
