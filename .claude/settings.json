@@ -2,14 +2,16 @@
   "systemPrompt": "You are working on wp-migrate.sh, a WordPress migration bash script that pushes wp-content and database exports from source to destination servers.\n\n🚨 CRITICAL PR APPROVAL ENFORCEMENT 🚨\n===========================================\nYOU MUST NEVER MERGE ANY PR WITHOUT EXPLICIT USER APPROVAL.\n\nWhen creating PRs:\n1. Create the PR with 'gh pr create'\n2. IMMEDIATELY STOP and tell user: 'PR #X created at <URL>. Please review and approve before merging.'\n3. WAIT for user to explicitly say 'merge it', 'approve and merge', or 'merge PR #X'\n4. ONLY THEN run 'gh pr merge <number>'\n\nDO NOT:\n- ❌ Create and merge PR in same response\n- ❌ Use 'gh pr create && gh pr merge' chained commands  \n- ❌ Assume user wants immediate merge\n- ❌ Merge because 'it looks ready'\n- ❌ Use '--auto' flag on gh pr merge\n\nBREAKING THIS RULE IS COMPLETELY UNACCEPTABLE.\nUSER MUST APPROVE EVERY PR BEFORE MERGE.\n===========================================\n\nCRITICAL WORKFLOW ENFORCEMENT:\nBefore ANY git operation (branch, commit, push, PR), you MUST:\n1. Read and reference the workflow from this settings file\n2. State which workflow step you're executing (e.g., 'Step 7: Pushing feature branch to main')\n3. Verify branch naming matches conventional prefixes (fix/, feature/, chore/, docs/, refactor/)\n4. Check the project follows ShellCheck standards (script is currently ShellCheck-clean)\n5. For modular source (src/): MUST run 'make build' after changes and commit both source + built files\n\nIf you cannot confirm all 5 items above, STOP and ask the user for clarification.\n\nIMPORTANT: Before starting ANY work, ALWAYS:\n- Read project documentation (README.md, CHANGELOG.md)\n- Understand the full scope before making changes\n- Follow the correct workflow\n\nKey Requirements:\n- All work: branch from main → PR to main → USER APPROVAL → merge\n- NEVER push directly to main - ALL merges via GitHub PRs\n- NEVER merge PRs without explicit user approval (see PR APPROVAL ENFORCEMENT above)\n- For src/ changes: MUST run 'make build' before committing\n- Update CHANGELOG.md in [Unreleased] section for ALL changes\n- Maintain ShellCheck-clean code\n- Use conventional commit messages (feat:, fix:, test:, docs:, chore:, refactor:)",
 
   "projectContext": {
-    "version": "v2.0.0+",
+    "currentRelease": "v2.6.0",
+    "releaseNotes": "Update this field during release process (see releaseProcess.steps below)",
+    "versionCommand": "git describe --tags --abbrev=0",
     "architecture": "Modular source with Makefile build system",
     "stack": "Bash script (requires: wp-cli, rsync, ssh, gzip)",
     "testing": "Manual testing with --dry-run flag + ShellCheck linting",
     "deployment": "Direct usage - users download single wp-migrate.sh file",
     "branches": {
       "main": {
-        "purpose": "Production stable releases (v2.0.0+)",
+        "purpose": "Production stable releases",
         "structure": "Modular src/ + built wp-migrate.sh",
         "protection": "All merges via PR with Code Owner approval",
         "releases": "Immediate - tag after merge",
@@ -36,7 +38,7 @@
   },
 
   "buildSystem": {
-    "description": "v2.0.0+ uses modular source code in src/ with Makefile build",
+    "description": "Current version uses modular source code in src/ with Makefile build",
     "workflow": [
       "1. Edit files in src/ directory (NOT wp-migrate.sh directly)",
       "2. Run 'make build' to regenerate wp-migrate.sh + sha256 checksum",
@@ -67,9 +69,9 @@
   },
 
   "adapterContributions": {
-    "description": "v2.0.0 introduced extensible archive adapter system for backup formats",
-    "currentAdapters": ["duplicator"],
-    "futureAdapters": ["jetpack", "updraftplus", "backwpup", "all-in-one-wp-migration"],
+    "description": "Extensible archive adapter system for backup formats",
+    "currentAdapters": ["duplicator", "jetpack", "solidbackups"],
+    "futureAdapters": ["updraftplus", "backwpup", "all-in-one-wp-migration"],
     "addingNewAdapter": [
       "1. Read src/lib/adapters/README.md (comprehensive contributor guide)",
       "2. Create new adapter file: src/lib/adapters/<format>.sh",
@@ -87,7 +89,7 @@
   },
 
   "workflow": {
-    "description": "Standard workflow for all contributions (v2.0.0+)",
+    "description": "Standard workflow for all contributions",
     "baseBranch": "main",
     "steps": [
       "1. git checkout main && git pull --rebase origin main",
@@ -153,12 +155,13 @@
     },
     "steps": [
       "1. Update CHANGELOG.md: Move [Unreleased] items to [X.Y.Z] with date",
-      "2. git add CHANGELOG.md && git commit -m 'chore: release vX.Y.Z'",
-      "3. git push origin main",
-      "4. git tag vX.Y.Z -a -m 'vX.Y.Z - Brief description'",
+      "2. Update .claude/settings.json projectContext.currentRelease to vX.Y.Z",
+      "3. Create release/vX.Y.Z branch and create PR to main",
+      "4. After merge: git tag vX.Y.Z -a -m 'vX.Y.Z - Brief description'",
       "5. git push origin vX.Y.Z",
-      "6. gh release create vX.Y.Z --title 'vX.Y.Z - Title' --notes-file RELEASE_NOTES.md"
+      "6. gh release create vX.Y.Z --title 'vX.Y.Z - Title' --notes-file RELEASE_NOTES.md wp-migrate.sh wp-migrate.sh.sha256"
     ],
+    "versionTracking": "Single source of truth: projectContext.currentRelease field above. All other references are generic.",
     "releaseNotes": "Include: summary, breaking changes (if any), new features, bug fixes, upgrade guide",
     "changelogFormat": "Keep a Changelog (https://keepachangelog.com)"
   },
