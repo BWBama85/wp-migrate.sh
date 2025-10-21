@@ -15,6 +15,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run) DRY_RUN=true; shift ;;
     --quiet) QUIET_MODE=true; shift ;;
+    --yes) YES_MODE=true; shift ;;
+    --rollback) ROLLBACK_MODE=true; shift ;;
+    --rollback-backup) ROLLBACK_BACKUP_PATH="${2:-}"; shift 2 ;;
     --verbose) VERBOSE=true; shift ;;
     --trace) TRACE_MODE=true; VERBOSE=true; shift ;;
     --import-db) IMPORT_DB=true; shift ;;
@@ -88,7 +91,23 @@ Choose one mode:
 Run ./wp-migrate.sh --help for more examples."
 fi
 
-if [[ -n "$ARCHIVE_FILE" ]]; then
+if $ROLLBACK_MODE; then
+  MIGRATION_MODE="rollback"
+  log "Rollback mode enabled"
+
+  # Rollback mode requires running from WordPress root
+  [[ -f "./wp-config.php" ]] || err "WordPress installation not detected. wp-config.php not found in current directory.
+
+Current directory: $PWD
+
+Rollback mode must be run from the WordPress root directory.
+
+Next steps:
+  1. Navigate to your WordPress root: cd /var/www/html
+  2. Verify wp-config.php exists: ls -la wp-config.php
+  3. Run rollback again from the correct directory"
+
+elif [[ -n "$ARCHIVE_FILE" ]]; then
   MIGRATION_MODE="archive"
 
   # Note: Adapter files are already concatenated into the built script by Makefile
@@ -907,9 +926,68 @@ fi
 fi
 
 # ==================================================================================
+# ROLLBACK MODE WORKFLOW
+# ==================================================================================
+if [[ "$MIGRATION_MODE" == "rollback" ]]; then
+
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log "ROLLBACK MODE"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Find backups
+if [[ -n "$ROLLBACK_BACKUP_PATH" ]]; then
+  log "Using explicitly specified backup: $ROLLBACK_BACKUP_PATH"
+  DB_BACKUP="$ROLLBACK_BACKUP_PATH"
+  WP_CONTENT_BACKUP=""
+else
+  log "Searching for latest backups..."
+  backup_info=$(find_latest_backup)
+
+  if [[ -z "$backup_info" ]]; then
+    err "No backups found.
+
+Rollback requires backups created by wp-migrate.sh during a previous migration.
+
+Expected backup locations:
+  • Database: db-backups/pre-archive-backup_*.sql.gz
+  • wp-content: wp-content.backup-*
+
+Next steps:
+  1. Verify you're in the correct WordPress root directory
+  2. Check if backups exist:
+       ls -la db-backups/
+       ls -la wp-content.backup-*
+  3. If backups were moved, specify explicitly:
+       ./wp-migrate.sh --rollback --rollback-backup /path/to/backup.sql.gz"
+  fi
+
+  # Parse backup info
+  IFS='|' read -r DB_BACKUP WP_CONTENT_BACKUP <<< "$backup_info"
+
+  log "Found backups:"
+  if [[ -n "$DB_BACKUP" ]]; then
+    log "  Database: $DB_BACKUP"
+  else
+    log "  Database: None found"
+  fi
+
+  if [[ -n "$WP_CONTENT_BACKUP" ]]; then
+    log "  wp-content: $WP_CONTENT_BACKUP"
+  else
+    log "  wp-content: None found"
+  fi
+fi
+
+# Perform rollback
+rollback_migration "$DB_BACKUP" "$WP_CONTENT_BACKUP"
+
+# Done
+exit 0
+
+# ==================================================================================
 # ARCHIVE MODE WORKFLOW
 # ==================================================================================
-if [[ "$MIGRATION_MODE" == "archive" ]]; then
+elif [[ "$MIGRATION_MODE" == "archive" ]]; then
 
 log "Archive: $ARCHIVE_FILE"
 

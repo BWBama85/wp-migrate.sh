@@ -30,7 +30,9 @@ DEST_HOST=""                 # REQUIRED (push mode): user@dest.example.com
 DEST_ROOT=""                 # REQUIRED (push mode): absolute WP root on destination (e.g., /var/www/site)
 ARCHIVE_FILE=""              # REQUIRED (archive mode): path to backup archive file
 ARCHIVE_TYPE=""              # OPTIONAL (archive mode): adapter name override (duplicator, jetpack, etc.)
-MIGRATION_MODE=""            # Detected: "push" or "archive"
+MIGRATION_MODE=""            # Detected: "push", "archive", or "rollback"
+ROLLBACK_MODE=false          # Enable rollback mode (--rollback flag)
+ROLLBACK_BACKUP_PATH=""      # Optional: Explicitly specify backup to restore
 
 # Use a single-element -o form to avoid dangling -o errors if mis-expanded
 SSH_OPTS=(-oStrictHostKeyChecking=accept-new)
@@ -40,6 +42,7 @@ SSH_CONTROL_PATH=""
 
 DRY_RUN=false
 QUIET_MODE=false            # Suppress progress indicators (--quiet flag)
+YES_MODE=false              # Skip confirmation prompts (--yes flag)
 IMPORT_DB=true              # Automatically import DB on destination after transfer (disable with --no-import-db)
 SEARCH_REPLACE=true         # Automatically perform URL search-replace after DB import (disable with --no-search-replace)
 GZIP_DB=true                # Compress DB dump during transfer

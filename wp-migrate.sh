@@ -30,7 +30,9 @@ DEST_HOST=""                 # REQUIRED (push mode): user@dest.example.com
 DEST_ROOT=""                 # REQUIRED (push mode): absolute WP root on destination (e.g., /var/www/site)
 ARCHIVE_FILE=""              # REQUIRED (archive mode): path to backup archive file
 ARCHIVE_TYPE=""              # OPTIONAL (archive mode): adapter name override (duplicator, jetpack, etc.)
-MIGRATION_MODE=""            # Detected: "push" or "archive"
+MIGRATION_MODE=""            # Detected: "push", "archive", or "rollback"
+ROLLBACK_MODE=false          # Enable rollback mode (--rollback flag)
+ROLLBACK_BACKUP_PATH=""      # Optional: Explicitly specify backup to restore
 
 # Use a single-element -o form to avoid dangling -o errors if mis-expanded
 SSH_OPTS=(-oStrictHostKeyChecking=accept-new)
@@ -40,6 +42,7 @@ SSH_CONTROL_PATH=""
 
 DRY_RUN=false
 QUIET_MODE=false            # Suppress progress indicators (--quiet flag)
+YES_MODE=false              # Skip confirmation prompts (--yes flag)
 IMPORT_DB=true              # Automatically import DB on destination after transfer (disable with --no-import-db)
 SEARCH_REPLACE=true         # Automatically perform URL search-replace after DB import (disable with --no-search-replace)
 GZIP_DB=true                # Compress DB dump during transfer
@@ -2090,6 +2093,131 @@ pipe_progress() {
   fi
 }
 
+# ========================================
+# Rollback System
+# ========================================
+
+# Find the latest backup created by wp-migrate.sh
+# Returns: echoes backup info as "db_path|wp_content_path" or empty if none found
+find_latest_backup() {
+  local db_backup="" wp_content_backup=""
+
+  # Find latest database backup in db-backups/
+  if [[ -d "db-backups" ]]; then
+    db_backup=$(find db-backups -name "pre-archive-backup_*.sql.gz" -type f 2>/dev/null | sort -r | head -1)
+  fi
+
+  # Find latest wp-content backup (matches pattern: wp-content.backup-TIMESTAMP)
+  local wp_content_path
+  wp_content_path=$(wp_local eval 'echo WP_CONTENT_DIR;' 2>/dev/null)
+  if [[ -n "$wp_content_path" ]]; then
+    wp_content_backup=$(find "$(dirname "$wp_content_path")" -maxdepth 1 -type d -name "$(basename "$wp_content_path").backup-*" 2>/dev/null | sort -r | head -1)
+  fi
+
+  # Return both paths
+  if [[ -n "$db_backup" || -n "$wp_content_backup" ]]; then
+    echo "${db_backup:-}|${wp_content_backup:-}"
+    return 0
+  fi
+
+  return 1
+}
+
+# Rollback to a previous backup
+# Usage: rollback_migration <db_backup_path> <wp_content_backup_path>
+rollback_migration() {
+  local db_backup="$1"
+  local wp_content_backup="$2"
+  local wp_content_path
+
+  wp_content_path=$(wp_local eval 'echo WP_CONTENT_DIR;' 2>/dev/null)
+
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log "ROLLBACK PLAN"
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  if [[ -n "$db_backup" ]]; then
+    log "Database: Restore from $(basename "$db_backup")"
+  else
+    log "Database: No backup found (will skip)"
+  fi
+
+  if [[ -n "$wp_content_backup" ]]; then
+    log "wp-content: Restore from $(basename "$wp_content_backup")"
+  else
+    log "wp-content: No backup found (will skip)"
+  fi
+
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  if $DRY_RUN; then
+    log "[dry-run] Would perform rollback (no changes made)"
+    return 0
+  fi
+
+  # Confirmation prompt (skip if --yes flag is set)
+  if ! $YES_MODE; then
+    log ""
+    log "⚠️  WARNING: This will replace your current site with the backup."
+    log ""
+    read -p "Are you sure you want to proceed with rollback? (yes/no): " -r
+    echo
+    if [[ ! "$REPLY" =~ ^[Yy][Ee][Ss]$ ]]; then
+      log "Rollback cancelled by user."
+      exit 0
+    fi
+  else
+    log "Skipping confirmation prompt (--yes flag set)"
+  fi
+
+  # Rollback database
+  if [[ -n "$db_backup" && -f "$db_backup" ]]; then
+    log "Restoring database from backup..."
+    if gunzip -c "$db_backup" | wp_local db import -; then
+      log "✓ Database restored successfully"
+    else
+      err "Failed to restore database from: $db_backup
+
+The database import failed. Your current database may be in an inconsistent state.
+
+Next steps:
+  1. Try importing manually:
+       wp db import <(gunzip -c $db_backup)
+  2. Check database credentials in wp-config.php
+  3. Verify MySQL is running and accessible"
+    fi
+  fi
+
+  # Rollback wp-content
+  if [[ -n "$wp_content_backup" && -d "$wp_content_backup" ]]; then
+    log "Restoring wp-content from backup..."
+    if [[ -d "$wp_content_path" ]]; then
+      log "  Removing current wp-content..."
+      rm -rf "$wp_content_path"
+    fi
+    log "  Restoring from backup..."
+    if mv "$wp_content_backup" "$wp_content_path"; then
+      log "✓ wp-content restored successfully"
+    else
+      err "Failed to restore wp-content from: $wp_content_backup
+
+The wp-content restore failed.
+
+Next steps:
+  1. Try restoring manually:
+       rm -rf $wp_content_path
+       mv $wp_content_backup $wp_content_path
+  2. Check file permissions
+  3. Verify disk space"
+    fi
+  fi
+
+  log ""
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log "✓ Rollback completed successfully"
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
 print_usage() {
   cat <<USAGE
 Usage:
@@ -2099,6 +2227,9 @@ PUSH MODE (run on SOURCE WP root):
 
 ARCHIVE MODE (run on DESTINATION WP root):
   $(basename "$0") --archive </path/to/backup> [options]
+
+ROLLBACK MODE (run on WP root):
+  $(basename "$0") --rollback [options]
 
 Required (choose one mode):
   --dest-host <user@dest.example.com>
@@ -2117,9 +2248,19 @@ Required (choose one mode):
   --duplicator-archive </path/to/backup.zip>
       Deprecated: Use --archive instead (backward compatibility maintained)
 
+  --rollback
+      Rollback mode: restore from a previous backup created by wp-migrate.sh
+      Auto-detects latest backups from db-backups/ and wp-content.backup-*
+      Requires confirmation before proceeding (bypass with --yes)
+
+  --rollback-backup </path/to/backup>
+      Optional: Explicitly specify backup file to restore (database only)
+      If not specified, auto-detects latest backup
+
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
   --quiet                   Suppress progress indicators for long-running operations (useful for non-interactive scripts)
+  --yes                     Skip confirmation prompts (useful for automation; use with caution)
   --verbose                 Show additional details (dependency checks, command construction, detection process)
   --trace                   Show every command before execution (implies --verbose). Useful for debugging and reproducing issues.
   --import-db               (Deprecated) Explicitly import the DB on destination (default behavior)
@@ -2166,6 +2307,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run) DRY_RUN=true; shift ;;
     --quiet) QUIET_MODE=true; shift ;;
+    --yes) YES_MODE=true; shift ;;
+    --rollback) ROLLBACK_MODE=true; shift ;;
+    --rollback-backup) ROLLBACK_BACKUP_PATH="${2:-}"; shift 2 ;;
     --verbose) VERBOSE=true; shift ;;
     --trace) TRACE_MODE=true; VERBOSE=true; shift ;;
     --import-db) IMPORT_DB=true; shift ;;
@@ -2239,7 +2383,23 @@ Choose one mode:
 Run ./wp-migrate.sh --help for more examples."
 fi
 
-if [[ -n "$ARCHIVE_FILE" ]]; then
+if $ROLLBACK_MODE; then
+  MIGRATION_MODE="rollback"
+  log "Rollback mode enabled"
+
+  # Rollback mode requires running from WordPress root
+  [[ -f "./wp-config.php" ]] || err "WordPress installation not detected. wp-config.php not found in current directory.
+
+Current directory: $PWD
+
+Rollback mode must be run from the WordPress root directory.
+
+Next steps:
+  1. Navigate to your WordPress root: cd /var/www/html
+  2. Verify wp-config.php exists: ls -la wp-config.php
+  3. Run rollback again from the correct directory"
+
+elif [[ -n "$ARCHIVE_FILE" ]]; then
   MIGRATION_MODE="archive"
 
   # Note: Adapter files are already concatenated into the built script by Makefile
@@ -3058,9 +3218,68 @@ fi
 fi
 
 # ==================================================================================
+# ROLLBACK MODE WORKFLOW
+# ==================================================================================
+if [[ "$MIGRATION_MODE" == "rollback" ]]; then
+
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log "ROLLBACK MODE"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Find backups
+if [[ -n "$ROLLBACK_BACKUP_PATH" ]]; then
+  log "Using explicitly specified backup: $ROLLBACK_BACKUP_PATH"
+  DB_BACKUP="$ROLLBACK_BACKUP_PATH"
+  WP_CONTENT_BACKUP=""
+else
+  log "Searching for latest backups..."
+  backup_info=$(find_latest_backup)
+
+  if [[ -z "$backup_info" ]]; then
+    err "No backups found.
+
+Rollback requires backups created by wp-migrate.sh during a previous migration.
+
+Expected backup locations:
+  • Database: db-backups/pre-archive-backup_*.sql.gz
+  • wp-content: wp-content.backup-*
+
+Next steps:
+  1. Verify you're in the correct WordPress root directory
+  2. Check if backups exist:
+       ls -la db-backups/
+       ls -la wp-content.backup-*
+  3. If backups were moved, specify explicitly:
+       ./wp-migrate.sh --rollback --rollback-backup /path/to/backup.sql.gz"
+  fi
+
+  # Parse backup info
+  IFS='|' read -r DB_BACKUP WP_CONTENT_BACKUP <<< "$backup_info"
+
+  log "Found backups:"
+  if [[ -n "$DB_BACKUP" ]]; then
+    log "  Database: $DB_BACKUP"
+  else
+    log "  Database: None found"
+  fi
+
+  if [[ -n "$WP_CONTENT_BACKUP" ]]; then
+    log "  wp-content: $WP_CONTENT_BACKUP"
+  else
+    log "  wp-content: None found"
+  fi
+fi
+
+# Perform rollback
+rollback_migration "$DB_BACKUP" "$WP_CONTENT_BACKUP"
+
+# Done
+exit 0
+
+# ==================================================================================
 # ARCHIVE MODE WORKFLOW
 # ==================================================================================
-if [[ "$MIGRATION_MODE" == "archive" ]]; then
+elif [[ "$MIGRATION_MODE" == "archive" ]]; then
 
 log "Archive: $ARCHIVE_FILE"
 

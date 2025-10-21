@@ -41,6 +41,15 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - Auto-cleanup of temporary extraction directory on success; kept on failure for debugging.
 - Supports dry-run mode to preview the import workflow without making any changes.
 
+### Rollback Mode
+- **One-command rollback** to undo migrations using backups created during archive mode operations.
+- **Auto-detects latest backups** from `db-backups/` directory and `wp-content.backup-*` directories.
+- **Confirmation prompt** before proceeding (skip with `--yes` flag for automation).
+- **Dry-run support** to preview rollback plan without making changes.
+- **Explicit backup specification** via `--rollback-backup` for manual control.
+- Restores both database and wp-content atomically.
+- Provides clear error messages if backups are not found or restoration fails.
+
 ## Requirements
 
 ### Push Mode
@@ -135,6 +144,31 @@ Common examples:
 
 **Note:** Currently supports **Duplicator**, **Jetpack Backup**, and **Solid Backups** archives. The extensible adapter architecture supports adding UpdraftPlus and other formats—contributors can add adapters following the guide in [src/lib/adapters/README.md](src/lib/adapters/README.md).
 
+### Rollback Mode
+```bash
+./wp-migrate.sh --rollback [options]
+```
+
+Common examples:
+- Rollback to latest backup (with confirmation prompt):
+  ```bash
+  ./wp-migrate.sh --rollback
+  ```
+- Rollback without confirmation (for automation):
+  ```bash
+  ./wp-migrate.sh --rollback --yes
+  ```
+- Preview rollback without making changes:
+  ```bash
+  ./wp-migrate.sh --rollback --dry-run
+  ```
+- Rollback using specific backup file:
+  ```bash
+  ./wp-migrate.sh --rollback --rollback-backup db-backups/pre-archive-backup_20251020-164523.sql.gz
+  ```
+
+**Note:** Rollback mode works with backups created during archive mode migrations. Backups are automatically created in `db-backups/` (database) and `wp-content.backup-TIMESTAMP` (files) before any destructive operations.
+
 ## Options
 
 ### Common Options (both modes)
@@ -142,6 +176,7 @@ Common examples:
 | ---- | ----------- |
 | `--dry-run` | Preview the workflow without making changes. No files are created, maintenance mode is not toggled, caches are left untouched, and database operations are described rather than executed. Safe to run on production sites. |
 | `--quiet` | Suppress progress indicators for long-running operations. Useful for non-interactive scripts or automated migrations where progress output is not desired. Operations complete normally but without real-time progress bars even if `pv` is installed. |
+| `--yes` | Skip confirmation prompts for automated/non-interactive workflows. Currently applies to rollback confirmation. **Use with caution** as it bypasses safety checks. |
 | `--verbose` | Show additional details during migration. Displays dependency checks, command construction, archive detection process, and other diagnostic information. Useful for understanding what the script is doing and troubleshooting issues. Can be combined with `--dry-run` to preview detailed workflow. |
 | `--trace` | Show every command before execution (implies `--verbose`). Displays exact commands (rsync, wp-cli, ssh, etc.) with all arguments before running them. Useful for debugging, filing bug reports, or manually reproducing operations. Output can be copied/pasted to run commands manually. |
 | `--help` | Print usage information and exit. |
