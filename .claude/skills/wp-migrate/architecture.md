@@ -293,7 +293,7 @@ done
 **Main Workflow:**
 ```bash
 main() {
-  # 1. Detect migration mode (push vs archive)
+  # 1. Detect migration mode (push, archive, or rollback)
   # 2. Validate prerequisites
   # 3. Setup logging and traps
   # 4. Execute mode-specific workflow
@@ -483,17 +483,23 @@ LOG_FILE="logs/migrate-MODE-$(date +%Y%m%d-%H%M%S).log"
 - Shared helper functions
 - Independent testing
 
-**Registration**:
+**Conceptual Pattern**:
 ```bash
-ADAPTERS=(duplicator jetpack solidbackups)
+# Registry of available adapters (actual: AVAILABLE_ADAPTERS in src/lib/functions.sh:11)
+AVAILABLE_ADAPTERS=("duplicator" "jetpack" "solidbackups")
 
-for adapter in "${ADAPTERS[@]}"; do
+# Auto-detection loop (actual: detect_adapter function)
+for adapter in "${AVAILABLE_ADAPTERS[@]}"; do
   if "adapter_${adapter}_validate" "$ARCHIVE_FILE"; then
     ARCHIVE_ADAPTER="$adapter"
     break
   fi
 done
 ```
+
+**Actual Implementation**:
+- Registry: `AVAILABLE_ADAPTERS=("duplicator" "jetpack" "solidbackups")` in src/lib/functions.sh:11
+- Detection: `detect_adapter()` function (src/lib/functions.sh:31)
 
 ### 5. URL Alignment
 
@@ -521,51 +527,56 @@ wp search-replace "$IMPORTED_HOME" "$ORIGINAL_DEST_HOME_URL"
 
 **Pattern**: Always backup before destructive operations
 
+**Conceptual Pattern**:
 ```bash
-# Database
-backup_database  # Creates timestamped .sql.gz
+# Database backup (via wp-cli)
+wp db export "db-backups/backup-$(date +%Y%m%d-%H%M%S).sql.gz"
 
-# wp-content
-backup_wp_content  # Creates timestamped directory copy
+# wp-content backup (actual function: backup_remote_wp_content for push mode)
+# Creates timestamped directory copy: wp-content.backup-YYYYMMDD-HHMMSS
 
 # Then proceed with import/replacement
 ```
 
+**Actual Implementation**:
+- Push mode: `backup_remote_wp_content()` - Creates remote wp-content backup
+- Archive mode: Direct wp-cli db export + mv wp-content to timestamped backup
+
 ### 7. Table Prefix Detection
 
-**Smart Detection**:
+**Conceptual Pattern**:
 ```bash
-detect_table_prefix() {
-  # Try core tables with different prefixes
-  for prefix in wp_ wpress_ custom_; do
-    if wp db tables --format=csv | grep -q "${prefix}options"; then
-      echo "$prefix"
-      return 0
-    fi
-  done
-}
-```
+# Detect prefix from database (conceptual - actual implementation in src/main.sh)
+TABLE_PREFIX=$(wp db prefix)
 
-**Auto-Alignment**:
-```bash
-if [[ "$detected_prefix" != "$config_prefix" ]]; then
-  # Update wp-config.php automatically
-  update_config_prefix "$detected_prefix"
+# Detect prefix from wp-config.php
+CONFIG_PREFIX=$(wp config get table_prefix)
+
+# Auto-align if different
+if [[ "$TABLE_PREFIX" != "$CONFIG_PREFIX" ]]; then
+  wp config set table_prefix "$TABLE_PREFIX"
 fi
 ```
 
+**Actual Implementation**:
+- Detection: `wp db prefix` command (lines ~677-685 in src/main.sh)
+- Alignment: `wp config set table_prefix` with verification and sed fallback
+
 ### 8. Plugin/Theme Preservation
 
-**Diff and Restore Pattern**:
+**Conceptual Pattern**:
 ```bash
-# Before migration
+# Before migration - capture destination content
 DEST_PLUGINS_BEFORE=($(wp plugin list --field=name))
+DEST_THEMES_BEFORE=($(wp theme list --field=name))
 
-# After migration
+# After migration - detect source content
 SOURCE_PLUGINS=($(wp plugin list --field=name))
+SOURCE_THEMES=($(wp theme list --field=name))
 
-# Find unique to destination
+# Find unique to destination (using array_diff helper)
 UNIQUE_DEST_PLUGINS=(plugins in BEFORE but not in SOURCE)
+UNIQUE_DEST_THEMES=(themes in BEFORE but not in SOURCE)
 
 # Restore from backup
 for plugin in "${UNIQUE_DEST_PLUGINS[@]}"; do
@@ -575,6 +586,11 @@ done
 # Deactivate for safety
 wp plugin deactivate "${UNIQUE_DEST_PLUGINS[@]}"
 ```
+
+**Actual Implementation**:
+- Detection functions: `detect_dest_plugins_push()`, `detect_dest_themes_push()`, `detect_source_plugins()`, `detect_source_themes()`, `detect_archive_plugins()`, `detect_archive_themes()`
+- Diff function: `array_diff()` - Compare arrays and return unique elements
+- Restoration: `restore_dest_content_push()`, `restore_dest_content_local()`
 
 ## State Management
 
