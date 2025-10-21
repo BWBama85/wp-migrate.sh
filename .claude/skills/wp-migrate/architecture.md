@@ -84,11 +84,13 @@ DEST_HOST=""              # Push mode: SSH destination
 DEST_ROOT=""              # Push mode: Destination WP root
 ARCHIVE_FILE=""           # Archive mode: Path to backup
 ARCHIVE_TYPE=""           # Archive mode: Adapter override
-MIGRATION_MODE=""         # Detected: "push" or "archive"
+MIGRATION_MODE=""         # Detected: "push", "archive", or "rollback"
 DRY_RUN=false             # Preview mode flag
 IMPORT_DB=true            # Auto-import database
 SEARCH_REPLACE=true       # Perform URL search-replace
 STELLARSITES_MODE=false   # Managed hosting compatibility
+YES_MODE=false            # Skip confirmation prompts (v2.6.0)
+QUIET_MODE=false          # Suppress progress indicators (v2.6.0)
 ```
 
 ### 2. Core Utilities (src/lib/core.sh)
@@ -175,14 +177,14 @@ validate_url() {
 - `adapter_base_score_wp_content()` - Score directory (0-3)
 
 **Adapter Registry:**
-Dynamically registered in main workflow:
+Defined in [src/lib/functions.sh:11](../../../src/lib/functions.sh#L11):
 ```bash
-ADAPTERS=(duplicator jetpack solidbackups)
+AVAILABLE_ADAPTERS=("duplicator" "jetpack" "solidbackups")
 ```
 
 **Auto-Detection Flow:**
 ```
-For each adapter in ADAPTERS:
+For each adapter in AVAILABLE_ADAPTERS:
   ├─ Call adapter_NAME_validate(archive)
   ├─ If returns 0:
   │  └─ Use this adapter
@@ -194,55 +196,82 @@ For each adapter in ADAPTERS:
 
 **Purpose**: All migration workflow functions
 
-**Categories:**
+**Categories** (51 functions total):
+
+**WordPress CLI Wrappers:**
+- `wp_local()` - Execute wp-cli on local WordPress installation
+- `wp_remote()` - Execute wp-cli on remote server via SSH (single-line output)
+- `wp_remote_full()` - Execute wp-cli on remote server (multi-line output)
+- `wp_remote_has_command()` - Check if wp-cli command exists on remote
 
 **SSH and Connectivity:**
-- `setup_ssh_control()` - Persistent SSH connections
+- `setup_ssh_control()` - Create persistent SSH ControlMaster connection
 - `cleanup_ssh_control()` - Close SSH control socket
-- `test_ssh_connection()` - Verify destination reachable
+- `ssh_cmd_string()` - Build SSH command string with custom options
+- `ssh_run()` - Execute command on remote server via SSH
 
-**WordPress Detection:**
-- `verify_wp_installation()` - Check wp-config.php exists
-- `get_wp_content_path()` - Find wp-content directory
-- `detect_table_prefix()` - Read prefix from database
+**WordPress Discovery:**
+- `discover_wp_content_local()` - Get WP_CONTENT_DIR path on local system
+- `discover_wp_content_remote()` - Get WP_CONTENT_DIR path on remote server
 
-**Database Operations:**
-- `export_database()` - wp db export with optional gzip
-- `import_database()` - wp db import with auto-gunzip
-- `backup_database()` - Create timestamped backup
-- `align_table_prefix()` - Update wp-config.php if needed
-
-**URL Management:**
-- `detect_site_urls()` - Get home and siteurl options
-- `perform_search_replace()` - wp search-replace with validation
-- `update_site_urls()` - Set home/siteurl options
-
-**File Operations:**
-- `sync_wp_content()` - rsync wp-content directory
-- `backup_wp_content()` - Create timestamped copy
-- `replace_wp_content()` - Remove and replace directory
-
-**Maintenance Mode:**
-- `enable_maintenance()` - Activate .maintenance file
-- `disable_maintenance()` - Deactivate .maintenance file
-- `setup_cleanup_trap()` - Ensure maintenance disabled on exit
-
-**Cache Management:**
-- `detect_redis_command()` - Check if wp redis available
-- `flush_cache()` - wp cache flush + wp redis flush
+**Archive Adapter System:**
+- `load_adapter()` - Source adapter file (duplicator/jetpack/solidbackups)
+- `detect_adapter()` - Auto-detect archive format by trying all adapters
+- `extract_archive()` - Call adapter's extract function
+- `find_archive_database()` - Call adapter's find_database function
+- `find_archive_wp_content()` - Call adapter's find_wp_content function
+- `get_archive_format_name()` - Get human-readable adapter name
+- `check_adapter_dependencies()` - Verify required commands available
 
 **Archive Operations:**
-- `detect_archive_format()` - Auto-detect adapter
-- `validate_disk_space()` - Check 3x archive size available
-- `extract_archive()` - Call adapter extract function
-- `detect_archive_database()` - Call adapter find_database
-- `detect_archive_wp_content()` - Call adapter find_content
+- `check_disk_space_for_archive()` - Validate 3x archive size available
+- `extract_archive_to_temp()` - Extract to temporary directory with validation
+- `find_archive_database_file()` - Locate SQL dump(s) in extracted archive
+- `find_archive_wp_content_dir()` - Locate wp-content directory in archive
+- `cleanup_archive_temp()` - Remove temporary extraction directory
 
-**Plugin/Theme Preservation:**
-- `capture_dest_plugins_themes()` - List before migration
-- `detect_unique_plugins_themes()` - Compare source vs destination
-- `restore_unique_plugins_themes()` - Copy from backup
-- `deactivate_restored_plugins()` - Ensure safe state
+**URL Search-Replace Management:**
+- `add_search_replace_pair()` - Add from→to URL pair to global list
+- `json_escape_slashes()` - Escape slashes for JSON in search-replace
+- `url_host_only()` - Extract hostname from URL
+- `add_url_alignment_variations()` - Generate URL variations (http/https, www/non-www)
+
+**Plugin/Theme Detection:**
+- `detect_source_plugins()` - List plugins on source server
+- `detect_source_themes()` - List themes on source server
+- `detect_dest_plugins_push()` - List plugins on destination (push mode)
+- `detect_dest_themes_push()` - List themes on destination (push mode)
+- `detect_dest_plugins_local()` - List plugins on destination (archive mode)
+- `detect_dest_themes_local()` - List themes on destination (archive mode)
+- `detect_archive_plugins()` - List plugins in extracted archive
+- `detect_archive_themes()` - List themes in extracted archive
+- `array_diff()` - Compare arrays and return unique elements
+
+**Plugin/Theme Restoration:**
+- `restore_dest_content_push()` - Restore unique plugins/themes (push mode)
+- `restore_dest_content_local()` - Restore unique plugins/themes (archive mode)
+
+**Backup Operations:**
+- `backup_remote_wp_content()` - Create timestamped wp-content backup on remote
+- `find_latest_backup()` - Auto-detect latest database and wp-content backups (v2.6.0)
+
+**Maintenance Mode:**
+- `maint_remote()` - Toggle .maintenance file on remote server
+- `maintenance_cleanup()` - Ensure maintenance mode disabled on exit
+- `exit_cleanup()` - Cleanup handler (SSH control, maintenance, traps)
+
+**Progress and UX (v2.6.0):**
+- `has_pv()` - Check if pv (pipe viewer) is installed
+- `run_with_progress()` - Execute command with progress bar if pv available
+- `pipe_progress()` - Pipe data through pv for progress display
+- `show_migration_preview()` - Display pre-migration summary and confirmation
+- `show_push_mode_preview()` - Show push mode specific preview details
+- `show_archive_mode_preview()` - Show archive mode specific preview details
+- `rollback_migration()` - Restore from latest backups (v2.6.0)
+
+**Utility:**
+- `print_version()` - Display script version
+- `print_usage()` - Display help text
 
 ### 5. Main Execution (src/main.sh)
 
