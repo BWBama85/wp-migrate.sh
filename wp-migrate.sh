@@ -2157,6 +2157,25 @@ rollback_migration() {
 
   # Confirmation prompt (skip if --yes flag is set)
   if ! $YES_MODE; then
+    # Detect non-interactive stdin (CI/cron/piped input)
+    if [[ ! -t 0 ]]; then
+      err "Interactive confirmation required but stdin is not a terminal.
+
+This rollback requires user confirmation before proceeding.
+
+Running in non-interactive context (CI/cron/pipeline) detected.
+
+Solutions:
+  1. Add --yes flag to skip confirmation (recommended for automation):
+       ./wp-migrate.sh --rollback --yes
+
+  2. Use --dry-run to preview without confirmation:
+       ./wp-migrate.sh --rollback --dry-run
+
+Note: Earlier versions ran without confirmation. To restore that behavior,
+add --yes to your automation scripts."
+    fi
+
     log ""
     log "⚠️  WARNING: This will replace your current site with the backup."
     log ""
@@ -2218,6 +2237,178 @@ Next steps:
   log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
+# ========================================
+# Migration Preview System
+# ========================================
+
+# Display migration summary and confirmation prompt
+# Usage: show_migration_preview
+show_migration_preview() {
+  log ""
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log "MIGRATION PREVIEW"
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  if [[ "$MIGRATION_MODE" == "push" ]]; then
+    show_push_mode_preview
+  elif [[ "$MIGRATION_MODE" == "archive" ]]; then
+    show_archive_mode_preview
+  fi
+
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  # Skip confirmation if --dry-run or --yes is set
+  if $DRY_RUN; then
+    log "[dry-run] Skipping confirmation prompt (dry-run mode)"
+    return 0
+  fi
+
+  if $YES_MODE; then
+    log "Proceeding with migration (--yes flag set)"
+    log ""
+    return 0
+  fi
+
+  # Detect non-interactive stdin (CI/cron/piped input)
+  if [[ ! -t 0 ]]; then
+    err "Interactive confirmation required but stdin is not a terminal.
+
+This migration requires user confirmation before proceeding.
+
+Running in non-interactive context (CI/cron/pipeline) detected.
+
+Solutions:
+  1. Add --yes flag to skip confirmation (recommended for automation):
+       ./wp-migrate.sh [options] --yes
+
+  2. Use --dry-run to preview without confirmation:
+       ./wp-migrate.sh [options] --dry-run
+
+Note: Earlier versions ran without confirmation. To restore that behavior,
+add --yes to your automation scripts."
+  fi
+
+  # Confirmation prompt
+  log ""
+  read -p "Proceed with migration? [y/N]: " -r
+  echo
+  if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+    log "Migration cancelled by user."
+    exit 0
+  fi
+  log ""
+}
+
+# Display push mode migration preview
+show_push_mode_preview() {
+  log "Mode: PUSH (source → destination via SSH)"
+  log ""
+  log "Source:"
+  log "  Location: $(hostname):$PWD"
+  if [[ -n "$SOURCE_DISPLAY_URL" ]]; then
+    log "  URL: $SOURCE_DISPLAY_URL"
+  fi
+  log "  wp-content: $SRC_WP_CONTENT ($SRC_SIZE)"
+  log ""
+  log "Destination:"
+  log "  Location: $DEST_HOST:$DEST_ROOT"
+  if [[ -n "$DEST_DISPLAY_URL" ]]; then
+    log "  URL: $DEST_DISPLAY_URL"
+  fi
+  log "  wp-content: $DST_WP_CONTENT"
+  log "  Free space: $DST_FREE"
+  log ""
+  log "Operations:"
+  log "  • Export database from source"
+  if $GZIP_DB; then
+    log "  • Transfer database to destination (gzipped)"
+  else
+    log "  • Transfer database to destination (uncompressed)"
+  fi
+  if $IMPORT_DB; then
+    log "  • Import database on destination"
+    if $URL_ALIGNMENT_REQUIRED; then
+      if $SEARCH_REPLACE; then
+        log "  • Run search-replace for URL alignment"
+      else
+        log "  • Update home/siteurl only (--no-search-replace)"
+      fi
+    fi
+  else
+    log "  • Skip database import (--no-import-db)"
+  fi
+  log "  • Backup destination wp-content"
+  log "  • Sync wp-content from source to destination"
+  if $PRESERVE_DEST_PLUGINS && [[ ${#UNIQUE_DEST_PLUGINS[@]} -gt 0 || ${#UNIQUE_DEST_THEMES[@]} -gt 0 ]]; then
+    log "  • Restore unique destination plugins/themes"
+  fi
+  log ""
+  log "Maintenance mode: "
+  if $MAINTENANCE_SOURCE; then
+    log "  Source: YES"
+  else
+    log "  Source: NO (--no-maint-source)"
+  fi
+  log "  Destination: YES"
+}
+
+# Display archive mode migration preview
+show_archive_mode_preview() {
+  local archive_size db_size wp_content_size wp_content_count
+
+  # Get archive size
+  archive_size=$(du -sh "$ARCHIVE_FILE" 2>/dev/null | cut -f1 || echo "unknown")
+
+  # Get database size (if already extracted)
+  if [[ -n "$ARCHIVE_DB_FILE" && -f "$ARCHIVE_DB_FILE" ]]; then
+    db_size=$(du -sh "$ARCHIVE_DB_FILE" 2>/dev/null | cut -f1 || echo "unknown")
+  else
+    db_size="unknown"
+  fi
+
+  # Get wp-content size and file count (if already extracted)
+  if [[ -n "$ARCHIVE_WP_CONTENT" && -d "$ARCHIVE_WP_CONTENT" ]]; then
+    wp_content_size=$(du -sh "$ARCHIVE_WP_CONTENT" 2>/dev/null | cut -f1 || echo "unknown")
+    wp_content_count=$(find "$ARCHIVE_WP_CONTENT" -type f 2>/dev/null | wc -l | tr -d ' ' || echo "unknown")
+  else
+    wp_content_size="unknown"
+    wp_content_count="unknown"
+  fi
+
+  log "Mode: ARCHIVE (import backup to current site)"
+  log ""
+  log "Archive:"
+  log "  File: $(basename "$ARCHIVE_FILE")"
+  log "  Format: $(get_archive_format_name)"
+  log "  Size: $archive_size"
+  log ""
+  log "Archive Contents:"
+  log "  Database: $db_size"
+  log "  wp-content: $wp_content_size ($wp_content_count files)"
+  log ""
+  log "Destination:"
+  log "  Location: $(hostname):$PWD"
+  if [[ -n "$ORIGINAL_DEST_HOME_URL" ]]; then
+    log "  Current URL: $ORIGINAL_DEST_HOME_URL"
+  fi
+  log ""
+  log "Operations:"
+  log "  • Backup current database → db-backups/pre-archive-backup_${STAMP}.sql.gz"
+  log "  • Backup current wp-content → $(basename "${DEST_WP_CONTENT:-wp-content}").backup-${STAMP}"
+  if $IMPORT_DB; then
+    log "  • Import database from archive"
+    log "  • Restore original URLs (prevent archive URLs from leaking)"
+  else
+    log "  • Skip database import (--no-import-db)"
+  fi
+  log "  • Replace wp-content with archive content"
+  if $PRESERVE_DEST_PLUGINS && [[ ${#UNIQUE_DEST_PLUGINS[@]} -gt 0 || ${#UNIQUE_DEST_THEMES[@]} -gt 0 ]]; then
+    log "  • Restore unique destination plugins/themes"
+  fi
+  log ""
+  log "Maintenance mode: YES"
+}
+
 print_usage() {
   cat <<USAGE
 Usage:
@@ -2228,8 +2419,8 @@ PUSH MODE (run on SOURCE WP root):
 ARCHIVE MODE (run on DESTINATION WP root):
   $(basename "$0") --archive </path/to/backup> [options]
 
-ROLLBACK MODE (run on WP root):
-  $(basename "$0") --rollback [options]
+ROLLBACK MODE (run on DESTINATION WP root):
+  $(basename "$0") --rollback [--rollback-backup </path/to/backup>]
 
 Required (choose one mode):
   --dest-host <user@dest.example.com>
@@ -2249,18 +2440,17 @@ Required (choose one mode):
       Deprecated: Use --archive instead (backward compatibility maintained)
 
   --rollback
-      Rollback mode: restore from a previous backup created by wp-migrate.sh
-      Auto-detects latest backups from db-backups/ and wp-content.backup-*
-      Requires confirmation before proceeding (bypass with --yes)
+      Rollback mode: restore from backups created during previous migration
+      Automatically finds latest backup or use --rollback-backup to specify
 
-  --rollback-backup </path/to/backup>
-      Optional: Explicitly specify backup file to restore (database only)
-      If not specified, auto-detects latest backup
+  --rollback-backup </path/to/backup.sql.gz>
+      Optional: Explicitly specify which database backup to restore
+      (only used with --rollback)
 
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
   --quiet                   Suppress progress indicators for long-running operations (useful for non-interactive scripts)
-  --yes                     Skip confirmation prompts (useful for automation; use with caution)
+  --yes                     Skip confirmation prompts (useful for automation)
   --verbose                 Show additional details (dependency checks, command construction, detection process)
   --trace                   Show every command before execution (implies --verbose). Useful for debugging and reproducing issues.
   --import-db               (Deprecated) Explicitly import the DB on destination (default behavior)
@@ -2281,12 +2471,19 @@ Options:
 Examples (push mode):
   $(basename "$0") --dest-host wp@dest --dest-root /var/www/site
   $(basename "$0") --dest-host wp@dest --dest-root /var/www/site --no-import-db
+  $(basename "$0") --dest-host wp@dest --dest-root /var/www/site --yes
 
 Examples (archive mode):
   $(basename "$0") --archive /path/to/backup_20251009.zip
   $(basename "$0") --archive /backups/site.zip --dry-run
   $(basename "$0") --archive /backups/site.zip --stellarsites
-  $(basename "$0") --archive /backups/site.tar.gz --archive-type jetpack
+  $(basename "$0") --archive /backups/site.tar.gz --archive-type jetpack --yes
+
+Examples (rollback mode):
+  $(basename "$0") --rollback
+  $(basename "$0") --rollback --dry-run
+  $(basename "$0") --rollback --rollback-backup /path/to/specific/backup.sql.gz
+  $(basename "$0") --rollback --yes
 USAGE
 }
 
@@ -2792,6 +2989,50 @@ DST_FREE=$(ssh_run "$DEST_HOST" "df -h \"$DST_WP_CONTENT\" | awk 'NR==2{print \$
 log "Approx source wp-content size: $SRC_SIZE"
 log "Approx destination free space: $DST_FREE"
 
+# ---------------------------------------------------------
+# Detect plugins/themes for preservation (before preview)
+# IMPORTANT: Must happen BEFORE preview so we can show accurate operations list
+# ---------------------------------------------------------
+if $PRESERVE_DEST_PLUGINS; then
+  log "Detecting plugins/themes for preservation..."
+
+  log_verbose "  Scanning destination plugins/themes..."
+  # Get destination plugins/themes (before migration)
+  detect_dest_plugins_push "$DEST_HOST" "$DEST_ROOT"
+  detect_dest_themes_push "$DEST_HOST" "$DEST_ROOT"
+  log_verbose "    Found ${#DEST_PLUGINS_BEFORE[@]} destination plugins, ${#DEST_THEMES_BEFORE[@]} themes"
+
+  log_verbose "  Scanning source plugins/themes..."
+  # Get source plugins/themes
+  detect_source_plugins
+  detect_source_themes
+  log_verbose "    Found ${#SOURCE_PLUGINS[@]} source plugins, ${#SOURCE_THEMES[@]} themes"
+
+  log_verbose "  Computing unique destination items (not in source)..."
+  # Compute unique destination items (not in source)
+  array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
+  array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE[@] SOURCE_THEMES[@]
+
+  if ! $DRY_RUN; then
+    log "  Destination has ${#DEST_PLUGINS_BEFORE[@]} plugin(s), source has ${#SOURCE_PLUGINS[@]} plugin(s)"
+    log "  Unique to destination: ${#UNIQUE_DEST_PLUGINS[@]} plugin(s)"
+
+    log "  Destination has ${#DEST_THEMES_BEFORE[@]} theme(s), source has ${#SOURCE_THEMES[@]} theme(s)"
+    log "  Unique to destination: ${#UNIQUE_DEST_THEMES[@]} theme(s)"
+
+    if [[ ${#UNIQUE_DEST_PLUGINS[@]} -gt 0 ]]; then
+      log "  Plugins to preserve: ${UNIQUE_DEST_PLUGINS[*]}"
+    fi
+
+    if [[ ${#UNIQUE_DEST_THEMES[@]} -gt 0 ]]; then
+      log "  Themes to preserve: ${UNIQUE_DEST_THEMES[*]}"
+    fi
+  fi
+fi
+
+# Migration preview and confirmation
+show_migration_preview
+
 # Maintenance ON
 log "Enabling maintenance mode..."
 if $DRY_RUN; then
@@ -2994,50 +3235,10 @@ The wp-config.php has been restored to its original state for safety."
   fi
 fi
 
-# ---------------------------------------------------------
-# Detect plugins/themes (if preserving destination content)
-# IMPORTANT: Must happen BEFORE backup (backup uses mv, making wp-content unavailable)
-# ---------------------------------------------------------
-if $PRESERVE_DEST_PLUGINS; then
-  log "Detecting plugins/themes for preservation..."
-
-  log_verbose "  Scanning destination plugins/themes..."
-  # Get destination plugins/themes (before migration)
-  detect_dest_plugins_push "$DEST_HOST" "$DEST_ROOT"
-  detect_dest_themes_push "$DEST_HOST" "$DEST_ROOT"
-  log_verbose "    Found ${#DEST_PLUGINS_BEFORE[@]} destination plugins, ${#DEST_THEMES_BEFORE[@]} themes"
-
-  log_verbose "  Scanning source plugins/themes..."
-  # Get source plugins/themes
-  detect_source_plugins
-  detect_source_themes
-  log_verbose "    Found ${#SOURCE_PLUGINS[@]} source plugins, ${#SOURCE_THEMES[@]} themes"
-
-  log_verbose "  Computing unique destination items (not in source)..."
-  # Compute unique destination items (not in source)
-  array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
-  array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE[@] SOURCE_THEMES[@]
-
-  if ! $DRY_RUN; then
-    log "  Destination has ${#DEST_PLUGINS_BEFORE[@]} plugin(s), source has ${#SOURCE_PLUGINS[@]} plugin(s)"
-    log "  Unique to destination: ${#UNIQUE_DEST_PLUGINS[@]} plugin(s)"
-
-    log "  Destination has ${#DEST_THEMES_BEFORE[@]} theme(s), source has ${#SOURCE_THEMES[@]} theme(s)"
-    log "  Unique to destination: ${#UNIQUE_DEST_THEMES[@]} theme(s)"
-
-    if [[ ${#UNIQUE_DEST_PLUGINS[@]} -gt 0 ]]; then
-      log "  Plugins to preserve: ${UNIQUE_DEST_PLUGINS[*]}"
-    fi
-
-    if [[ ${#UNIQUE_DEST_THEMES[@]} -gt 0 ]]; then
-      log "  Themes to preserve: ${UNIQUE_DEST_THEMES[*]}"
-    fi
-  fi
-fi
-
 # -------------------------------
 # Backup destination wp-content
 # -------------------------------
+# Note: Plugin/theme detection already happened before preview (line ~507)
 DST_WP_CONTENT_BACKUP="$(backup_remote_wp_content "$DEST_HOST" "$DST_WP_CONTENT" "$STAMP")"
 
 # ---------------------
@@ -3296,46 +3497,16 @@ check_disk_space_for_archive "$ARCHIVE_FILE"
 # Phase 2: Extract archive
 extract_archive_to_temp "$ARCHIVE_FILE"
 
-# Phase 3: Discover database and wp-content
+# Phase 3: Discover database and wp-content from archive
 find_archive_database_file "$ARCHIVE_EXTRACT_DIR"
 find_archive_wp_content_dir "$ARCHIVE_EXTRACT_DIR"
 
-# Phase 4: Enable maintenance mode
-log "Enabling maintenance mode on destination..."
-if $DRY_RUN; then
-  log "[dry-run] Would enable maintenance mode on destination."
-else
-  wp_local maintenance-mode activate >/dev/null || err "Failed to enable maintenance mode"
-  MAINT_LOCAL_ACTIVE=true
-fi
-
-# Phase 5: Backup current database
-if $DRY_RUN; then
-  log "[dry-run] Would backup current database to: db-backups/pre-archive-backup_${STAMP}.sql.gz"
-else
-  mkdir -p "db-backups"
-  BACKUP_DB_FILE="db-backups/pre-archive-backup_${STAMP}.sql.gz"
-  log "Backing up current database to: $BACKUP_DB_FILE"
-  wp_local db export - | gzip > "$BACKUP_DB_FILE"
-  log "Database backup created: $BACKUP_DB_FILE"
-fi
-
-# Phase 6: Backup current wp-content
+# Phase 3b: Discover destination wp-content path (needed for preview)
 DEST_WP_CONTENT="$(discover_wp_content_local)"
 log "Destination WP_CONTENT_DIR: $DEST_WP_CONTENT"
 
-if $DRY_RUN; then
-  DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
-  log "[dry-run] Would backup current wp-content to: $DEST_WP_CONTENT_BACKUP"
-else
-  DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
-  log "Backing up current wp-content to: $DEST_WP_CONTENT_BACKUP"
-  log_trace "cp -a \"$DEST_WP_CONTENT\" \"$DEST_WP_CONTENT_BACKUP\""
-  cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"
-  log "wp-content backup created: $DEST_WP_CONTENT_BACKUP"
-fi
-
-# Phase 6b: Detect plugins/themes (if preserving destination content)
+# Phase 3c: Detect plugins/themes for preservation (before preview)
+# IMPORTANT: Must happen BEFORE preview so we can show accurate operations list
 if $PRESERVE_DEST_PLUGINS; then
   log "Detecting plugins/themes for preservation..."
 
@@ -3373,7 +3544,44 @@ if $PRESERVE_DEST_PLUGINS; then
   fi
 fi
 
+# Migration preview and confirmation
+show_migration_preview
+
+# Phase 4: Enable maintenance mode
+log "Enabling maintenance mode on destination..."
+if $DRY_RUN; then
+  log "[dry-run] Would enable maintenance mode on destination."
+else
+  wp_local maintenance-mode activate >/dev/null || err "Failed to enable maintenance mode"
+  MAINT_LOCAL_ACTIVE=true
+fi
+
+# Phase 5: Backup current database
+if $DRY_RUN; then
+  log "[dry-run] Would backup current database to: db-backups/pre-archive-backup_${STAMP}.sql.gz"
+else
+  mkdir -p "db-backups"
+  BACKUP_DB_FILE="db-backups/pre-archive-backup_${STAMP}.sql.gz"
+  log "Backing up current database to: $BACKUP_DB_FILE"
+  wp_local db export - | gzip > "$BACKUP_DB_FILE"
+  log "Database backup created: $BACKUP_DB_FILE"
+fi
+
+# Phase 6: Backup current wp-content
+# Note: DEST_WP_CONTENT already discovered before preview (phase 3b)
+if $DRY_RUN; then
+  DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
+  log "[dry-run] Would backup current wp-content to: $DEST_WP_CONTENT_BACKUP"
+else
+  DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
+  log "Backing up current wp-content to: $DEST_WP_CONTENT_BACKUP"
+  log_trace "cp -a \"$DEST_WP_CONTENT\" \"$DEST_WP_CONTENT_BACKUP\""
+  cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"
+  log "wp-content backup created: $DEST_WP_CONTENT_BACKUP"
+fi
+
 # Phase 7: Import database
+# Note: Plugin/theme detection already happened before preview (phase 3c)
 if $DRY_RUN; then
   log "[dry-run] Would reset database to clean state"
   log "[dry-run] Would import database from: $(basename "$ARCHIVE_DB_FILE")"

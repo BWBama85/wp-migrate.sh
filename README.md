@@ -11,8 +11,17 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 
 ## Features
 
+### Migration Preview
+- **Pre-migration summary** displays detailed information before starting any operations.
+- Shows source/destination URLs, database size, file counts, and disk space requirements.
+- Lists planned operations step-by-step (database export, transfer, import, search-replace, file sync).
+- **Confirmation prompt** "Proceed with migration? [y/N]" gives you a chance to review before making changes.
+- Skip confirmation with `--yes` flag for automated workflows.
+- Works in both push mode and archive mode with mode-specific details.
+
 ### Push Mode
 - Verifies WordPress installations on both source and destination before proceeding.
+- **Shows migration preview** with source/destination details, file sizes, and planned operations.
 - Enables maintenance mode on both sides during a real migration to minimise downtime (skip the source with `--no-maint-source`).
 - Exports the database, transfers it to the destination, and imports it by default (disable with `--no-import-db`; gzipped dumps are decompressed automatically).
 - Rewrites migrated URLs so the destination keeps its own domain via `wp search-replace` (skipped for dry runs or `--no-import-db`; use `--no-search-replace` to skip bulk search-replace and only update home/siteurl options).
@@ -30,6 +39,7 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
   - **Solid Backups** (formerly BackupBuddy): ZIP archives with split SQL files in `wp-content/uploads/backupbuddy_temp/{BACKUP_ID}/` (one file per table, automatically consolidated during import)
 - **Extensible adapter system** makes adding new backup formats simple (see [src/lib/adapters/README.md](src/lib/adapters/README.md) for contributor guide).
 - **Auto-detects backup format** or accepts explicit `--archive-type` for manual override.
+- **Shows migration preview** with archive details, format, size, file counts, and planned operations.
 - Automatically extracts and detects database and wp-content from archives with smart directory scoring.
 - **Shows real-time progress bars** for archive extraction, database imports, and file synchronization when `pv` is installed. ZIP extraction progress requires `bsdtar` (optional dependency).
 - Pre-flight disk space validation ensures 3x archive size is available (archive + extraction + buffer).
@@ -176,7 +186,7 @@ Common examples:
 | ---- | ----------- |
 | `--dry-run` | Preview the workflow without making changes. No files are created, maintenance mode is not toggled, caches are left untouched, and database operations are described rather than executed. Safe to run on production sites. |
 | `--quiet` | Suppress progress indicators for long-running operations. Useful for non-interactive scripts or automated migrations where progress output is not desired. Operations complete normally but without real-time progress bars even if `pv` is installed. |
-| `--yes` | Skip confirmation prompts for automated/non-interactive workflows. Currently applies to rollback confirmation. **Use with caution** as it bypasses safety checks. |
+| `--yes` | Skip confirmation prompts for automated/non-interactive workflows. Applies to migration preview confirmation and rollback confirmation. **Use with caution** as it bypasses safety checks. |
 | `--verbose` | Show additional details during migration. Displays dependency checks, command construction, archive detection process, and other diagnostic information. Useful for understanding what the script is doing and troubleshooting issues. Can be combined with `--dry-run` to preview detailed workflow. |
 | `--trace` | Show every command before execution (implies `--verbose`). Displays exact commands (rsync, wp-cli, ssh, etc.) with all arguments before running them. Useful for debugging, filing bug reports, or manually reproducing operations. Output can be copied/pasted to run commands manually. |
 | `--help` | Print usage information and exit. |
