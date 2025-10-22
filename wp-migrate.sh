@@ -1836,6 +1836,7 @@ Expected database file patterns for $format_name:
 $([ "$format_name" = "Duplicator" ] && echo "  • dup-installer/dup-database__*.sql")
 $([ "$format_name" = "Jetpack Backup" ] && echo "  • sql/*.sql (multiple files)")
 $([ "$format_name" = "Solid Backups" ] && echo "  • wp-content/uploads/backupbuddy_temp/*/*.sql")
+$([ "$format_name" = "Solid Backups NextGen" ] && echo "  • data/*_*.sql (multiple files, one per table)")
 
 Next steps:
   1. Inspect extracted archive contents:
@@ -1847,6 +1848,7 @@ Next steps:
        --archive-type duplicator
        --archive-type jetpack
        --archive-type solidbackups
+       --archive-type solidbackups_nextgen
   5. Check if archive was created correctly by backup plugin"
   fi
 
@@ -1895,6 +1897,10 @@ wp-content should contain subdirectories like:
   • plugins/
   • themes/
   • uploads/
+$([ "$format_name" = "Solid Backups NextGen" ] && echo "
+For Solid Backups NextGen, wp-content is typically in:
+  • files/wp-content/ (single site)
+  • files/subdomains/{site}/wp-content/ (multisite)")
 
 Next steps:
   1. Inspect extracted archive structure:
