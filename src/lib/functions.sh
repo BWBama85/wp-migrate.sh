@@ -1283,11 +1283,11 @@ Required (choose one mode):
 
   --archive </path/to/backup>
       Archive mode: import backup archive to current host
-      Supported formats: Duplicator, Jetpack Backup, Solid Backups/BackupBuddy
+      Supported formats: Duplicator, Jetpack Backup, Solid Backups Legacy, Solid Backups NextGen
       (mutually exclusive with --dest-host)
 
   --archive-type <type>
-      Optional: Specify archive format (duplicator, jetpack, solidbackups)
+      Optional: Specify archive format (duplicator, jetpack, solidbackups, solidbackups_nextgen)
       If not specified, format will be auto-detected
 
   --duplicator-archive </path/to/backup.zip>
