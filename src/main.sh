@@ -145,9 +145,10 @@ Available archive types: ${AVAILABLE_ADAPTERS[*]}
 Next steps:
   1. Check for typos in --archive-type value
   2. Use one of the supported types:
-       --archive-type duplicator   # For Duplicator Pro/Lite backups
-       --archive-type jetpack      # For Jetpack Backup archives
-       --archive-type solidbackups # For Solid Backups/BackupBuddy archives
+       --archive-type duplicator           # For Duplicator Pro/Lite backups
+       --archive-type jetpack              # For Jetpack Backup archives
+       --archive-type solidbackups         # For Solid Backups Legacy (BackupBuddy)
+       --archive-type solidbackups_nextgen # For Solid Backups NextGen
   3. Or remove --archive-type to auto-detect format"
     fi
     ARCHIVE_ADAPTER="$ARCHIVE_TYPE"
@@ -176,7 +177,8 @@ The archive doesn't match any known backup plugin format.${detailed_errors}
 Supported formats:
   • Duplicator Pro/Lite (.zip with installer.php)
   • Jetpack Backup (.tar.gz or .zip with sql/ directory)
-  • Solid Backups/BackupBuddy (.zip with backupbuddy_temp/ directory)
+  • Solid Backups Legacy (.zip with backupbuddy_temp/ directory)
+  • Solid Backups NextGen (.zip with data/ and files/ directories)
 
 Next steps:
   1. Verify this is a valid WordPress backup archive:
@@ -186,6 +188,7 @@ Next steps:
        --archive \"$ARCHIVE_FILE\" --archive-type duplicator
        --archive \"$ARCHIVE_FILE\" --archive-type jetpack
        --archive \"$ARCHIVE_FILE\" --archive-type solidbackups
+       --archive \"$ARCHIVE_FILE\" --archive-type solidbackups_nextgen
   4. If using an unsupported backup plugin, you may need to:
        • Extract the archive manually
        • Import database via wp db import

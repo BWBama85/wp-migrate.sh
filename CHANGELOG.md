@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Solid Backups NextGen adapter**: Full support for Solid Backups NextGen archives, the completely rewritten successor to Solid Backups Legacy. NextGen uses a different archive structure (database in `data/` directory instead of `wp-content/uploads/backupbuddy_temp/`, WordPress files in `files/` directory, metadata in `meta/` directory). Both Solid Backups Legacy and NextGen are now supported with separate adapters. Archive format is auto-detected based on structure.
+
 ## [2.6.0] - 2025-10-20
 
 **🎯 UX & Safety Improvements**

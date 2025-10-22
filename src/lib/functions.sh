@@ -8,7 +8,7 @@ wp_local() {
 # ========================================
 
 # List of available adapters (add new adapters here)
-AVAILABLE_ADAPTERS=("duplicator" "jetpack" "solidbackups")
+AVAILABLE_ADAPTERS=("duplicator" "jetpack" "solidbackups" "solidbackups_nextgen")
 
 # Verify adapter exists (adapter functions already loaded in built script)
 # Usage: load_adapter <adapter_name>
@@ -383,6 +383,7 @@ Expected database file patterns for $format_name:
 $([ "$format_name" = "Duplicator" ] && echo "  • dup-installer/dup-database__*.sql")
 $([ "$format_name" = "Jetpack Backup" ] && echo "  • sql/*.sql (multiple files)")
 $([ "$format_name" = "Solid Backups" ] && echo "  • wp-content/uploads/backupbuddy_temp/*/*.sql")
+$([ "$format_name" = "Solid Backups NextGen" ] && echo "  • data/*_*.sql (multiple files, one per table)")
 
 Next steps:
   1. Inspect extracted archive contents:
@@ -394,6 +395,7 @@ Next steps:
        --archive-type duplicator
        --archive-type jetpack
        --archive-type solidbackups
+       --archive-type solidbackups_nextgen
   5. Check if archive was created correctly by backup plugin"
   fi
 
@@ -442,6 +444,10 @@ wp-content should contain subdirectories like:
   • plugins/
   • themes/
   • uploads/
+$([ "$format_name" = "Solid Backups NextGen" ] && echo "
+For Solid Backups NextGen, wp-content is typically in:
+  • files/wp-content/ (single site)
+  • files/subdomains/{site}/wp-content/ (multisite)")
 
 Next steps:
   1. Inspect extracted archive structure:
@@ -1283,11 +1289,11 @@ Required (choose one mode):
 
   --archive </path/to/backup>
       Archive mode: import backup archive to current host
-      Supported formats: Duplicator, Jetpack Backup, Solid Backups/BackupBuddy
+      Supported formats: Duplicator, Jetpack Backup, Solid Backups Legacy, Solid Backups NextGen
       (mutually exclusive with --dest-host)
 
   --archive-type <type>
-      Optional: Specify archive format (duplicator, jetpack, solidbackups)
+      Optional: Specify archive format (duplicator, jetpack, solidbackups, solidbackups_nextgen)
       If not specified, format will be auto-detected
 
   --duplicator-archive </path/to/backup.zip>
