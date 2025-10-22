@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2025-10-21
+
+**📦 Archive Format Support**
+
+This minor release adds support for Solid Backups NextGen archives, the completely rewritten successor to Solid Backups Legacy.
+
 ### Added
-- **Solid Backups NextGen adapter**: Full support for Solid Backups NextGen archives, the completely rewritten successor to Solid Backups Legacy. NextGen uses a different archive structure (database in `data/` directory instead of `wp-content/uploads/backupbuddy_temp/`, WordPress files in `files/` directory, metadata in `meta/` directory). Both Solid Backups Legacy and NextGen are now supported with separate adapters. Archive format is auto-detected based on structure.
+- **Solid Backups NextGen adapter**: Full support for Solid Backups NextGen archives with completely different structure from Legacy. NextGen stores database in top-level `data/` directory (not `wp-content/uploads/backupbuddy_temp/`), WordPress files in `files/` directory, and metadata in `meta/` directory. Both Solid Backups Legacy and NextGen are now supported with separate adapters (`solidbackups` and `solidbackups_nextgen`). Archive format is auto-detected based on structure, or specify explicitly with `--archive-type solidbackups_nextgen`. Adapter uses depth-first candidate iteration to reliably find correct `data/` and `files/` directories even when WordPress core/plugins contain nested directories with same names (e.g., `wp-includes/ID3/data`, `jetpack/tests/data`). Includes multisite support with `files/subdomains/` structure detection.
 
 ## [2.6.0] - 2025-10-20
 
