@@ -8,7 +8,7 @@ wp_local() {
 # ========================================
 
 # List of available adapters (add new adapters here)
-AVAILABLE_ADAPTERS=("duplicator" "jetpack" "solidbackups")
+AVAILABLE_ADAPTERS=("duplicator" "jetpack" "solidbackups" "solidbackups-nextgen")
 
 # Verify adapter exists (adapter functions already loaded in built script)
 # Usage: load_adapter <adapter_name>
