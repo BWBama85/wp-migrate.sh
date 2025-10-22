@@ -231,8 +231,8 @@ Common examples:
 #### Required Flags
 | Flag | Description |
 | ---- | ----------- |
-| `--archive </path/to/backup>` | **Required.** Path to backup archive file or extracted directory. Supports Duplicator (ZIP), Jetpack Backup (ZIP, TAR.GZ, TAR, or extracted directory), and Solid Backups (ZIP or extracted directory). Format is auto-detected. Mutually exclusive with `--dest-host`. |
-| `--archive-type <type>` | **Optional.** Explicitly specify archive format: `duplicator`, `jetpack`, or `solidbackups`. Useful when auto-detection fails or you want to skip detection. If not specified, the script tries each adapter's validation function to identify the format. |
+| `--archive </path/to/backup>` | **Required.** Path to backup archive file or extracted directory. Supports Duplicator (ZIP), Jetpack Backup (ZIP, TAR.GZ, TAR, or extracted directory), Solid Backups Legacy (ZIP or extracted directory), and Solid Backups NextGen (ZIP or extracted directory). Format is auto-detected. Mutually exclusive with `--dest-host`. |
+| `--archive-type <type>` | **Optional.** Explicitly specify archive format: `duplicator`, `jetpack`, `solidbackups` (legacy), or `solidbackups_nextgen`. Useful when auto-detection fails or you want to skip detection. If not specified, the script tries each adapter's validation function to identify the format. Use `solidbackups` for old Solid Backups/BackupBuddy archives (with `backupbuddy_temp/` structure) and `solidbackups_nextgen` for new NextGen archives (with `data/` and `files/` structure). |
 | `--duplicator-archive </path/to/backup.zip>` | **Deprecated.** Use `--archive` instead. Maintained for backward compatibility - internally converted to `--archive --archive-type=duplicator`. Will be removed in v3.0.0. |
 
 #### Database Options

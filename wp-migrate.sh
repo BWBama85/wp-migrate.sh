@@ -1293,26 +1293,52 @@ adapter_solidbackups_nextgen_extract() {
 adapter_solidbackups_nextgen_find_database() {
   local extract_dir="$1"
   local data_dir
+  local candidate_dirs=()
 
   # NextGen stores database files in top-level data/ directory
-  # Look for data/ directory at any level (handles nested extraction)
-  data_dir=$(find "$extract_dir" -type d -name "data" 2>/dev/null | head -1)
+  # Collect ALL data/ directories and iterate through them (WordPress core and plugins
+  # have data/ dirs too: wp-includes/ID3/data, jetpack/tests/data, etc.)
+  while IFS= read -r -d '' dir; do
+    candidate_dirs+=("$dir")
+  done < <(find "$extract_dir" -type d -name "data" -print0 2>/dev/null)
 
-  if [[ -z "$data_dir" ]]; then
+  if [[ ${#candidate_dirs[@]} -eq 0 ]]; then
     log_verbose "  No data/ directory found in archive"
     return 1
   fi
 
-  log_verbose "  Found data/ directory: $data_dir"
+  log_verbose "  Found ${#candidate_dirs[@]} data/ directory candidate(s), checking each..."
 
-  # Verify it contains SQL files (use *.sql to support custom table prefixes)
-  local sql_count
-  sql_count=$(find "$data_dir" -maxdepth 1 -type f -name "*.sql" 2>/dev/null | wc -l)
+  # Try each candidate directory (prioritize shallowest path first)
+  # Sort by path depth (fewest slashes = shallowest = most likely to be correct)
+  local sorted_candidates
+  sorted_candidates=$(printf '%s\n' "${candidate_dirs[@]}" | awk '{ print length(gsub(/\//, "/")) " " $0 }' | sort -n | cut -d' ' -f2-)
 
-  log_verbose "  Found $sql_count SQL files in data/"
+  local candidate
+  while IFS= read -r candidate; do
+    [[ -z "$candidate" ]] && continue
 
-  if [[ $sql_count -lt 5 ]]; then
-    log_verbose "  Insufficient SQL files (need at least 5 core WordPress tables)"
+    log_verbose "    Checking: $candidate"
+
+    # Verify it contains SQL files (use *.sql to support custom table prefixes)
+    local sql_count
+    sql_count=$(find "$candidate" -maxdepth 1 -type f -name "*.sql" 2>/dev/null | wc -l)
+
+    log_verbose "      Found $sql_count SQL files"
+
+    if [[ $sql_count -ge 5 ]]; then
+      # Found valid data/ directory with sufficient SQL files
+      data_dir="$candidate"
+      log_verbose "      ✓ Valid NextGen data/ directory (${sql_count} SQL files)"
+      break
+    else
+      log_verbose "      ✗ Insufficient SQL files (need at least 5 core WordPress tables)"
+    fi
+  done <<<"$sorted_candidates"
+
+  # Check if we found a valid data/ directory
+  if [[ -z "$data_dir" ]]; then
+    log_verbose "  No valid data/ directory found with sufficient SQL files"
     return 1
   fi
 
@@ -1323,7 +1349,7 @@ adapter_solidbackups_nextgen_find_database() {
     return 1
   fi
 
-  log_verbose "  Database consolidated successfully"
+  log_verbose "  Database consolidated successfully from: $data_dir"
   echo "$consolidated_file"
   return 0
 }
@@ -1334,58 +1360,94 @@ adapter_solidbackups_nextgen_find_database() {
 adapter_solidbackups_nextgen_find_content() {
   local extract_dir="$1"
   local wp_content_dir
-  local files_dir
+  local candidate_dirs=()
 
   # NextGen stores files in top-level files/ directory
-  # Look for files/ directory at any level (handles nested extraction)
-  files_dir=$(find "$extract_dir" -type d -name "files" 2>/dev/null | head -1)
+  # Collect ALL files/ directories and iterate through them (plugins may have
+  # nested files/ dirs in their backup/test data)
+  while IFS= read -r -d '' dir; do
+    candidate_dirs+=("$dir")
+  done < <(find "$extract_dir" -type d -name "files" -print0 2>/dev/null)
 
-  if [[ -z "$files_dir" ]]; then
+  if [[ ${#candidate_dirs[@]} -eq 0 ]]; then
     log_verbose "  No files/ directory found in archive"
     return 1
   fi
 
-  log_verbose "  Found files/ directory: $files_dir"
+  log_verbose "  Found ${#candidate_dirs[@]} files/ directory candidate(s), checking each..."
 
-  # Look for wp-content in several possible locations:
-  # 1. files/wp-content/ (single site at root)
-  # 2. files/subdomains/{site}/wp-content/ (multisite installation)
+  # Try each candidate directory (prioritize shallowest path first)
+  # Sort by path depth (fewest slashes = shallowest = most likely to be correct)
+  local sorted_candidates
+  sorted_candidates=$(printf '%s\n' "${candidate_dirs[@]}" | awk '{ print length(gsub(/\//, "/")) " " $0 }' | sort -n | cut -d' ' -f2-)
 
-  # Try direct path first (single site)
-  if [[ -d "$files_dir/wp-content" ]]; then
-    wp_content_dir="$files_dir/wp-content"
-    log_verbose "  Found wp-content at: files/wp-content/"
-  # Try subdomains structure (multisite)
-  elif [[ -d "$files_dir/subdomains" ]]; then
-    log_verbose "  Found subdomains/ directory (multisite backup)"
+  local candidate
+  while IFS= read -r candidate; do
+    [[ -z "$candidate" ]] && continue
 
-    # Find the first subdomain with wp-content
-    # Use scoring to find the best wp-content directory
-    local best_content="" best_score=0
-    while IFS= read -r -d '' content_dir; do
+    log_verbose "    Checking: $candidate"
+
+    # Look for wp-content in several possible locations:
+    # 1. files/wp-content/ (single site at root)
+    # 2. files/subdomains/{site}/wp-content/ (multisite installation)
+
+    # Try direct path first (single site)
+    if [[ -d "$candidate/wp-content" ]]; then
       local score
-      score=$(adapter_base_score_wp_content "$content_dir")
-      log_verbose "    Checking: $content_dir (score: $score)"
-      if [[ $score -gt $best_score ]]; then
-        best_score=$score
-        best_content="$content_dir"
+      score=$(adapter_base_score_wp_content "$candidate/wp-content")
+      log_verbose "      Found wp-content/ (score: $score)"
+
+      if [[ $score -gt 0 ]]; then
+        wp_content_dir="$candidate/wp-content"
+        log_verbose "      ✓ Valid wp-content directory"
+        break
+      else
+        log_verbose "      ✗ wp-content lacks plugins/themes/uploads"
       fi
-    done < <(find "$files_dir/subdomains" -type d -name "wp-content" -print0 2>/dev/null)
+    # Try subdomains structure (multisite)
+    elif [[ -d "$candidate/subdomains" ]]; then
+      log_verbose "      Found subdomains/ directory (multisite backup)"
 
-    if [[ -n "$best_content" && $best_score -gt 0 ]]; then
-      wp_content_dir="$best_content"
-      log_verbose "  Selected best wp-content: $wp_content_dir (score: $best_score)"
+      # Find the best subdomain wp-content using scoring
+      local best_content="" best_score=0
+      while IFS= read -r -d '' content_dir; do
+        local score
+        score=$(adapter_base_score_wp_content "$content_dir")
+        log_verbose "        Checking: $content_dir (score: $score)"
+        if [[ $score -gt $best_score ]]; then
+          best_score=$score
+          best_content="$content_dir"
+        fi
+      done < <(find "$candidate/subdomains" -type d -name "wp-content" -print0 2>/dev/null)
+
+      if [[ -n "$best_content" && $best_score -gt 0 ]]; then
+        wp_content_dir="$best_content"
+        log_verbose "      ✓ Valid wp-content in multisite: $wp_content_dir (score: $best_score)"
+        break
+      else
+        log_verbose "      ✗ No valid wp-content in subdomains/"
+      fi
+    else
+      log_verbose "      ✗ No wp-content/ or subdomains/ structure"
     fi
+  done <<<"$sorted_candidates"
+
+  # Fallback: Use base helper to search across all candidates
+  if [[ -z "$wp_content_dir" ]]; then
+    log_verbose "  Using fallback search across all files/ candidates..."
+    for candidate in "${candidate_dirs[@]}"; do
+      local found
+      found=$(adapter_base_find_best_wp_content "$candidate")
+      if [[ -n "$found" ]]; then
+        wp_content_dir="$found"
+        log_verbose "    ✓ Found via fallback: $wp_content_dir"
+        break
+      fi
+    done
   fi
 
-  # Fallback: Use base helper to find best wp-content directory anywhere in files/
   if [[ -z "$wp_content_dir" ]]; then
-    log_verbose "  Using fallback search for wp-content in files/"
-    wp_content_dir=$(adapter_base_find_best_wp_content "$files_dir")
-  fi
-
-  if [[ -z "$wp_content_dir" ]]; then
-    log_verbose "  No wp-content directory found in files/"
+    log_verbose "  No wp-content directory found in any files/ candidate"
     return 1
   fi
 
