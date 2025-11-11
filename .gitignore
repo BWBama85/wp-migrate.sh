@@ -37,3 +37,6 @@ temp/
 
 # Build artifacts (v2)
 dist/
+
+# Git worktrees
+.worktrees/
