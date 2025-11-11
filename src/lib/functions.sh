@@ -375,15 +375,17 @@ EOF
 
   # Report success
   local full_backup_path="$backup_dir/$backup_filename"
+  # Replace literal $HOME with ~ for user-friendly display
+  local display_path="${full_backup_path//\$HOME/~}"
   log ""
   log "✓ Backup created successfully"
   log ""
-  log "Backup location: $full_backup_path"
+  log "Backup location: $display_path"
   log "Source URL: $site_url"
   log "Database tables: $table_count"
   log ""
   log "To import this backup on another server:"
-  log "  ./wp-migrate.sh --archive $full_backup_path"
+  log "  ./wp-migrate.sh --archive $display_path"
   log ""
 
   return 0

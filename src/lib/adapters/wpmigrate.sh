@@ -41,11 +41,14 @@ adapter_wpmigrate_validate() {
     return 1
   fi
 
-  # Validate JSON structure
-  if ! unzip -p "$archive" "wpmigrate-backup.json" 2>/dev/null | jq -e '.format_version' >/dev/null 2>&1; then
-    errors+=("Invalid or missing format_version in metadata")
-    ADAPTER_VALIDATION_ERRORS+=("wp-migrate: ${errors[*]}")
-    return 1
+  # Validate JSON structure (only if jq is available during detection)
+  # If jq is missing, we'll catch it later via check_adapter_dependencies
+  if command -v jq >/dev/null 2>&1; then
+    if ! unzip -p "$archive" "wpmigrate-backup.json" 2>/dev/null | jq -e '.format_version' >/dev/null 2>&1; then
+      errors+=("Invalid or missing format_version in metadata")
+      ADAPTER_VALIDATION_ERRORS+=("wp-migrate: ${errors[*]}")
+      return 1
+    fi
   fi
 
   return 0

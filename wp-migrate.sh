@@ -562,11 +562,14 @@ adapter_wpmigrate_validate() {
     return 1
   fi
 
-  # Validate JSON structure
-  if ! unzip -p "$archive" "wpmigrate-backup.json" 2>/dev/null | jq -e '.format_version' >/dev/null 2>&1; then
-    errors+=("Invalid or missing format_version in metadata")
-    ADAPTER_VALIDATION_ERRORS+=("wp-migrate: ${errors[*]}")
-    return 1
+  # Validate JSON structure (only if jq is available during detection)
+  # If jq is missing, we'll catch it later via check_adapter_dependencies
+  if command -v jq >/dev/null 2>&1; then
+    if ! unzip -p "$archive" "wpmigrate-backup.json" 2>/dev/null | jq -e '.format_version' >/dev/null 2>&1; then
+      errors+=("Invalid or missing format_version in metadata")
+      ADAPTER_VALIDATION_ERRORS+=("wp-migrate: ${errors[*]}")
+      return 1
+    fi
   fi
 
   return 0
@@ -2024,15 +2027,17 @@ EOF
 
   # Report success
   local full_backup_path="$backup_dir/$backup_filename"
+  # Replace literal $HOME with ~ for user-friendly display
+  local display_path="${full_backup_path//\$HOME/~}"
   log ""
   log "✓ Backup created successfully"
   log ""
-  log "Backup location: $full_backup_path"
+  log "Backup location: $display_path"
   log "Source URL: $site_url"
   log "Database tables: $table_count"
   log ""
   log "To import this backup on another server:"
-  log "  ./wp-migrate.sh --archive $full_backup_path"
+  log "  ./wp-migrate.sh --archive $display_path"
   log ""
 
   return 0
