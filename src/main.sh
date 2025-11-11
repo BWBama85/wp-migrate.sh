@@ -263,7 +263,9 @@ fi
 # ----------
 # Preflight
 # ----------
-[[ -f "./wp-config.php" ]] || err "WordPress installation not detected. wp-config.php not found in current directory.
+# Only check for local wp-config.php in modes that operate on local WordPress
+if [[ "$MIGRATION_MODE" == "push" || "$MIGRATION_MODE" == "archive" ]]; then
+  [[ -f "./wp-config.php" ]] || err "WordPress installation not detected. wp-config.php not found in current directory.
 
 Current directory: $PWD
 
@@ -273,6 +275,7 @@ Next steps:
   2. If wp-config.php exists elsewhere, cd to that directory first
   3. For push mode: Run from SOURCE WordPress root
   4. For archive mode: Run from DESTINATION WordPress root"
+fi
 
 if [[ "$MIGRATION_MODE" == "push" ]]; then
   [[ -n "$DEST_HOST" && -n "$DEST_ROOT" ]] || err "Push mode requires both --dest-host and --dest-root flags.
@@ -316,7 +319,10 @@ Next steps:
   fi
 fi
 
-needs wp
+# Only check for wp-cli in modes that operate on local WordPress
+if [[ "$MIGRATION_MODE" == "push" || "$MIGRATION_MODE" == "archive" ]]; then
+  needs wp
+fi
 
 if [[ "$MIGRATION_MODE" == "push" ]]; then
   needs rsync
@@ -325,6 +331,8 @@ if [[ "$MIGRATION_MODE" == "push" ]]; then
 elif [[ "$MIGRATION_MODE" == "archive" ]]; then
   # Check adapter-specific dependencies
   check_adapter_dependencies "$ARCHIVE_ADAPTER"
+elif [[ "$MIGRATION_MODE" == "backup" ]]; then
+  needs ssh
 fi
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
