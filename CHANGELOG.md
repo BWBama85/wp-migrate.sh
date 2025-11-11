@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2025-11-11
+
+**📦 Backup Creation**
+
+This minor release adds native backup creation capabilities, allowing you to create WordPress backups on source servers via SSH and import them using the existing archive mode.
+
 ### Added
 
 - **Backup creation mode**: New `--create-backup` flag creates WordPress backups on source servers via SSH
@@ -14,14 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Includes database dump and wp-content directory
   - Automatically excludes cache directories, object cache files, and debug logs
   - Backups compatible with existing `--archive` import mode
+  - Intelligent disk space checking ensures adequate space before creating backup
 - **wp-migrate adapter**: New native archive format with JSON metadata
   - Validates backups via `wpmigrate-backup.json` signature file
   - Simple structure: metadata, database.sql, wp-content/
   - First in adapter detection order for fastest validation
+  - Graceful jq dependency handling during auto-detection
 - **Backup creation flags**:
   - `--source-host`: SSH connection to source server
   - `--source-root`: WordPress root path on source server
   - `--create-backup`: Enable backup creation mode
+
+### Fixed
+
+- Binary unit support (KiB/MiB/GiB/TiB) in database size calculation for accurate disk space estimation
+- $HOME path display now shows ~ instead of literal $HOME in success messages for better copy/paste compatibility
 
 ## [2.7.0] - 2025-10-21
 
