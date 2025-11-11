@@ -7,6 +7,7 @@ while [[ $# -gt 0 ]]; do
     --dest-root) DEST_ROOT="${2:-}"; shift 2 ;;
     --archive) ARCHIVE_FILE="${2:-}"; shift 2 ;;
     --archive-type) ARCHIVE_TYPE="${2:-}"; shift 2 ;;
+    --create-backup) CREATE_BACKUP=true; shift ;;
     --duplicator-archive)
       # Backward compatibility: treat as --archive with duplicator type
       ARCHIVE_FILE="${2:-}"
@@ -27,6 +28,8 @@ while [[ $# -gt 0 ]]; do
     --no-maint-source) MAINTENANCE_SOURCE=false; shift ;;
     --stellarsites) STELLARSITES_MODE=true; PRESERVE_DEST_PLUGINS=true; shift ;;
     --preserve-dest-plugins) PRESERVE_DEST_PLUGINS=true; shift ;;
+    --source-host) SOURCE_HOST="${2:-}"; shift 2 ;;
+    --source-root) SOURCE_ROOT="${2:-}"; shift 2 ;;
     --rsync-opt) EXTRA_RSYNC_OPTS+=("${2:-}"); shift 2 ;;
     --ssh-opt)
       val="${2:-}"; shift 2
@@ -106,6 +109,46 @@ Next steps:
   1. Navigate to your WordPress root: cd /var/www/html
   2. Verify wp-config.php exists: ls -la wp-config.php
   3. Run rollback again from the correct directory"
+
+elif $CREATE_BACKUP; then
+  MIGRATION_MODE="backup"
+  log "Backup creation mode enabled"
+
+  # Validate required parameters
+  [[ -n "$SOURCE_HOST" ]] || err "--create-backup requires --source-host
+
+Example:
+  ./wp-migrate.sh --source-host user@source.example.com \\
+                  --source-root /var/www/html \\
+                  --create-backup"
+
+  [[ -n "$SOURCE_ROOT" ]] || err "--create-backup requires --source-root
+
+Example:
+  ./wp-migrate.sh --source-host user@source.example.com \\
+                  --source-root /var/www/html \\
+                  --create-backup"
+
+  # Backup mode is mutually exclusive with other modes
+  if [[ -n "$ARCHIVE_FILE" ]]; then
+    err "--create-backup is mutually exclusive with --archive
+
+You cannot create a backup and import one simultaneously.
+
+Choose one:
+  • Create backup: ./wp-migrate.sh --source-host ... --create-backup
+  • Import backup: ./wp-migrate.sh --archive /path/to/backup.zip"
+  fi
+
+  if [[ -n "$DEST_HOST" ]]; then
+    err "--create-backup is mutually exclusive with --dest-host
+
+You cannot create a backup and push to destination simultaneously.
+
+Choose one:
+  • Create backup: ./wp-migrate.sh --source-host ... --create-backup
+  • Push migration: ./wp-migrate.sh --dest-host ... --dest-root ..."
+  fi
 
 elif [[ -n "$ARCHIVE_FILE" ]]; then
   MIGRATION_MODE="archive"
@@ -1498,4 +1541,29 @@ else
 fi
 
 # End of archive mode workflow
+fi
+
+# ==================================================================================
+# BACKUP MODE WORKFLOW
+# ==================================================================================
+# Execute backup mode
+if [[ "$MIGRATION_MODE" == "backup" ]]; then
+  if $DRY_RUN; then
+    log "=== DRY RUN MODE ==="
+    log "Would create backup with:"
+    log "  Source: $SOURCE_HOST:$SOURCE_ROOT"
+    log "  Destination: $BACKUP_OUTPUT_DIR/<domain>-<timestamp>.zip"
+    log ""
+    log "Validation checks that would run:"
+    log "  ✓ SSH connectivity to $SOURCE_HOST"
+    log "  ✓ WordPress installation at $SOURCE_ROOT"
+    log "  ✓ wp-cli availability"
+    log "  ✓ Disk space requirements"
+    log ""
+    log "No backup created (dry-run mode)"
+    exit 0
+  fi
+
+  create_backup
+  exit 0
 fi
