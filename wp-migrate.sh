@@ -1776,9 +1776,14 @@ calculate_backup_size() {
   local db_size wp_content_size
 
   # Get database size via wp-cli (sum all table sizes from CSV, convert bytes to KB)
+  # CSV format: Name,Size,Index,Engine where Size is quoted with units like "5865472 B"
   local db_size_bytes
   # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
-  db_size_bytes=$(ssh "${SSH_OPTS[@]}" "$host" "cd '$root' && wp db size --format=csv --path='$root'" | tail -n +2 | awk -F',' '{sum += $2} END {print int(sum)}' || echo "0")
+  db_size_bytes=$(ssh "${SSH_OPTS[@]}" "$host" "cd '$root' && wp db size --format=csv --path='$root'" | tail -n +2 | awk -F',' '{
+    gsub(/"/,"",$2);        # Remove quotes
+    sub(/ .*/,"",$2);       # Remove unit suffix (space + letter)
+    sum += $2
+  } END {print int(sum)}' || echo "0")
 
   # Convert bytes to KB for consistent units with du -sk
   db_size=$((db_size_bytes / 1024))
@@ -1891,27 +1896,28 @@ Install wp-cli:
   sudo mv wp-cli.phar /usr/local/bin/wp"
   fi
 
-  # Check disk space
+  # Create backup directory first (needed for disk space check)
+  local backup_dir="$BACKUP_OUTPUT_DIR"
+  create_backup_directory "$source_host" "$backup_dir"
+
+  # Check disk space on the filesystem where backups will be stored
   log_verbose "Checking available disk space..."
   local required_space available_space
   required_space=$(calculate_backup_size "$source_host" "$source_root")
-  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
-  available_space=$(ssh "${SSH_OPTS[@]}" "$source_host" "df -P ~ | tail -1 | awk '{print \$4}'")
+  # shellcheck disable=SC2029  # Intentional client-side expansion; check actual backup directory
+  available_space=$(ssh "${SSH_OPTS[@]}" "$source_host" "df -P $backup_dir | tail -1 | awk '{print \$4}'")
 
   if [[ $available_space -lt $required_space ]]; then
     err "Insufficient disk space on source server
 
 Required: ${required_space}KB (estimated)
 Available: ${available_space}KB
+Backup directory: $backup_dir
 
 Free up space or use a different backup location."
   fi
 
   log_verbose "Disk space check passed (required: ${required_space}KB, available: ${available_space}KB)"
-
-  # Create backup directory
-  local backup_dir="$BACKUP_OUTPUT_DIR"
-  create_backup_directory "$source_host" "$backup_dir"
 
   # Generate backup filename
   local site_url table_count sanitized_domain timestamp backup_filename
