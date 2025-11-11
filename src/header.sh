@@ -41,8 +41,8 @@ CREATE_BACKUP=false          # Enable backup creation mode (--create-backup flag
 SOURCE_HOST=""               # Source server SSH connection string (user@host)
 # shellcheck disable=SC2034  # Used in main.sh for backup mode
 SOURCE_ROOT=""               # Absolute path to WordPress root on source server
-# shellcheck disable=SC2034,SC2088  # Used in functions.sh; tilde expands remotely via SSH
-BACKUP_OUTPUT_DIR="~/wp-migrate-backups"  # Directory on source server for backups
+# shellcheck disable=SC2034  # Used in functions.sh for backup mode
+BACKUP_OUTPUT_DIR="\$HOME/wp-migrate-backups"  # Directory on source server for backups (expands remotely)
 
 # Use a single-element -o form to avoid dangling -o errors if mis-expanded
 SSH_OPTS=(-oStrictHostKeyChecking=accept-new)

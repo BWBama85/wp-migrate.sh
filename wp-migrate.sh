@@ -41,8 +41,8 @@ CREATE_BACKUP=false          # Enable backup creation mode (--create-backup flag
 SOURCE_HOST=""               # Source server SSH connection string (user@host)
 # shellcheck disable=SC2034  # Used in main.sh for backup mode
 SOURCE_ROOT=""               # Absolute path to WordPress root on source server
-# shellcheck disable=SC2034,SC2088  # Used in functions.sh; tilde expands remotely via SSH
-BACKUP_OUTPUT_DIR="~/wp-migrate-backups"  # Directory on source server for backups
+# shellcheck disable=SC2034  # Used in functions.sh for backup mode
+BACKUP_OUTPUT_DIR="\$HOME/wp-migrate-backups"  # Directory on source server for backups (expands remotely)
 
 # Use a single-element -o form to avoid dangling -o errors if mis-expanded
 SSH_OPTS=(-oStrictHostKeyChecking=accept-new)
@@ -1775,9 +1775,13 @@ calculate_backup_size() {
   local host="$1" root="$2"
   local db_size wp_content_size
 
-  # Get database size via wp-cli
+  # Get database size via wp-cli (sum all table sizes from CSV, convert bytes to KB)
+  local db_size_bytes
   # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
-  db_size=$(ssh "${SSH_OPTS[@]}" "$host" "cd '$root' && wp db size --format=csv --path='$root'" | tail -1 | cut -d',' -f2 || echo "0")
+  db_size_bytes=$(ssh "${SSH_OPTS[@]}" "$host" "cd '$root' && wp db size --format=csv --path='$root'" | tail -n +2 | awk -F',' '{sum += $2} END {print int(sum)}' || echo "0")
+
+  # Convert bytes to KB for consistent units with du -sk
+  db_size=$((db_size_bytes / 1024))
 
   # Get wp-content size (excluding cache, logs, etc.)
   # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
@@ -1798,8 +1802,8 @@ create_backup_directory() {
 
   log_verbose "Creating backup directory: $backup_dir"
 
-  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
-  if ! ssh "${SSH_OPTS[@]}" "$host" "mkdir -p '$backup_dir'" 2>/dev/null; then
+  # shellcheck disable=SC2029  # Intentional client-side expansion; $HOME expands remotely
+  if ! ssh "${SSH_OPTS[@]}" "$host" "mkdir -p $backup_dir" 2>/dev/null; then
     err "Failed to create backup directory: $backup_dir"
     # shellcheck disable=SC2317  # err() exits script, but shellcheck doesn't know
     return 1
@@ -1982,8 +1986,8 @@ EOF
 
   # Create zip archive
   log "Creating archive..."
-  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
-  if ! ssh "${SSH_OPTS[@]}" "$source_host" "cd '$temp_dir' && zip -r '$backup_dir/$backup_filename' ." >/dev/null 2>&1; then
+  # shellcheck disable=SC2029  # Intentional client-side expansion; $HOME expands remotely in backup_dir
+  if ! ssh "${SSH_OPTS[@]}" "$source_host" "cd '$temp_dir' && zip -r $backup_dir/'$backup_filename' ." >/dev/null 2>&1; then
     # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
     ssh "${SSH_OPTS[@]}" "$source_host" "rm -rf '$temp_dir'" 2>/dev/null
     err "Failed to create zip archive"
@@ -3455,6 +3459,13 @@ Please install unzip (e.g., apt-get install unzip or brew install unzip)"
     err "Missing required tool for archive detection: tar
 Jetpack Backup archives require tar.
 Please install tar (usually pre-installed; check your system)"
+  fi
+
+  # wp-migrate adapter requires jq for JSON metadata validation
+  if ! command -v jq >/dev/null 2>&1; then
+    err "Missing required tool for archive detection: jq
+wp-migrate backup archives require jq for metadata validation.
+Please install jq (e.g., apt-get install jq or brew install jq)"
   fi
 
   # Detect or load adapter
