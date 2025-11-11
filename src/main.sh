@@ -367,6 +367,10 @@ if $DRY_RUN; then
   LOG_FILE="/dev/null"
   if [[ "$MIGRATION_MODE" == "push" ]]; then
     log "Starting push migration (dry-run preview; no log file will be written)."
+  elif [[ "$MIGRATION_MODE" == "backup-local" ]]; then
+    log "Starting local backup creation (dry-run preview; no log file will be written)."
+  elif [[ "$MIGRATION_MODE" == "backup-remote" ]]; then
+    log "Starting remote backup creation (dry-run preview; no log file will be written)."
   else
     log "Starting archive import (dry-run preview; no log file will be written)."
   fi
@@ -375,6 +379,12 @@ else
   if [[ "$MIGRATION_MODE" == "push" ]]; then
     LOG_FILE="$LOG_DIR/migrate-wpcontent-push-$STAMP.log"
     log "Starting push migration. Log: $LOG_FILE"
+  elif [[ "$MIGRATION_MODE" == "backup-local" ]]; then
+    LOG_FILE="$LOG_DIR/migrate-backup-local-$STAMP.log"
+    log "Starting local backup creation. Log: $LOG_FILE"
+  elif [[ "$MIGRATION_MODE" == "backup-remote" ]]; then
+    LOG_FILE="$LOG_DIR/migrate-backup-remote-$STAMP.log"
+    log "Starting remote backup creation. Log: $LOG_FILE"
   else
     LOG_FILE="$LOG_DIR/migrate-archive-import-$STAMP.log"
     log "Starting archive import. Log: $LOG_FILE"

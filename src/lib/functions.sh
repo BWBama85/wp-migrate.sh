@@ -484,8 +484,9 @@ Verify:
 
   # 2. PREPARE BACKUP
 
-  # Create backup directory
-  local backup_dir="$HOME/wp-migrate-backups"
+  # Create backup directory (expand $HOME locally for local mode)
+  local backup_dir
+  backup_dir=$(eval echo "$BACKUP_OUTPUT_DIR")
   mkdir -p "$backup_dir" || err "Failed to create backup directory: $backup_dir"
 
   # Get site information
@@ -555,7 +556,7 @@ Verify:
 {
   "format_version": "1.0",
   "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "wp_migrate_version": "2.8.0",
+  "wp_migrate_version": "$VERSION",
   "source_url": "$site_url",
   "database_tables": $table_count,
   "backup_mode": "local",
