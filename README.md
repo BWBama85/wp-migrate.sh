@@ -154,6 +154,48 @@ Common examples:
 
 **Note:** Currently supports **Duplicator**, **Jetpack Backup**, and **Solid Backups** archives. The extensible adapter architecture supports adding UpdraftPlus and other formats—contributors can add adapters following the guide in [src/lib/adapters/README.md](src/lib/adapters/README.md).
 
+### Backup Creation Mode
+
+Create a backup on a source WordPress server via SSH. The backup is stored on the source server and can later be imported using archive mode.
+
+```bash
+./wp-migrate.sh --source-host user@source.example.com \
+                --source-root /var/www/html \
+                --create-backup
+```
+
+**Features:**
+- Creates timestamped ZIP archive on source server
+- Includes database dump and wp-content directory
+- Automatically excludes cache directories, object cache files, and debug logs
+- Stores backup in `~/wp-migrate-backups/` on source server
+- Compatible with `--archive` import mode
+
+**Backup location:** `~/wp-migrate-backups/{domain}-{YYYY-MM-DD-HHMMSS}.zip`
+
+**Example workflow:**
+```bash
+# Step 1: Create backup on source
+./wp-migrate.sh --source-host user@source.example.com \
+                --source-root /var/www/html \
+                --create-backup
+
+# Output: Backup created: ~/wp-migrate-backups/example-com-2025-11-11-143022.zip
+
+# Step 2: Download backup (manual step)
+scp user@source.example.com:~/wp-migrate-backups/example-com-2025-11-11-143022.zip .
+
+# Step 3: Import on destination
+./wp-migrate.sh --archive example-com-2025-11-11-143022.zip
+```
+
+**Dry-run preview:**
+```bash
+./wp-migrate.sh --source-host user@source.example.com \
+                --source-root /var/www/html \
+                --create-backup --dry-run
+```
+
 ### Rollback Mode
 ```bash
 ./wp-migrate.sh --rollback [options]

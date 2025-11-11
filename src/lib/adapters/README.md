@@ -194,6 +194,75 @@ Create a test archive and verify:
 
 ## Archive Format Examples
 
+## wp-migrate Backup
+
+**Format:** Native wp-migrate backup format
+**Extension:** .zip
+**Adapter:** `wpmigrate`
+
+### Archive Structure
+
+```
+backup-name-2025-11-11-143022.zip
+├── wpmigrate-backup.json     # Metadata (signature file)
+├── database.sql              # Full database dump
+└── wp-content/               # Filtered WordPress content
+    ├── plugins/
+    ├── themes/
+    └── uploads/
+```
+
+### Metadata File
+
+The `wpmigrate-backup.json` file serves as both signature and metadata:
+
+```json
+{
+  "format_version": "1.0",
+  "created_at": "2025-11-11T14:30:22Z",
+  "wp_migrate_version": "2.7.0",
+  "source_url": "https://example.com",
+  "database_tables": 23,
+  "exclusions": [
+    "wp-content/cache/",
+    "wp-content/*/cache/",
+    "wp-content/object-cache.php",
+    "wp-content/advanced-cache.php",
+    "wp-content/debug.log",
+    "wp-content/*.log"
+  ]
+}
+```
+
+### Validation
+
+1. Must be ZIP format
+2. Must contain `wpmigrate-backup.json` at root
+3. JSON must be valid and contain `format_version` field
+
+### Creation
+
+Created via `--create-backup` flag:
+
+```bash
+./wp-migrate.sh --source-host user@source.example.com \
+                --source-root /var/www/html \
+                --create-backup
+```
+
+### Dependencies
+
+- `unzip` - Archive extraction
+- `file` - Archive type detection
+- `jq` - JSON validation
+
+### Design Rationale
+
+- **Simple structure**: Single SQL file, straightforward directory layout
+- **Metadata-driven**: JSON enables versioning and future enhancements
+- **Purpose-built**: Explicitly wp-migrate format (not masquerading as another tool)
+- **First-class support**: First in adapter detection order
+
 ### Duplicator
 - **Format:** ZIP
 - **Database:** `dup-installer/dup-database__[hash].sql`

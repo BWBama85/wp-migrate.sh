@@ -8,7 +8,7 @@ wp_local() {
 # ========================================
 
 # List of available adapters (add new adapters here)
-AVAILABLE_ADAPTERS=("duplicator" "jetpack" "solidbackups" "solidbackups_nextgen")
+AVAILABLE_ADAPTERS=("wpmigrate" "duplicator" "jetpack" "solidbackups" "solidbackups_nextgen")
 
 # Verify adapter exists (adapter functions already loaded in built script)
 # Usage: load_adapter <adapter_name>
@@ -100,6 +100,296 @@ check_adapter_dependencies() {
 # ========================================
 # End Archive Adapter System
 # ========================================
+
+# ========================================
+# Backup Creation Helpers
+# ========================================
+
+# Sanitize domain name for use in filename
+# Usage: sanitize_domain_for_filename <domain>
+# Returns: echoes sanitized domain (dots/slashes → dashes)
+sanitize_domain_for_filename() {
+  local domain="$1"
+  # Remove protocol if present
+  domain="${domain#http://}"
+  domain="${domain#https://}"
+  # Remove trailing slashes
+  domain="${domain%/}"
+  # Replace dots and slashes with dashes
+  echo "$domain" | tr './' '--'
+}
+
+# Calculate estimated backup size on source server
+# Usage: calculate_backup_size <source_host> <source_root>
+# Returns: echoes size in KB
+calculate_backup_size() {
+  local host="$1" root="$2"
+  local db_size wp_content_size
+
+  # Get database size via wp-cli (sum all table sizes from CSV, convert bytes to KB)
+  # CSV format: Name,Size,Index,Engine where Size is quoted with units like "5865472 B", "5.7 MB", etc.
+  local db_size_bytes
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  db_size_bytes=$(ssh "${SSH_OPTS[@]}" "$host" "cd '$root' && wp db size --format=csv --path='$root'" | tail -n +2 | awk -F',' '{
+    gsub(/"/,"",$2);                                    # Remove quotes
+    if (match($2, /([0-9.]+) *([KMGT]?i?B)/, arr)) {   # Parse number and unit (supports both decimal and binary units)
+      value = arr[1];
+      unit = arr[2];
+
+      # Convert to bytes based on unit (decimal SI units)
+      if (unit == "B")        multiplier = 1;
+      else if (unit == "KB")  multiplier = 1024;
+      else if (unit == "MB")  multiplier = 1024*1024;
+      else if (unit == "GB")  multiplier = 1024*1024*1024;
+      else if (unit == "TB")  multiplier = 1024*1024*1024*1024;
+      # Binary IEC units (KiB, MiB, GiB, TiB)
+      else if (unit == "KiB") multiplier = 1024;
+      else if (unit == "MiB") multiplier = 1024*1024;
+      else if (unit == "GiB") multiplier = 1024*1024*1024;
+      else if (unit == "TiB") multiplier = 1024*1024*1024*1024;
+      else                    multiplier = 1;          # Default to bytes
+
+      sum += value * multiplier;
+    }
+  } END {print int(sum)}' || echo "0")
+
+  # Convert bytes to KB for consistent units with du -sk
+  db_size=$((db_size_bytes / 1024))
+
+  # Get wp-content size (excluding cache, logs, etc.)
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  wp_content_size=$(ssh "${SSH_OPTS[@]}" "$host" "du -sk '$root/wp-content' --exclude='cache' --exclude='*/cache' --exclude='*.log' 2>/dev/null" | awk '{print $1}' || echo "0")
+
+  # Add 50% buffer for zip compression overhead
+  local total=$((db_size + wp_content_size))
+  local with_buffer=$((total + total / 2))
+
+  echo "$with_buffer"
+}
+
+# Create backup directory on source server
+# Usage: create_backup_directory <source_host> <backup_dir>
+# Returns: 0 on success, 1 on failure
+create_backup_directory() {
+  local host="$1" backup_dir="$2"
+
+  log_verbose "Creating backup directory: $backup_dir"
+
+  # shellcheck disable=SC2029  # Intentional client-side expansion; $HOME expands remotely
+  if ! ssh "${SSH_OPTS[@]}" "$host" "mkdir -p $backup_dir" 2>/dev/null; then
+    err "Failed to create backup directory: $backup_dir"
+    # shellcheck disable=SC2317  # err() exits script, but shellcheck doesn't know
+    return 1
+  fi
+
+  return 0
+}
+
+# Generate wpmigrate-backup.json metadata file
+# Usage: generate_backup_metadata <temp_dir> <source_url> <table_count>
+# Returns: 0 on success
+generate_backup_metadata() {
+  local temp_dir="$1" source_url="$2" table_count="$3"
+  local metadata_file="$temp_dir/wpmigrate-backup.json"
+  local timestamp
+  timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+  cat > "$metadata_file" <<EOF
+{
+  "format_version": "1.0",
+  "created_at": "$timestamp",
+  "wp_migrate_version": "$VERSION",
+  "source_url": "$source_url",
+  "database_tables": $table_count,
+  "exclusions": [
+    "wp-content/cache/",
+    "wp-content/*/cache/",
+    "wp-content/object-cache.php",
+    "wp-content/advanced-cache.php",
+    "wp-content/debug.log",
+    "wp-content/*.log"
+  ]
+}
+EOF
+
+  return 0
+}
+
+# Create backup on source server
+# Usage: create_backup
+# Returns: 0 on success, exits on failure
+create_backup() {
+  local source_host="$SOURCE_HOST"
+  local source_root="$SOURCE_ROOT"
+
+  log "Creating backup on source server: $source_host"
+  log "WordPress root: $source_root"
+
+  # Validate SSH connectivity
+  log_verbose "Testing SSH connection..."
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  if ! ssh "${SSH_OPTS[@]}" "$source_host" "true" 2>/dev/null; then
+    err "Cannot connect to source host: $source_host
+
+Verify:
+  1. SSH access is configured
+  2. Host is reachable
+  3. Credentials are correct"
+  fi
+
+  # Verify WordPress installation exists
+  log_verbose "Verifying WordPress installation..."
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  if ! ssh "${SSH_OPTS[@]}" "$source_host" "test -f '$source_root/wp-config.php'" 2>/dev/null; then
+    err "WordPress installation not found at: $source_root
+
+wp-config.php does not exist.
+
+Verify:
+  1. Path is correct
+  2. WordPress is installed at this location"
+  fi
+
+  # Verify wp-cli is available
+  log_verbose "Checking for wp-cli..."
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  if ! ssh "${SSH_OPTS[@]}" "$source_host" "command -v wp" 2>/dev/null; then
+    err "wp-cli not found on source server
+
+wp-cli is required for database export.
+
+Install wp-cli:
+  curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+  chmod +x wp-cli.phar
+  sudo mv wp-cli.phar /usr/local/bin/wp"
+  fi
+
+  # Create backup directory first (needed for disk space check)
+  local backup_dir="$BACKUP_OUTPUT_DIR"
+  create_backup_directory "$source_host" "$backup_dir"
+
+  # Check disk space on the filesystem where backups will be stored
+  log_verbose "Checking available disk space..."
+  local required_space available_space
+  required_space=$(calculate_backup_size "$source_host" "$source_root")
+  # shellcheck disable=SC2029  # Intentional client-side expansion; check actual backup directory
+  available_space=$(ssh "${SSH_OPTS[@]}" "$source_host" "df -P $backup_dir | tail -1 | awk '{print \$4}'")
+
+  if [[ $available_space -lt $required_space ]]; then
+    err "Insufficient disk space on source server
+
+Required: ${required_space}KB (estimated)
+Available: ${available_space}KB
+Backup directory: $backup_dir
+
+Free up space or use a different backup location."
+  fi
+
+  log_verbose "Disk space check passed (required: ${required_space}KB, available: ${available_space}KB)"
+
+  # Generate backup filename
+  local site_url table_count sanitized_domain timestamp backup_filename
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  site_url=$(ssh "${SSH_OPTS[@]}" "$source_host" "cd '$source_root' && wp option get siteurl --path='$source_root'" 2>/dev/null)
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  table_count=$(ssh "${SSH_OPTS[@]}" "$source_host" "cd '$source_root' && wp db tables --path='$source_root' | wc -l" 2>/dev/null | tr -d ' ')
+  sanitized_domain=$(sanitize_domain_for_filename "$site_url")
+  timestamp=$(date -u +%Y-%m-%d-%H%M%S)
+  backup_filename="${sanitized_domain}-${timestamp}.zip"
+
+  log "Backup filename: $backup_filename"
+
+  # Create temp directory on source server
+  local temp_dir
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  temp_dir=$(ssh "${SSH_OPTS[@]}" "$source_host" "mktemp -d /tmp/wp-migrate-backup-XXXXX" 2>/dev/null)
+
+  if [[ -z "$temp_dir" ]]; then
+    err "Failed to create temporary directory on source server"
+  fi
+
+  log_verbose "Created temp directory: $temp_dir"
+
+  # Export database
+  log "Exporting database..."
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  if ! ssh "${SSH_OPTS[@]}" "$source_host" "cd '$source_root' && wp db export '$temp_dir/database.sql' --path='$source_root'" 2>/dev/null; then
+    # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+    ssh "${SSH_OPTS[@]}" "$source_host" "rm -rf '$temp_dir'" 2>/dev/null
+    err "Failed to export database"
+  fi
+
+  log_verbose "Database exported successfully"
+
+  # Create metadata file
+  log_verbose "Generating metadata..."
+  # We'll generate this locally and transfer it
+  local local_temp_meta
+  local_temp_meta=$(mktemp)
+  cat > "$local_temp_meta" <<EOF
+{
+  "format_version": "1.0",
+  "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "wp_migrate_version": "$VERSION",
+  "source_url": "$site_url",
+  "database_tables": $table_count,
+  "exclusions": [
+    "wp-content/cache/",
+    "wp-content/*/cache/",
+    "wp-content/object-cache.php",
+    "wp-content/advanced-cache.php",
+    "wp-content/debug.log",
+    "wp-content/*.log"
+  ]
+}
+EOF
+
+  scp "${SSH_OPTS[@]}" "$local_temp_meta" "$source_host:$temp_dir/wpmigrate-backup.json" >/dev/null 2>&1
+  rm -f "$local_temp_meta"
+
+  # Sync wp-content with exclusions
+  log "Syncing wp-content..."
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  if ! ssh "${SSH_OPTS[@]}" "$source_host" "rsync -a --exclude='cache/' --exclude='*/cache/' --exclude='object-cache.php' --exclude='advanced-cache.php' --exclude='debug.log' --exclude='*.log' '$source_root/wp-content/' '$temp_dir/wp-content/'" 2>/dev/null; then
+    # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+    ssh "${SSH_OPTS[@]}" "$source_host" "rm -rf '$temp_dir'" 2>/dev/null
+    err "Failed to sync wp-content"
+  fi
+
+  log_verbose "wp-content synced successfully"
+
+  # Create zip archive
+  log "Creating archive..."
+  # shellcheck disable=SC2029  # Intentional client-side expansion; $HOME expands remotely in backup_dir
+  if ! ssh "${SSH_OPTS[@]}" "$source_host" "cd '$temp_dir' && zip -r $backup_dir/'$backup_filename' ." >/dev/null 2>&1; then
+    # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+    ssh "${SSH_OPTS[@]}" "$source_host" "rm -rf '$temp_dir'" 2>/dev/null
+    err "Failed to create zip archive"
+  fi
+
+  log_verbose "Archive created successfully"
+
+  # Clean up temp directory
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  ssh "${SSH_OPTS[@]}" "$source_host" "rm -rf '$temp_dir'" 2>/dev/null
+
+  # Report success
+  local full_backup_path="$backup_dir/$backup_filename"
+  # Replace literal $HOME with ~ for user-friendly display
+  local display_path="${full_backup_path//\$HOME/~}"
+  log ""
+  log "✓ Backup created successfully"
+  log ""
+  log "Backup location: $display_path"
+  log "Source URL: $site_url"
+  log "Database tables: $table_count"
+  log ""
+  log "To import this backup on another server:"
+  log "  ./wp-migrate.sh --archive $display_path"
+  log ""
+
+  return 0
+}
 
 # Build a safe "ssh ..." string for rsync -e
 ssh_cmd_string() {
@@ -1282,6 +1572,9 @@ ARCHIVE MODE (run on DESTINATION WP root):
 ROLLBACK MODE (run on DESTINATION WP root):
   $(basename "$0") --rollback [--rollback-backup </path/to/backup>]
 
+BACKUP CREATION MODE:
+  $(basename "$0") --source-host <user@host> --source-root </abs/path> --create-backup
+
 Required (choose one mode):
   --dest-host <user@dest.example.com>
   --dest-root </absolute/path/to/destination/wp-root>
@@ -1306,6 +1599,19 @@ Required (choose one mode):
   --rollback-backup </path/to/backup.sql.gz>
       Optional: Explicitly specify which database backup to restore
       (only used with --rollback)
+
+  --create-backup
+      Backup creation mode: create WordPress backup on source server via SSH
+      Creates timestamped ZIP archive with database and wp-content
+      (mutually exclusive with --dest-host and --archive)
+
+  --source-host <user@source.example.com>
+      SSH connection string for backup creation mode
+      (required with --create-backup)
+
+  --source-root </absolute/path/to/wordpress>
+      Absolute path to WordPress root on source server
+      (required with --create-backup)
 
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
@@ -1344,6 +1650,11 @@ Examples (rollback mode):
   $(basename "$0") --rollback --dry-run
   $(basename "$0") --rollback --rollback-backup /path/to/specific/backup.sql.gz
   $(basename "$0") --rollback --yes
+
+Examples (backup creation mode):
+  $(basename "$0") --source-host user@source.example.com --source-root /var/www/html --create-backup
+  $(basename "$0") --source-host user@source.example.com --source-root /var/www/html --create-backup --dry-run
+  $(basename "$0") --source-host user@source.example.com --source-root /var/www/html --create-backup --verbose
 USAGE
 }
 

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Backup creation mode**: New `--create-backup` flag creates WordPress backups on source servers via SSH
+  - Stores backups in `~/wp-migrate-backups/` with timestamped filenames
+  - Includes database dump and wp-content directory
+  - Automatically excludes cache directories, object cache files, and debug logs
+  - Backups compatible with existing `--archive` import mode
+- **wp-migrate adapter**: New native archive format with JSON metadata
+  - Validates backups via `wpmigrate-backup.json` signature file
+  - Simple structure: metadata, database.sql, wp-content/
+  - First in adapter detection order for fastest validation
+- **Backup creation flags**:
+  - `--source-host`: SSH connection to source server
+  - `--source-root`: WordPress root path on source server
+  - `--create-backup`: Enable backup creation mode
+
 ## [2.7.0] - 2025-10-21
 
 **📦 Archive Format Support**

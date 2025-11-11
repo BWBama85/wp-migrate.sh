@@ -19,6 +19,7 @@ test:
 	@cat src/header.sh \
 	     src/lib/core.sh \
 	     src/lib/adapters/base.sh \
+	     src/lib/adapters/wpmigrate.sh \
 	     src/lib/adapters/duplicator.sh \
 	     src/lib/adapters/jetpack.sh \
 	     src/lib/adapters/solidbackups.sh \
@@ -37,6 +38,7 @@ build: test
 	@cat src/header.sh \
 	     src/lib/core.sh \
 	     src/lib/adapters/base.sh \
+	     src/lib/adapters/wpmigrate.sh \
 	     src/lib/adapters/duplicator.sh \
 	     src/lib/adapters/jetpack.sh \
 	     src/lib/adapters/solidbackups.sh \
