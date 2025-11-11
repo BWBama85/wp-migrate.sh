@@ -127,13 +127,25 @@ calculate_backup_size() {
   local db_size wp_content_size
 
   # Get database size via wp-cli (sum all table sizes from CSV, convert bytes to KB)
-  # CSV format: Name,Size,Index,Engine where Size is quoted with units like "5865472 B"
+  # CSV format: Name,Size,Index,Engine where Size is quoted with units like "5865472 B", "5.7 MB", etc.
   local db_size_bytes
   # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
   db_size_bytes=$(ssh "${SSH_OPTS[@]}" "$host" "cd '$root' && wp db size --format=csv --path='$root'" | tail -n +2 | awk -F',' '{
-    gsub(/"/,"",$2);        # Remove quotes
-    sub(/ .*/,"",$2);       # Remove unit suffix (space + letter)
-    sum += $2
+    gsub(/"/,"",$2);                                    # Remove quotes
+    if (match($2, /([0-9.]+) *([KMGT]?B)/, arr)) {     # Parse number and unit
+      value = arr[1];
+      unit = arr[2];
+
+      # Convert to bytes based on unit
+      if (unit == "B")        multiplier = 1;
+      else if (unit == "KB")  multiplier = 1024;
+      else if (unit == "MB")  multiplier = 1024*1024;
+      else if (unit == "GB")  multiplier = 1024*1024*1024;
+      else if (unit == "TB")  multiplier = 1024*1024*1024*1024;
+      else                    multiplier = 1;          # Default to bytes
+
+      sum += value * multiplier;
+    }
   } END {print int(sum)}' || echo "0")
 
   # Convert bytes to KB for consistent units with du -sk

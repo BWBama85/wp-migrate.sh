@@ -177,13 +177,6 @@ Jetpack Backup archives require tar.
 Please install tar (usually pre-installed; check your system)"
   fi
 
-  # wp-migrate adapter requires jq for JSON metadata validation
-  if ! command -v jq >/dev/null 2>&1; then
-    err "Missing required tool for archive detection: jq
-wp-migrate backup archives require jq for metadata validation.
-Please install jq (e.g., apt-get install jq or brew install jq)"
-  fi
-
   # Detect or load adapter
   if [[ -n "$ARCHIVE_TYPE" ]]; then
     # User specified adapter type explicitly
