@@ -1776,13 +1776,30 @@ calculate_backup_size() {
   local db_size wp_content_size
 
   # Get database size via wp-cli (sum all table sizes from CSV, convert bytes to KB)
-  # CSV format: Name,Size,Index,Engine where Size is quoted with units like "5865472 B"
+  # CSV format: Name,Size,Index,Engine where Size is quoted with units like "5865472 B", "5.7 MB", etc.
   local db_size_bytes
   # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
   db_size_bytes=$(ssh "${SSH_OPTS[@]}" "$host" "cd '$root' && wp db size --format=csv --path='$root'" | tail -n +2 | awk -F',' '{
-    gsub(/"/,"",$2);        # Remove quotes
-    sub(/ .*/,"",$2);       # Remove unit suffix (space + letter)
-    sum += $2
+    gsub(/"/,"",$2);                                    # Remove quotes
+    if (match($2, /([0-9.]+) *([KMGT]?i?B)/, arr)) {   # Parse number and unit (supports both decimal and binary units)
+      value = arr[1];
+      unit = arr[2];
+
+      # Convert to bytes based on unit (decimal SI units)
+      if (unit == "B")        multiplier = 1;
+      else if (unit == "KB")  multiplier = 1024;
+      else if (unit == "MB")  multiplier = 1024*1024;
+      else if (unit == "GB")  multiplier = 1024*1024*1024;
+      else if (unit == "TB")  multiplier = 1024*1024*1024*1024;
+      # Binary IEC units (KiB, MiB, GiB, TiB)
+      else if (unit == "KiB") multiplier = 1024;
+      else if (unit == "MiB") multiplier = 1024*1024;
+      else if (unit == "GiB") multiplier = 1024*1024*1024;
+      else if (unit == "TiB") multiplier = 1024*1024*1024*1024;
+      else                    multiplier = 1;          # Default to bytes
+
+      sum += value * multiplier;
+    }
   } END {print int(sum)}' || echo "0")
 
   # Convert bytes to KB for consistent units with du -sk
@@ -3465,13 +3482,6 @@ Please install unzip (e.g., apt-get install unzip or brew install unzip)"
     err "Missing required tool for archive detection: tar
 Jetpack Backup archives require tar.
 Please install tar (usually pre-installed; check your system)"
-  fi
-
-  # wp-migrate adapter requires jq for JSON metadata validation
-  if ! command -v jq >/dev/null 2>&1; then
-    err "Missing required tool for archive detection: jq
-wp-migrate backup archives require jq for metadata validation.
-Please install jq (e.g., apt-get install jq or brew install jq)"
   fi
 
   # Detect or load adapter
