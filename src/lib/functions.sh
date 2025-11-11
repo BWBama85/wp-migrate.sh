@@ -1543,6 +1543,9 @@ ARCHIVE MODE (run on DESTINATION WP root):
 ROLLBACK MODE (run on DESTINATION WP root):
   $(basename "$0") --rollback [--rollback-backup </path/to/backup>]
 
+BACKUP CREATION MODE:
+  $(basename "$0") --source-host <user@host> --source-root </abs/path> --create-backup
+
 Required (choose one mode):
   --dest-host <user@dest.example.com>
   --dest-root </absolute/path/to/destination/wp-root>
@@ -1567,6 +1570,19 @@ Required (choose one mode):
   --rollback-backup </path/to/backup.sql.gz>
       Optional: Explicitly specify which database backup to restore
       (only used with --rollback)
+
+  --create-backup
+      Backup creation mode: create WordPress backup on source server via SSH
+      Creates timestamped ZIP archive with database and wp-content
+      (mutually exclusive with --dest-host and --archive)
+
+  --source-host <user@source.example.com>
+      SSH connection string for backup creation mode
+      (required with --create-backup)
+
+  --source-root </absolute/path/to/wordpress>
+      Absolute path to WordPress root on source server
+      (required with --create-backup)
 
 Options:
   --dry-run                 Preview rsync; DB export/transfer is also previewed (no dump created)
@@ -1605,6 +1621,11 @@ Examples (rollback mode):
   $(basename "$0") --rollback --dry-run
   $(basename "$0") --rollback --rollback-backup /path/to/specific/backup.sql.gz
   $(basename "$0") --rollback --yes
+
+Examples (backup creation mode):
+  $(basename "$0") --source-host user@source.example.com --source-root /var/www/html --create-backup
+  $(basename "$0") --source-host user@source.example.com --source-root /var/www/html --create-backup --dry-run
+  $(basename "$0") --source-host user@source.example.com --source-root /var/www/html --create-backup --verbose
 USAGE
 }
 
