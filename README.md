@@ -156,7 +156,26 @@ Common examples:
 
 ### Backup Creation Mode
 
-Create a backup on a source WordPress server via SSH. The backup is stored on the source server and can later be imported using archive mode.
+Create WordPress backups locally or remotely via SSH. Backups are compatible with `--archive` import mode.
+
+#### Local Backup (No SSH Required)
+
+Run directly from your WordPress directory:
+
+```bash
+cd /var/www/html
+./wp-migrate.sh --create-backup
+```
+
+Or specify a path:
+
+```bash
+./wp-migrate.sh --create-backup --source-root /var/www/html
+```
+
+#### Remote Backup (via SSH)
+
+Create a backup on a remote server:
 
 ```bash
 ./wp-migrate.sh --source-host user@source.example.com \
@@ -165,24 +184,36 @@ Create a backup on a source WordPress server via SSH. The backup is stored on th
 ```
 
 **Features:**
-- Creates timestamped ZIP archive on source server
-- Includes database dump and wp-content directory
+- Creates timestamped ZIP archive with database and wp-content
 - Automatically excludes cache directories, object cache files, and debug logs
-- Stores backup in `~/wp-migrate-backups/` on source server
+- Stores backup in `~/wp-migrate-backups/`
 - Compatible with `--archive` import mode
+- Local mode requires no SSH configuration
 
 **Backup location:** `~/wp-migrate-backups/{domain}-{YYYY-MM-DD-HHMMSS}.zip`
 
-**Example workflow:**
+**Example workflows:**
+
+**Local backup and import:**
 ```bash
-# Step 1: Create backup on source
+# Step 1: Create local backup
+cd /var/www/html
+./wp-migrate.sh --create-backup
+
+# Output: Backup created: ~/wp-migrate-backups/example-com-2025-11-11-143022.zip
+
+# Step 2: Import on another server
+./wp-migrate.sh --archive ~/wp-migrate-backups/example-com-2025-11-11-143022.zip
+```
+
+**Remote backup workflow:**
+```bash
+# Step 1: Create backup on source server
 ./wp-migrate.sh --source-host user@source.example.com \
                 --source-root /var/www/html \
                 --create-backup
 
-# Output: Backup created: ~/wp-migrate-backups/example-com-2025-11-11-143022.zip
-
-# Step 2: Download backup (manual step)
+# Step 2: Download backup
 scp user@source.example.com:~/wp-migrate-backups/example-com-2025-11-11-143022.zip .
 
 # Step 3: Import on destination
@@ -191,6 +222,10 @@ scp user@source.example.com:~/wp-migrate-backups/example-com-2025-11-11-143022.z
 
 **Dry-run preview:**
 ```bash
+# Local
+./wp-migrate.sh --create-backup --dry-run
+
+# Remote
 ./wp-migrate.sh --source-host user@source.example.com \
                 --source-root /var/www/html \
                 --create-backup --dry-run
