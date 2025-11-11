@@ -101,6 +101,64 @@ check_adapter_dependencies() {
 # End Archive Adapter System
 # ========================================
 
+# ========================================
+# Backup Creation Helpers
+# ========================================
+
+# Sanitize domain name for use in filename
+# Usage: sanitize_domain_for_filename <domain>
+# Returns: echoes sanitized domain (dots/slashes → dashes)
+sanitize_domain_for_filename() {
+  local domain="$1"
+  # Remove protocol if present
+  domain="${domain#http://}"
+  domain="${domain#https://}"
+  # Remove trailing slashes
+  domain="${domain%/}"
+  # Replace dots and slashes with dashes
+  echo "$domain" | tr './' '--'
+}
+
+# Calculate estimated backup size on source server
+# Usage: calculate_backup_size <source_host> <source_root>
+# Returns: echoes size in KB
+calculate_backup_size() {
+  local host="$1" root="$2"
+  local db_size wp_content_size
+
+  # Get database size via wp-cli
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  db_size=$(ssh "${SSH_OPTS[@]}" "$host" "cd '$root' && wp db size --format=csv --path='$root'" | tail -1 | cut -d',' -f2 || echo "0")
+
+  # Get wp-content size (excluding cache, logs, etc.)
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  wp_content_size=$(ssh "${SSH_OPTS[@]}" "$host" "du -sk '$root/wp-content' --exclude='cache' --exclude='*/cache' --exclude='*.log' 2>/dev/null" | awk '{print $1}' || echo "0")
+
+  # Add 50% buffer for zip compression overhead
+  local total=$((db_size + wp_content_size))
+  local with_buffer=$((total + total / 2))
+
+  echo "$with_buffer"
+}
+
+# Create backup directory on source server
+# Usage: create_backup_directory <source_host> <backup_dir>
+# Returns: 0 on success, 1 on failure
+create_backup_directory() {
+  local host="$1" backup_dir="$2"
+
+  log_verbose "Creating backup directory: $backup_dir"
+
+  # shellcheck disable=SC2029  # Intentional client-side expansion with proper quoting
+  if ! ssh "${SSH_OPTS[@]}" "$host" "mkdir -p '$backup_dir'" 2>/dev/null; then
+    err "Failed to create backup directory: $backup_dir"
+    # shellcheck disable=SC2317  # err() exits script, but shellcheck doesn't know
+    return 1
+  fi
+
+  return 0
+}
+
 # Build a safe "ssh ..." string for rsync -e
 ssh_cmd_string() {
   printf 'ssh'

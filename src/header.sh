@@ -33,6 +33,14 @@ ARCHIVE_TYPE=""              # OPTIONAL (archive mode): adapter name override (d
 MIGRATION_MODE=""            # Detected: "push", "archive", or "rollback"
 ROLLBACK_MODE=false          # Enable rollback mode (--rollback flag)
 ROLLBACK_BACKUP_PATH=""      # Optional: Explicitly specify backup to restore
+# shellcheck disable=SC2034  # Used in main.sh for backup mode
+CREATE_BACKUP=false          # Enable backup creation mode (--create-backup flag)
+# shellcheck disable=SC2034  # Used in main.sh for backup mode
+SOURCE_HOST=""               # Source server SSH connection string (user@host)
+# shellcheck disable=SC2034  # Used in main.sh for backup mode
+SOURCE_ROOT=""               # Absolute path to WordPress root on source server
+# shellcheck disable=SC2034,SC2088  # Used in functions.sh; tilde expands remotely via SSH
+BACKUP_OUTPUT_DIR="~/wp-migrate-backups"  # Directory on source server for backups
 
 # Use a single-element -o form to avoid dangling -o errors if mis-expanded
 SSH_OPTS=(-oStrictHostKeyChecking=accept-new)
