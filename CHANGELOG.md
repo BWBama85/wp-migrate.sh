@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.2] - 2025-11-12
+
+**🐛 Critical Bug Fix**
+
+This patch release fixes a critical runtime error that prevented `--stellarsites` and `--preserve-dest-plugins` from working.
+
+### Fixed
+
+- **array_diff bad substitution error**: Fixed "bad substitution" error when using `--stellarsites` or `--preserve-dest-plugins` flags
+  - Corrected array_diff function calls to use plain array names without [@] suffix
+  - Previously caused double-subscript syntax errors like `${DEST_PLUGINS_BEFORE[@][@]}`
+  - Affected both push mode and archive mode plugin/theme preservation logic
+
 ## [2.8.1] - 2025-11-11
 
 **🔧 Local Backup Mode & Critical Fixes**
