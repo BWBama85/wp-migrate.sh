@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Local backup mode**: Run `--create-backup` without `--source-host` to back up local WordPress installations
+  - No SSH configuration required for local backups
+  - Defaults to current directory when run from WordPress root
+  - Optional `--source-root` to specify different local path
+  - Produces same archive format as remote backups, fully compatible with `--archive` import mode
+
 ## [2.8.0] - 2025-11-11
 
 **📦 Backup Creation**

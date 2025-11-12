@@ -111,43 +111,67 @@ Next steps:
   3. Run rollback again from the correct directory"
 
 elif $CREATE_BACKUP; then
-  MIGRATION_MODE="backup"
-  log "Backup creation mode enabled"
-
-  # Validate required parameters
-  [[ -n "$SOURCE_HOST" ]] || err "--create-backup requires --source-host
-
-Example:
-  ./wp-migrate.sh --source-host user@source.example.com \\
-                  --source-root /var/www/html \\
-                  --create-backup"
-
-  [[ -n "$SOURCE_ROOT" ]] || err "--create-backup requires --source-root
-
-Example:
-  ./wp-migrate.sh --source-host user@source.example.com \\
-                  --source-root /var/www/html \\
-                  --create-backup"
-
-  # Backup mode is mutually exclusive with other modes
+  # Backup mode is mutually exclusive with archive mode
   if [[ -n "$ARCHIVE_FILE" ]]; then
     err "--create-backup is mutually exclusive with --archive
 
 You cannot create a backup and import one simultaneously.
 
 Choose one:
-  • Create backup: ./wp-migrate.sh --source-host ... --create-backup
+  • Create backup: ./wp-migrate.sh --create-backup
   • Import backup: ./wp-migrate.sh --archive /path/to/backup.zip"
   fi
 
-  if [[ -n "$DEST_HOST" ]]; then
-    err "--create-backup is mutually exclusive with --dest-host
+  # Detect local vs remote backup mode based on --source-host presence
+  if [[ -z "$SOURCE_HOST" ]]; then
+    # Local backup mode
+    MIGRATION_MODE="backup-local"
+    log "Local backup mode enabled"
+
+    # Default to current directory if --source-root not specified
+    if [[ -z "$SOURCE_ROOT" ]]; then
+      SOURCE_ROOT="$(pwd)"
+    else
+      # Convert to absolute path
+      SOURCE_ROOT="$(cd "$SOURCE_ROOT" 2>/dev/null && pwd)" || err "Invalid path: $SOURCE_ROOT
+
+The specified --source-root does not exist or is not accessible."
+    fi
+
+    # Local backup is mutually exclusive with --dest-host
+    if [[ -n "$DEST_HOST" ]]; then
+      err "--create-backup (local mode) is mutually exclusive with --dest-host
+
+You cannot create a local backup and push to destination simultaneously.
+
+Choose one:
+  • Create local backup: ./wp-migrate.sh --create-backup
+  • Push migration: ./wp-migrate.sh --dest-host ... --dest-root ..."
+    fi
+
+  else
+    # Remote backup mode
+    MIGRATION_MODE="backup-remote"
+    log "Remote backup mode enabled"
+
+    # Both --source-host and --source-root required for remote mode
+    [[ -n "$SOURCE_ROOT" ]] || err "--create-backup with --source-host requires --source-root
+
+Example:
+  ./wp-migrate.sh --source-host user@source.example.com \\
+                  --source-root /var/www/html \\
+                  --create-backup"
+
+    # Remote backup is mutually exclusive with --dest-host
+    if [[ -n "$DEST_HOST" ]]; then
+      err "--create-backup (remote mode) is mutually exclusive with --dest-host
 
 You cannot create a backup and push to destination simultaneously.
 
 Choose one:
-  • Create backup: ./wp-migrate.sh --source-host ... --create-backup
+  • Create remote backup: ./wp-migrate.sh --source-host ... --create-backup
   • Push migration: ./wp-migrate.sh --dest-host ... --dest-root ..."
+    fi
   fi
 
 elif [[ -n "$ARCHIVE_FILE" ]]; then
@@ -331,8 +355,11 @@ if [[ "$MIGRATION_MODE" == "push" ]]; then
 elif [[ "$MIGRATION_MODE" == "archive" ]]; then
   # Check adapter-specific dependencies
   check_adapter_dependencies "$ARCHIVE_ADAPTER"
-elif [[ "$MIGRATION_MODE" == "backup" ]]; then
+elif [[ "$MIGRATION_MODE" == "backup-remote" ]]; then
   needs ssh
+elif [[ "$MIGRATION_MODE" == "backup-local" ]]; then
+  # Local backup mode has no SSH dependency
+  :
 fi
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -340,6 +367,10 @@ if $DRY_RUN; then
   LOG_FILE="/dev/null"
   if [[ "$MIGRATION_MODE" == "push" ]]; then
     log "Starting push migration (dry-run preview; no log file will be written)."
+  elif [[ "$MIGRATION_MODE" == "backup-local" ]]; then
+    log "Starting local backup creation (dry-run preview; no log file will be written)."
+  elif [[ "$MIGRATION_MODE" == "backup-remote" ]]; then
+    log "Starting remote backup creation (dry-run preview; no log file will be written)."
   else
     log "Starting archive import (dry-run preview; no log file will be written)."
   fi
@@ -348,6 +379,12 @@ else
   if [[ "$MIGRATION_MODE" == "push" ]]; then
     LOG_FILE="$LOG_DIR/migrate-wpcontent-push-$STAMP.log"
     log "Starting push migration. Log: $LOG_FILE"
+  elif [[ "$MIGRATION_MODE" == "backup-local" ]]; then
+    LOG_FILE="$LOG_DIR/migrate-backup-local-$STAMP.log"
+    log "Starting local backup creation. Log: $LOG_FILE"
+  elif [[ "$MIGRATION_MODE" == "backup-remote" ]]; then
+    LOG_FILE="$LOG_DIR/migrate-backup-remote-$STAMP.log"
+    log "Starting remote backup creation. Log: $LOG_FILE"
   else
     LOG_FILE="$LOG_DIR/migrate-archive-import-$STAMP.log"
     log "Starting archive import. Log: $LOG_FILE"
@@ -1554,11 +1591,30 @@ fi
 # ==================================================================================
 # BACKUP MODE WORKFLOW
 # ==================================================================================
-# Execute backup mode
-if [[ "$MIGRATION_MODE" == "backup" ]]; then
+# Execute backup mode (local or remote)
+if [[ "$MIGRATION_MODE" == "backup-local" ]]; then
   if $DRY_RUN; then
     log "=== DRY RUN MODE ==="
-    log "Would create backup with:"
+    log "Would create local backup with:"
+    log "  Source: $SOURCE_ROOT"
+    log "  Destination: ~/wp-migrate-backups/<domain>-<timestamp>.zip"
+    log ""
+    log "Validation checks that would run:"
+    log "  ✓ WordPress installation at $SOURCE_ROOT"
+    log "  ✓ wp-cli availability"
+    log "  ✓ Disk space requirements"
+    log ""
+    log "No backup created (dry-run mode)"
+    exit 0
+  fi
+
+  create_backup_local
+  exit 0
+
+elif [[ "$MIGRATION_MODE" == "backup-remote" ]]; then
+  if $DRY_RUN; then
+    log "=== DRY RUN MODE ==="
+    log "Would create remote backup with:"
     log "  Source: $SOURCE_HOST:$SOURCE_ROOT"
     log "  Destination: $BACKUP_OUTPUT_DIR/<domain>-<timestamp>.zip"
     log ""
