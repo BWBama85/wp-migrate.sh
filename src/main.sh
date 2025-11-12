@@ -612,8 +612,8 @@ if $PRESERVE_DEST_PLUGINS; then
 
   log_verbose "  Computing unique destination items (not in source)..."
   # Compute unique destination items (not in source)
-  array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
-  array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE[@] SOURCE_THEMES[@]
+  array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE SOURCE_PLUGINS
+  array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE SOURCE_THEMES
 
   if ! $DRY_RUN; then
     log "  Destination has ${#DEST_PLUGINS_BEFORE[@]} plugin(s), source has ${#SOURCE_PLUGINS[@]} plugin(s)"
@@ -1126,8 +1126,8 @@ if $PRESERVE_DEST_PLUGINS; then
 
   log_verbose "  Computing unique destination items (not in archive)..."
   # Compute unique destination items (not in source/archive)
-  array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE[@] SOURCE_PLUGINS[@]
-  array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE[@] SOURCE_THEMES[@]
+  array_diff UNIQUE_DEST_PLUGINS DEST_PLUGINS_BEFORE SOURCE_PLUGINS
+  array_diff UNIQUE_DEST_THEMES DEST_THEMES_BEFORE SOURCE_THEMES
 
   if ! $DRY_RUN; then
     log "  Destination has ${#DEST_PLUGINS_BEFORE[@]} plugin(s), archive has ${#SOURCE_PLUGINS[@]} plugin(s)"
