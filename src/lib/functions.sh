@@ -204,7 +204,9 @@ calculate_backup_size_local() {
   db_size=$((db_size_bytes / 1024))
 
   # Get wp-content size (excluding cache, logs, etc.)
-  wp_content_size=$(du -sk "$root/wp-content" --exclude='cache' --exclude='*/cache' --exclude='*.log' 2>/dev/null | awk '{print $1}' || echo "0")
+  # Use find for portability (BSD du doesn't support --exclude)
+  wp_content_size=$(find "$root/wp-content" -type f ! -path '*/cache/*' ! -name '*.log' -ls 2>/dev/null | awk '{sum += $7} END {print int(sum/1024)}')
+  [[ -z "$wp_content_size" ]] && wp_content_size="0"
 
   # Add 50% buffer for zip compression overhead
   local total=$((db_size + wp_content_size))
@@ -504,7 +506,7 @@ Verify:
 
   # Get table count
   local table_count
-  table_count=$(wp db tables --format=count --path="$source_root" 2>/dev/null || echo "0")
+  table_count=$(wp db tables --path="$source_root" 2>/dev/null | wc -l | tr -d ' ')
 
   log "Site URL: $site_url"
   log "Database tables: $table_count"
