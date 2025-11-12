@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.1] - 2025-11-11
+
+**🔧 Local Backup Mode & Critical Fixes**
+
+This patch release adds local backup mode and fixes several critical bugs in the backup creation feature.
+
 ### Added
 
 - **Local backup mode**: Run `--create-backup` without `--source-host` to back up local WordPress installations
@@ -14,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Defaults to current directory when run from WordPress root
   - Optional `--source-root` to specify different local path
   - Produces same archive format as remote backups, fully compatible with `--archive` import mode
+
+### Fixed
+
+- **VERSION variable in metadata**: Replaced hardcoded "2.8.0" with $VERSION variable to prevent version drift
+- **BACKUP_OUTPUT_DIR honored**: Local backups now respect configured BACKUP_OUTPUT_DIR setting instead of hardcoded path
+- **Dedicated backup mode logging**: Local and remote backup modes now have distinct log messages and file names
+- **Portable table count**: Fixed unsupported `--format=count` flag, now uses portable `| wc -l` approach
+- **BSD/macOS du compatibility**: Replaced GNU-specific `--exclude` flag with portable find-based approach for wp-content size calculation
 
 ## [2.8.0] - 2025-11-11
 
