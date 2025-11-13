@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Filter WordPress drop-ins (advanced-cache.php, db.php, db-error.php) from plugin preservation logic to prevent restoration failures (#72)
+- Filter StellarSites managed plugins (stellarsites-cloud) from preservation in `--stellarsites` mode to prevent restoration warnings (#73)
+- Add transparent logging of filtered plugins during migration preview
+
 ## [2.8.2] - 2025-11-12
 
 **🐛 Critical Bug Fix**
