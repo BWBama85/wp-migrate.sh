@@ -1653,8 +1653,8 @@ adapter_solidbackups_nextgen_get_dependencies() {
   echo "unzip file"
 }
 wp_local() {
-  log_trace "wp --path=\"$PWD\" $*"
-  wp --path="$PWD" "$@"
+  log_trace "wp --skip-plugins --skip-themes --path=\"$PWD\" $*"
+  wp --skip-plugins --skip-themes --path="$PWD" "$@"
 }
 
 # ========================================
@@ -3572,6 +3572,13 @@ Examples (backup creation mode):
   $(basename "$0") --source-host user@source.example.com --source-root /var/www/html --create-backup
   $(basename "$0") --source-host user@source.example.com --source-root /var/www/html --create-backup --dry-run
   $(basename "$0") --source-host user@source.example.com --source-root /var/www/html --create-backup --verbose
+
+NOTES:
+  - All WP-CLI commands skip loading plugins and themes for reliability
+  - This prevents plugin errors from breaking migrations or rollbacks
+  - Migration operations use low-level database and filesystem commands
+  - If you need WP-CLI with plugins loaded, use 'wp' command directly
+
 USAGE
 }
 
