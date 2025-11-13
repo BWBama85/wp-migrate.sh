@@ -68,6 +68,8 @@ SOURCE_PLUGINS=()           # Plugins in source (push) or archive (duplicator)
 SOURCE_THEMES=()            # Themes in source (push) or archive (duplicator)
 UNIQUE_DEST_PLUGINS=()      # Plugins unique to destination (to be restored)
 UNIQUE_DEST_THEMES=()       # Themes unique to destination (to be restored)
+FILTERED_DROPINS=()         # Drop-ins filtered from plugin preservation
+FILTERED_MANAGED_PLUGINS=() # Managed plugins filtered in StellarSites mode
 
 # Archive mode variables
 ARCHIVE_ADAPTER=""           # Detected adapter name (duplicator, jetpack, etc.)
