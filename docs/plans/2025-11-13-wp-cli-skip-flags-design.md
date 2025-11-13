@@ -106,9 +106,30 @@ All WP-CLI commands used by the script are low-level operations that work withou
 ✅ Current `wp_remote()` proves this approach works (since v2.0.0)
 
 **Theoretical edge cases** (not relevant):
-- Custom WP-CLI commands from plugins (script doesn't use any)
+- Custom WP-CLI commands from plugins (see exception below)
 - Plugin filters on search-replace (we want clean, unmodified behavior)
 - Dynamic table prefix from plugins (extremely unlikely scenario)
+
+### Exception: Plugin-Provided Commands
+
+While all core migration operations work without plugins, the script optionally
+supports Object Cache Pro's `wp redis flush` command if the plugin is installed.
+
+**Implementation:**
+- Added `wp_local_full()` function (loads plugins/themes)
+- Used ONLY for detecting and running `wp redis flush`
+- Mirrors `wp_remote_full()` pattern (line 643)
+
+**Justification:**
+- Redis flush is optional (migration works without it)
+- Non-destructive operation (safe to fail)
+- Only runs if plugin actually installed
+- Failure logged but doesn't break migration
+- Consistent with remote implementation (since v2.0.0)
+
+**Files Modified:**
+- `src/lib/functions.sh` - Added `wp_local_full()` function (lines 7-10)
+- `src/main.sh` - Use `wp_local_full()` for redis detection (line 1554)
 
 ## Documentation
 
