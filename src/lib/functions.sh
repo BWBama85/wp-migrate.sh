@@ -1044,6 +1044,34 @@ array_diff() {
   done
 }
 
+# Check if a plugin should be excluded from preservation logic
+# Returns 0 (true) if should exclude, 1 (false) if should preserve
+should_exclude_plugin() {
+  local plugin="$1"
+
+  # WordPress drop-ins (not actual plugins)
+  local dropins=("advanced-cache.php" "db.php" "db-error.php")
+  for dropin in "${dropins[@]}"; do
+    if [[ "$plugin" == "$dropin" ]]; then
+      FILTERED_DROPINS+=("$plugin")
+      return 0
+    fi
+  done
+
+  # StellarSites managed plugins (when in StellarSites mode)
+  if $STELLARSITES_MODE; then
+    local managed_plugins=("stellarsites-cloud")
+    for managed in "${managed_plugins[@]}"; do
+      if [[ "$plugin" == "$managed" ]]; then
+        FILTERED_MANAGED_PLUGINS+=("$plugin")
+        return 0
+      fi
+    done
+  fi
+
+  return 1  # Don't exclude - preserve this plugin
+}
+
 # Detect plugins on destination (before migration)
 detect_dest_plugins_push() {
   local host="$1" root="$2"
