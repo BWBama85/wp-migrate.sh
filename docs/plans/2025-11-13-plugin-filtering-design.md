@@ -162,6 +162,8 @@ fi
 
 ## Testing Strategy
 
+**Note:** As of the fix for issue #75, plugin detection runs in `--dry-run` mode (as a read-only operation), making dry-run testing of filtering behavior valid and recommended.
+
 ### Test Scenarios
 
 1. **Drop-in filtering works:**

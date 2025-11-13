@@ -2730,8 +2730,7 @@ should_exclude_plugin() {
 detect_dest_plugins_push() {
   local host="$1" root="$2"
   if $DRY_RUN; then
-    log "[dry-run] Would detect destination plugins via wp plugin list"
-    return 0
+    log "[dry-run] Detecting destination plugins (read-only operation)..."
   fi
 
   local plugins_csv plugin
@@ -2805,8 +2804,7 @@ detect_source_themes() {
 # Detect plugins on destination (duplicator mode - before migration)
 detect_dest_plugins_local() {
   if $DRY_RUN; then
-    log "[dry-run] Would detect destination plugins via wp plugin list"
-    return 0
+    log "[dry-run] Detecting destination plugins (read-only operation)..."
   fi
 
   local plugins_csv plugin
