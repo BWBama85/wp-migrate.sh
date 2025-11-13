@@ -7,11 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.3] - 2025-11-13
+
+**🔧 Plugin Filtering Fix**
+
+This patch release fixes incorrect plugin preservation behavior that caused restoration warnings for WordPress drop-ins and managed hosting plugins.
+
 ### Fixed
 
-- Filter WordPress drop-ins (advanced-cache.php, db.php, db-error.php) from plugin preservation logic to prevent restoration failures (#72)
-- Filter StellarSites managed plugins (stellarsites-cloud) from preservation in `--stellarsites` mode to prevent restoration warnings (#73)
-- Add transparent logging of filtered plugins during migration preview
+- **WordPress drop-ins filtered from preservation**: Drop-ins like `advanced-cache.php`, `db.php`, and `db-error.php` are no longer incorrectly treated as plugins (#72)
+  - These files live in `wp-content/` (not `wp-content/plugins/`)
+  - Previously caused "Failed to restore plugin" warnings
+  - Now properly excluded from plugin preservation logic
+- **StellarSites managed plugins filtered**: When using `--stellarsites` flag, managed hosting plugins like `stellarsites-cloud` are excluded from preservation (#73)
+  - Prevents restoration warnings for system-protected plugins
+  - Only applies when `--stellarsites` mode is enabled
+- **Transparent filtering logs**: Added logging to show what was filtered during migration preview
+  - Shows: "Filtered drop-ins from preservation: X Y Z"
+  - Shows: "Filtered managed plugins from preservation: X Y Z"
+- **Dry-run mode detection fixed**: Plugin detection now runs during `--dry-run` mode to enable filtering preview (#75)
+  - Previously detection was skipped entirely in dry-run mode
+  - Users can now preview filtering behavior with `--dry-run --verbose`
 
 ## [2.8.2] - 2025-11-12
 
