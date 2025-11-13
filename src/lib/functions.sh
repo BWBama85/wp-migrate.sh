@@ -1,6 +1,6 @@
 wp_local() {
-  log_trace "wp --path=\"$PWD\" $*"
-  wp --path="$PWD" "$@"
+  log_trace "wp --skip-plugins --skip-themes --path=\"$PWD\" $*"
+  wp --skip-plugins --skip-themes --path="$PWD" "$@"
 }
 
 # ========================================
