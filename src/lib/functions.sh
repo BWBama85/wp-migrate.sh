@@ -1044,20 +1044,53 @@ array_diff() {
   done
 }
 
+# Check if a plugin should be excluded from preservation logic
+# Returns 0 (true) if should exclude, 1 (false) if should preserve
+should_exclude_plugin() {
+  local plugin="$1"
+
+  # WordPress drop-ins (not actual plugins)
+  local dropins=("advanced-cache.php" "db.php" "db-error.php")
+  for dropin in "${dropins[@]}"; do
+    if [[ "$plugin" == "$dropin" ]]; then
+      FILTERED_DROPINS+=("$plugin")
+      return 0
+    fi
+  done
+
+  # StellarSites managed plugins (when in StellarSites mode)
+  if $STELLARSITES_MODE; then
+    local managed_plugins=("stellarsites-cloud")
+    for managed in "${managed_plugins[@]}"; do
+      if [[ "$plugin" == "$managed" ]]; then
+        FILTERED_MANAGED_PLUGINS+=("$plugin")
+        return 0
+      fi
+    done
+  fi
+
+  return 1  # Don't exclude - preserve this plugin
+}
+
 # Detect plugins on destination (before migration)
 detect_dest_plugins_push() {
   local host="$1" root="$2"
   if $DRY_RUN; then
-    log "[dry-run] Would detect destination plugins via wp plugin list"
-    return 0
+    log "[dry-run] Detecting destination plugins (read-only operation)..."
   fi
 
   local plugins_csv plugin
   plugins_csv=$(wp_remote "$host" "$root" plugin list --field=name --format=csv 2>/dev/null || echo "")
   if [[ -n "$plugins_csv" ]]; then
     DEST_PLUGINS_BEFORE=()
+    # Clear filtering tracking arrays
+    FILTERED_DROPINS=()
+    FILTERED_MANAGED_PLUGINS=()
+
     while IFS= read -r plugin; do
-      [[ -n "$plugin" ]] && DEST_PLUGINS_BEFORE+=("$plugin")
+      if [[ -n "$plugin" ]] && ! should_exclude_plugin "$plugin"; then
+        DEST_PLUGINS_BEFORE+=("$plugin")
+      fi
     done < <(echo "$plugins_csv" | tr ',' '\n')
   fi
 }
@@ -1117,16 +1150,21 @@ detect_source_themes() {
 # Detect plugins on destination (duplicator mode - before migration)
 detect_dest_plugins_local() {
   if $DRY_RUN; then
-    log "[dry-run] Would detect destination plugins via wp plugin list"
-    return 0
+    log "[dry-run] Detecting destination plugins (read-only operation)..."
   fi
 
   local plugins_csv plugin
   plugins_csv=$(wp_local plugin list --field=name --format=csv 2>/dev/null || echo "")
   if [[ -n "$plugins_csv" ]]; then
     DEST_PLUGINS_BEFORE=()
+    # Clear filtering tracking arrays
+    FILTERED_DROPINS=()
+    FILTERED_MANAGED_PLUGINS=()
+
     while IFS= read -r plugin; do
-      [[ -n "$plugin" ]] && DEST_PLUGINS_BEFORE+=("$plugin")
+      if [[ -n "$plugin" ]] && ! should_exclude_plugin "$plugin"; then
+        DEST_PLUGINS_BEFORE+=("$plugin")
+      fi
     done < <(echo "$plugins_csv" | tr ',' '\n')
   fi
 }

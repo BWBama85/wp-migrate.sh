@@ -602,6 +602,16 @@ if $PRESERVE_DEST_PLUGINS; then
   # Get destination plugins/themes (before migration)
   detect_dest_plugins_push "$DEST_HOST" "$DEST_ROOT"
   detect_dest_themes_push "$DEST_HOST" "$DEST_ROOT"
+
+  # Log filtered plugins
+  if [[ ${#FILTERED_DROPINS[@]} -gt 0 ]]; then
+    log "Filtered drop-ins from preservation: ${FILTERED_DROPINS[*]}"
+  fi
+
+  if [[ ${#FILTERED_MANAGED_PLUGINS[@]} -gt 0 ]]; then
+    log "Filtered managed plugins from preservation: ${FILTERED_MANAGED_PLUGINS[*]}"
+  fi
+
   log_verbose "    Found ${#DEST_PLUGINS_BEFORE[@]} destination plugins, ${#DEST_THEMES_BEFORE[@]} themes"
 
   log_verbose "  Scanning source plugins/themes..."
@@ -1116,6 +1126,16 @@ if $PRESERVE_DEST_PLUGINS; then
   # Get destination plugins/themes (before migration)
   detect_dest_plugins_local
   detect_dest_themes_local
+
+  # Log filtered plugins
+  if [[ ${#FILTERED_DROPINS[@]} -gt 0 ]]; then
+    log "Filtered drop-ins from preservation: ${FILTERED_DROPINS[*]}"
+  fi
+
+  if [[ ${#FILTERED_MANAGED_PLUGINS[@]} -gt 0 ]]; then
+    log "Filtered managed plugins from preservation: ${FILTERED_MANAGED_PLUGINS[*]}"
+  fi
+
   log_verbose "    Found ${#DEST_PLUGINS_BEFORE[@]} destination plugins, ${#DEST_THEMES_BEFORE[@]} themes"
 
   log_verbose "  Scanning archive plugins/themes..."
