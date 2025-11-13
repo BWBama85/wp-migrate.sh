@@ -68,6 +68,8 @@ SOURCE_PLUGINS=()           # Plugins in source (push) or archive (duplicator)
 SOURCE_THEMES=()            # Themes in source (push) or archive (duplicator)
 UNIQUE_DEST_PLUGINS=()      # Plugins unique to destination (to be restored)
 UNIQUE_DEST_THEMES=()       # Themes unique to destination (to be restored)
+FILTERED_DROPINS=()         # Drop-ins filtered from plugin preservation
+FILTERED_MANAGED_PLUGINS=() # Managed plugins filtered in StellarSites mode
 
 # Archive mode variables
 ARCHIVE_ADAPTER=""           # Detected adapter name (duplicator, jetpack, etc.)
@@ -2696,6 +2698,34 @@ array_diff() {
   done
 }
 
+# Check if a plugin should be excluded from preservation logic
+# Returns 0 (true) if should exclude, 1 (false) if should preserve
+should_exclude_plugin() {
+  local plugin="$1"
+
+  # WordPress drop-ins (not actual plugins)
+  local dropins=("advanced-cache.php" "db.php" "db-error.php")
+  for dropin in "${dropins[@]}"; do
+    if [[ "$plugin" == "$dropin" ]]; then
+      FILTERED_DROPINS+=("$plugin")
+      return 0
+    fi
+  done
+
+  # StellarSites managed plugins (when in StellarSites mode)
+  if $STELLARSITES_MODE; then
+    local managed_plugins=("stellarsites-cloud")
+    for managed in "${managed_plugins[@]}"; do
+      if [[ "$plugin" == "$managed" ]]; then
+        FILTERED_MANAGED_PLUGINS+=("$plugin")
+        return 0
+      fi
+    done
+  fi
+
+  return 1  # Don't exclude - preserve this plugin
+}
+
 # Detect plugins on destination (before migration)
 detect_dest_plugins_push() {
   local host="$1" root="$2"
@@ -2708,8 +2738,14 @@ detect_dest_plugins_push() {
   plugins_csv=$(wp_remote "$host" "$root" plugin list --field=name --format=csv 2>/dev/null || echo "")
   if [[ -n "$plugins_csv" ]]; then
     DEST_PLUGINS_BEFORE=()
+    # Clear filtering tracking arrays
+    FILTERED_DROPINS=()
+    FILTERED_MANAGED_PLUGINS=()
+
     while IFS= read -r plugin; do
-      [[ -n "$plugin" ]] && DEST_PLUGINS_BEFORE+=("$plugin")
+      if [[ -n "$plugin" ]] && ! should_exclude_plugin "$plugin"; then
+        DEST_PLUGINS_BEFORE+=("$plugin")
+      fi
     done < <(echo "$plugins_csv" | tr ',' '\n')
   fi
 }
@@ -2777,8 +2813,14 @@ detect_dest_plugins_local() {
   plugins_csv=$(wp_local plugin list --field=name --format=csv 2>/dev/null || echo "")
   if [[ -n "$plugins_csv" ]]; then
     DEST_PLUGINS_BEFORE=()
+    # Clear filtering tracking arrays
+    FILTERED_DROPINS=()
+    FILTERED_MANAGED_PLUGINS=()
+
     while IFS= read -r plugin; do
-      [[ -n "$plugin" ]] && DEST_PLUGINS_BEFORE+=("$plugin")
+      if [[ -n "$plugin" ]] && ! should_exclude_plugin "$plugin"; then
+        DEST_PLUGINS_BEFORE+=("$plugin")
+      fi
     done < <(echo "$plugins_csv" | tr ',' '\n')
   fi
 }
@@ -4139,6 +4181,16 @@ if $PRESERVE_DEST_PLUGINS; then
   # Get destination plugins/themes (before migration)
   detect_dest_plugins_push "$DEST_HOST" "$DEST_ROOT"
   detect_dest_themes_push "$DEST_HOST" "$DEST_ROOT"
+
+  # Log filtered plugins
+  if [[ ${#FILTERED_DROPINS[@]} -gt 0 ]]; then
+    log "Filtered drop-ins from preservation: ${FILTERED_DROPINS[*]}"
+  fi
+
+  if [[ ${#FILTERED_MANAGED_PLUGINS[@]} -gt 0 ]]; then
+    log "Filtered managed plugins from preservation: ${FILTERED_MANAGED_PLUGINS[*]}"
+  fi
+
   log_verbose "    Found ${#DEST_PLUGINS_BEFORE[@]} destination plugins, ${#DEST_THEMES_BEFORE[@]} themes"
 
   log_verbose "  Scanning source plugins/themes..."
@@ -4653,6 +4705,16 @@ if $PRESERVE_DEST_PLUGINS; then
   # Get destination plugins/themes (before migration)
   detect_dest_plugins_local
   detect_dest_themes_local
+
+  # Log filtered plugins
+  if [[ ${#FILTERED_DROPINS[@]} -gt 0 ]]; then
+    log "Filtered drop-ins from preservation: ${FILTERED_DROPINS[*]}"
+  fi
+
+  if [[ ${#FILTERED_MANAGED_PLUGINS[@]} -gt 0 ]]; then
+    log "Filtered managed plugins from preservation: ${FILTERED_MANAGED_PLUGINS[*]}"
+  fi
+
   log_verbose "    Found ${#DEST_PLUGINS_BEFORE[@]} destination plugins, ${#DEST_THEMES_BEFORE[@]} themes"
 
   log_verbose "  Scanning archive plugins/themes..."

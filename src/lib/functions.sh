@@ -1084,8 +1084,14 @@ detect_dest_plugins_push() {
   plugins_csv=$(wp_remote "$host" "$root" plugin list --field=name --format=csv 2>/dev/null || echo "")
   if [[ -n "$plugins_csv" ]]; then
     DEST_PLUGINS_BEFORE=()
+    # Clear filtering tracking arrays
+    FILTERED_DROPINS=()
+    FILTERED_MANAGED_PLUGINS=()
+
     while IFS= read -r plugin; do
-      [[ -n "$plugin" ]] && DEST_PLUGINS_BEFORE+=("$plugin")
+      if [[ -n "$plugin" ]] && ! should_exclude_plugin "$plugin"; then
+        DEST_PLUGINS_BEFORE+=("$plugin")
+      fi
     done < <(echo "$plugins_csv" | tr ',' '\n')
   fi
 }
@@ -1153,8 +1159,14 @@ detect_dest_plugins_local() {
   plugins_csv=$(wp_local plugin list --field=name --format=csv 2>/dev/null || echo "")
   if [[ -n "$plugins_csv" ]]; then
     DEST_PLUGINS_BEFORE=()
+    # Clear filtering tracking arrays
+    FILTERED_DROPINS=()
+    FILTERED_MANAGED_PLUGINS=()
+
     while IFS= read -r plugin; do
-      [[ -n "$plugin" ]] && DEST_PLUGINS_BEFORE+=("$plugin")
+      if [[ -n "$plugin" ]] && ! should_exclude_plugin "$plugin"; then
+        DEST_PLUGINS_BEFORE+=("$plugin")
+      fi
     done < <(echo "$plugins_csv" | tr ',' '\n')
   fi
 }
