@@ -3,6 +3,12 @@ wp_local() {
   wp --skip-plugins --skip-themes --path="$PWD" "$@"
 }
 
+# Run local WP-CLI without skipping plugins/themes (needed for plugin-provided commands)
+wp_local_full() {
+  log_trace "wp --path=\"$PWD\" $*"
+  wp --path="$PWD" "$@"
+}
+
 # ========================================
 # Archive Adapter System
 # ========================================

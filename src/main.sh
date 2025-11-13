@@ -1551,13 +1551,13 @@ fi
 
 # Phase 10: Flush cache if available
 log_verbose "Checking for Redis object cache support..."
-if wp_local cli has-command redis >/dev/null 2>&1; then
+if wp_local_full cli has-command redis >/dev/null 2>&1; then
   log_verbose "  ✓ Redis CLI available (flushing cache)"
   if $DRY_RUN; then
     log "[dry-run] Would flush Object Cache Pro cache via: wp redis flush"
   else
     log "Flushing Object Cache Pro cache..."
-    if ! wp_local redis flush; then
+    if ! wp_local_full redis flush; then
       log_warning "Failed to flush Object Cache Pro cache via wp redis flush. Cache may be stale."
     fi
   fi
