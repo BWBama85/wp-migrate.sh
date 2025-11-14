@@ -4976,6 +4976,14 @@ else
     # Use process substitution to avoid subshell issues with while-read
     while IFS= read -r table; do
       if [[ -n "$table" ]]; then
+        # SECURITY: Validate table name to prevent SQL injection (Issue #83)
+        # MySQL identifiers can only contain: alphanumeric, underscore, dollar sign
+        # Reject any table name with invalid characters to prevent injection attacks
+        if [[ ! "$table" =~ ^[a-zA-Z0-9_\$]+$ ]]; then
+          log "  WARNING: Skipping table with invalid name (possible injection): $table"
+          continue
+        fi
+
         log "  Dropping table: $table"
         wp_local db query "DROP TABLE IF EXISTS \`$table\`" 2>/dev/null || {
           log "    WARNING: Could not drop $table"
