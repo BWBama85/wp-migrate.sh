@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **WP-CLI commands now skip plugins/themes by default**: All local WP-CLI operations now use `--skip-plugins --skip-themes` flags (#78)
+  - Provides automatic recovery when migrations cause plugin/theme errors
+  - Matches existing remote WP-CLI behavior (since v2.0.0)
+  - All migration operations work without loading plugin/theme code
+  - No functional changes - script uses low-level database/filesystem commands only
+
 ## [2.8.3] - 2025-11-13
 
 **🔧 Plugin Filtering Fix**
