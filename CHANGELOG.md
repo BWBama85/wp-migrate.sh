@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2025-11-13
+
+**🛡️ Enhanced Reliability**
+
+This minor release improves migration reliability by making local WP-CLI operations consistent with remote operations, providing automatic error recovery when plugin or theme errors occur.
+
 ### Changed
 
 - **WP-CLI commands now skip plugins/themes by default**: All local WP-CLI operations now use `--skip-plugins --skip-themes` flags (#78)
@@ -14,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Matches existing remote WP-CLI behavior (since v2.0.0)
   - All migration operations work without loading plugin/theme code
   - No functional changes - script uses low-level database/filesystem commands only
+  - Added `wp_local_full()` function for plugin-provided commands (Object Cache Pro redis flush)
+  - Added NOTES section to help text explaining skip behavior
 
 ## [2.8.3] - 2025-11-13
 
