@@ -845,16 +845,16 @@ exit_cleanup() {
 
   # SAFETY: Emergency database restore on failure (Issue #82)
   # If script failed during database operations and we have a snapshot, restore it
-  if [[ $status -ne 0 && -f "$EMERGENCY_DB_SNAPSHOT" ]]; then
+  if [[ $status -ne 0 && -f "${EMERGENCY_DB_SNAPSHOT:-}" ]]; then
     echo "EMERGENCY: Script failed during database operations. Restoring from snapshot..."
     wp_local db reset --yes 2>/dev/null || true
     if wp_local db import "$EMERGENCY_DB_SNAPSHOT" 2>/dev/null; then
       echo "Emergency database restore successful"
+      rm -f "$EMERGENCY_DB_SNAPSHOT" 2>/dev/null || true
     else
       echo "WARNING: Emergency database restore failed - manual recovery may be needed"
       echo "Snapshot file preserved at: $EMERGENCY_DB_SNAPSHOT"
     fi
-    rm -f "$EMERGENCY_DB_SNAPSHOT" 2>/dev/null || true
   fi
 
   # Maintenance cleanup is non-critical - don't let it affect exit status
