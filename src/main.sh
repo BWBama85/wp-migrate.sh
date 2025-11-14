@@ -1269,6 +1269,22 @@ else
 
   # Import the database
   log "Importing database (this may take a few minutes for large databases)..."
+
+  # SAFETY: Verify file exists before attempting file size operations (Issue #86)
+  # In dry-run mode, ARCHIVE_DB_FILE may be set to non-existent placeholder path
+  if [[ ! -f "$ARCHIVE_DB_FILE" ]]; then
+    err "Database file not found: $ARCHIVE_DB_FILE
+
+This should not happen in normal operation. Possible causes:
+  - Archive extraction failed silently
+  - File was deleted between extraction and import
+  - Incorrect archive format detected
+
+Archive directory: $(dirname "$ARCHIVE_DB_FILE")
+Contents:
+$(ls -la "$(dirname "$ARCHIVE_DB_FILE")" 2>&1 || echo "Unable to list directory")"
+  fi
+
   if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
     # Show progress with pv
     DB_SIZE=$(stat -f%z "$ARCHIVE_DB_FILE" 2>/dev/null || stat -c%s "$ARCHIVE_DB_FILE" 2>/dev/null)
