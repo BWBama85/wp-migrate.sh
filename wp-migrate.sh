@@ -706,14 +706,17 @@ adapter_duplicator_extract() {
 
   # Try bsdtar with progress if available (supports stdin)
   if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
-    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
+    log_trace "pv \"$archive\" | bsdtar -xf - --no-absolute-filenames -C \"$dest\""
     local archive_size
     archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
+    # SECURITY: --no-absolute-filenames strips leading / from paths
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - --no-absolute-filenames -C "$dest" 2>/dev/null; then
       return 1
     fi
   else
     # Fallback to unzip (no progress - unzip doesn't support stdin)
+    # SECURITY: unzip has no built-in flag to prevent path traversal
+    # Pre-extraction validation in validate_archive_paths() provides protection
     log_trace "unzip -q \"$archive\" -d \"$dest\""
     if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
       return 1
@@ -1713,8 +1716,107 @@ detect_adapter() {
 # Wrapper functions that call the appropriate adapter function
 # These provide a consistent interface regardless of which adapter is loaded
 
+# SECURITY: Validate archive contents before extraction (Zip Slip protection)
+# Checks for path traversal attempts, absolute paths, and symlinks
+# Usage: validate_archive_paths <archive_path>
+# Returns: 0 if safe, 1 if dangerous paths found
+validate_archive_paths() {
+  local archive="$1"
+  local entry dangerous_found=false
+
+  log_verbose "Validating archive for path traversal attempts..."
+
+  # Detect archive type
+  local archive_type=""
+  if [[ "$archive" =~ \.zip$ ]] || unzip -l "$archive" >/dev/null 2>&1; then
+    archive_type="zip"
+  elif [[ "$archive" =~ \.(tar\.gz|tgz)$ ]] || tar -tzf "$archive" >/dev/null 2>&1; then
+    archive_type="tar"
+  else
+    log_warning "Could not detect archive type for security validation"
+    return 0  # Proceed but log warning
+  fi
+
+  # List archive contents and check each entry
+  if [[ "$archive_type" == "zip" ]]; then
+    while IFS= read -r entry; do
+      # Check for absolute paths (start with /)
+      if [[ "$entry" =~ ^/ ]]; then
+        log_warning "SECURITY: Archive contains absolute path: $entry"
+        dangerous_found=true
+      fi
+
+      # Check for parent directory references (..)
+      if [[ "$entry" =~ \.\. ]]; then
+        log_warning "SECURITY: Archive contains parent directory reference: $entry"
+        dangerous_found=true
+      fi
+
+      # Check for paths that would escape (crude but effective)
+      if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]]; then
+        log_warning "SECURITY: Archive contains path traversal attempt: $entry"
+        dangerous_found=true
+      fi
+    done < <(unzip -l "$archive" 2>/dev/null | awk 'NR>3 {if ($1 ~ /^-+$/) exit; if (NF >= 4) {for(i=4;i<=NF;i++) printf "%s%s", $i, (i<NF?" ":""); print ""}}')
+  elif [[ "$archive_type" == "tar" ]]; then
+    while IFS= read -r entry; do
+      # Check for absolute paths
+      if [[ "$entry" =~ ^/ ]]; then
+        log_warning "SECURITY: Archive contains absolute path: $entry"
+        dangerous_found=true
+      fi
+
+      # Check for parent directory references
+      if [[ "$entry" =~ \.\. ]]; then
+        log_warning "SECURITY: Archive contains parent directory reference: $entry"
+        dangerous_found=true
+      fi
+
+      # Check for path traversal
+      if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]]; then
+        log_warning "SECURITY: Archive contains path traversal attempt: $entry"
+        dangerous_found=true
+      fi
+    done < <(tar -tzf "$archive" 2>/dev/null)
+  fi
+
+  if $dangerous_found; then
+    return 1
+  fi
+
+  return 0
+}
+
 extract_archive() {
   local archive="$1" dest="$2"
+
+  # SECURITY: Validate archive paths before extraction
+  if ! validate_archive_paths "$archive"; then
+    err "Archive failed security validation (Zip Slip protection).
+
+This archive contains files with dangerous paths that could write outside
+the extraction directory. This is a security risk and could be:
+  • A malicious archive designed to exploit path traversal (Zip Slip attack)
+  • A corrupted archive with invalid file paths
+  • An archive incorrectly created with absolute paths or ../ components
+
+Dangerous path patterns detected:
+  • Absolute paths (starting with /)
+  • Parent directory references (../)
+  • Path traversal attempts
+
+For security, this archive cannot be used. If you trust the source:
+  1. Verify the archive is from a legitimate backup
+  2. Re-create the archive with proper relative paths only
+  3. Ensure NO ../ components exist in any file paths
+  4. Use a trusted backup plugin that creates secure archives
+
+Common causes:
+  • Archive created with 'cd / && tar' (captures absolute paths)
+  • Archive created including parent directories
+  • Manually crafted malicious archive"
+  fi
+
   "adapter_${ARCHIVE_ADAPTER}_extract" "$archive" "$dest"
 }
 
@@ -2525,6 +2627,42 @@ Next steps:
        tar -xzf \"$archive_path\"  # for tar.gz
   5. If format detection failed, specify type explicitly:
        --archive-type duplicator  # or jetpack"
+  fi
+
+  # SECURITY: Validate extracted files don't escape extraction directory (Zip Slip protection)
+  log_verbose "Validating extracted file paths..."
+  local extracted_file realpath_result validation_failed=false
+  while IFS= read -r -d '' extracted_file; do
+    # Get absolute path, following symlinks
+    if ! realpath_result=$(readlink -f "$extracted_file" 2>/dev/null); then
+      # readlink -f might fail on macOS, try realpath
+      if ! realpath_result=$(realpath "$extracted_file" 2>/dev/null); then
+        log_warning "Could not resolve path for: $extracted_file"
+        continue
+      fi
+    fi
+
+    # Check if resolved path is within extraction directory
+    if [[ "$realpath_result" != "$ARCHIVE_EXTRACT_DIR"* ]]; then
+      log_warning "SECURITY: Archive contains path outside extraction directory: $extracted_file"
+      validation_failed=true
+    fi
+  done < <(find "$ARCHIVE_EXTRACT_DIR" -print0 2>/dev/null)
+
+  if $validation_failed; then
+    rm -rf "$ARCHIVE_EXTRACT_DIR"
+    err "Archive extraction failed security validation.
+
+This archive contains files with paths that would write outside the extraction
+directory (potential Zip Slip attack). This could be:
+  • A malicious archive designed to exploit path traversal
+  • A corrupted archive with invalid file paths
+  • An archive created with absolute paths or ../ components
+
+For security, this archive cannot be used. If you trust the source:
+  1. Verify the archive integrity
+  2. Re-create the archive ensuring relative paths only
+  3. Ensure no ../ components in file paths"
   fi
 
   log "Archive extracted successfully"
