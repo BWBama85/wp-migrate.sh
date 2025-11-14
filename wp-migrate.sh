@@ -5018,6 +5018,9 @@ else
     # Define core WordPress table suffixes that must all exist
     core_suffixes=("options" "posts" "users")
 
+    # SAFETY: Collect ALL valid WordPress prefixes to detect multiple installations (Issue #84)
+    all_valid_prefixes=()
+
     # Extract all potential prefixes by looking at tables ending in "options"
     # A table like "wp_options" gives prefix "wp_", "my_site_options" gives "my_site_"
     while IFS= read -r table; do
@@ -5041,15 +5044,40 @@ else
           fi
         done
 
-        # If all core tables exist with this prefix, we found it
+        # If all core tables exist with this prefix, collect it
         if $prefix_valid; then
-          IMPORTED_DB_PREFIX="$potential_prefix"
-          log "Detected imported database prefix: $IMPORTED_DB_PREFIX"
-          log "  Verified core tables: ${IMPORTED_DB_PREFIX}options, ${IMPORTED_DB_PREFIX}posts, ${IMPORTED_DB_PREFIX}users"
-          break
+          all_valid_prefixes+=("$potential_prefix")
         fi
       fi
     done <<< "$all_tables"
+
+    # SAFETY: Check if multiple WordPress installations detected (Issue #84)
+    if [[ ${#all_valid_prefixes[@]} -gt 1 ]]; then
+      err "Multiple WordPress installations detected in the same database!
+
+Found ${#all_valid_prefixes[@]} complete WordPress installations:
+$(printf '  - %s\n' "${all_valid_prefixes[@]}")
+
+This creates ambiguity about which WordPress installation to use.
+Using the wrong prefix will cause data corruption or complete site failure.
+
+Common causes:
+  - Staging + Production in same database
+  - Multiple test environments
+  - Shared hosting with multiple sites
+  - WordPress multisite network
+
+Cannot auto-detect prefix safely. Migration aborted.
+
+NEXT STEPS:
+  1. Export a clean archive with only ONE WordPress installation
+  2. Use separate databases for staging/production
+  3. Or manually specify which tables to include in the archive"
+    elif [[ ${#all_valid_prefixes[@]} -eq 1 ]]; then
+      IMPORTED_DB_PREFIX="${all_valid_prefixes[0]}"
+      log "Detected imported database prefix: $IMPORTED_DB_PREFIX"
+      log "  Verified core tables: ${IMPORTED_DB_PREFIX}options, ${IMPORTED_DB_PREFIX}posts, ${IMPORTED_DB_PREFIX}users"
+    fi
   fi
 
   if [[ -n "$IMPORTED_DB_PREFIX" ]]; then
