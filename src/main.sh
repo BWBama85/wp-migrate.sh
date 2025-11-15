@@ -1336,14 +1336,54 @@ Contents:
 $(ls -la "$(dirname "$ARCHIVE_DB_FILE")" 2>&1 || echo "Unable to list directory")"
   fi
 
+  # SAFETY: Check exit status and verify import succeeded (Issue #87-4)
+  import_exit_code=0
   if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
     # Show progress with pv
     DB_SIZE=$(stat -f%z "$ARCHIVE_DB_FILE" 2>/dev/null || stat -c%s "$ARCHIVE_DB_FILE" 2>/dev/null)
-    pv -N "Database import" -s "$DB_SIZE" "$ARCHIVE_DB_FILE" | wp_local db import -
+    pv -N "Database import" -s "$DB_SIZE" "$ARCHIVE_DB_FILE" | wp_local db import - || import_exit_code=$?
   else
-    wp_local db import "$ARCHIVE_DB_FILE"
+    wp_local db import "$ARCHIVE_DB_FILE" || import_exit_code=$?
   fi
-  log "Database imported successfully"
+
+  # Check import command exit status
+  if [[ $import_exit_code -ne 0 ]]; then
+    err "Database import failed (exit code: $import_exit_code)
+
+WP-CLI reported an error during import. Possible causes:
+  - Corrupted SQL file
+  - Invalid SQL syntax in backup
+  - Database connection issues
+  - Insufficient database permissions
+
+AUTOMATIC ROLLBACK: The script will now restore your original database
+from the emergency snapshot taken before migration began.
+
+If automatic restore fails, the snapshot will be preserved at:
+  $EMERGENCY_DB_SNAPSHOT"
+  fi
+
+  # Verify import actually created tables
+  imported_tables=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+  if [[ $imported_tables -eq 0 ]]; then
+    err "Database import produced no tables
+
+Import command succeeded but database is empty. Possible causes:
+  - SQL file contains no CREATE TABLE statements
+  - Wrong database selected
+  - SQL file is empty or corrupted
+
+Archive database file: $ARCHIVE_DB_FILE
+File size: $(stat -f%z "$ARCHIVE_DB_FILE" 2>/dev/null || stat -c%s "$ARCHIVE_DB_FILE" 2>/dev/null) bytes
+
+AUTOMATIC ROLLBACK: The script will now restore your original database
+from the emergency snapshot taken before migration began.
+
+If automatic restore fails, the snapshot will be preserved at:
+  $EMERGENCY_DB_SNAPSHOT"
+  fi
+
+  log "Database imported successfully ($imported_tables tables)"
 
   # SAFETY: Import succeeded - clean up emergency snapshot
   if [[ -n "$EMERGENCY_DB_SNAPSHOT" && -f "$EMERGENCY_DB_SNAPSHOT" ]]; then
@@ -1369,31 +1409,48 @@ $(ls -la "$(dirname "$ARCHIVE_DB_FILE")" 2>&1 || echo "Unable to list directory"
 
     # Extract all potential prefixes by looking at tables ending in "options"
     # A table like "wp_options" gives prefix "wp_", "my_site_options" gives "my_site_"
+    # SAFETY: Handle edge cases (Issue #87-5):
+    #   - Empty prefix: "options" → ""
+    #   - Leading underscores: "_wp_options" → "_wp_"
+    #   - Numeric prefixes: "123_wp_options" → "123_wp_"
     while IFS= read -r table; do
-      # Check if this table ends with "_options"
+      potential_prefix=""
+
+      # Handle two patterns:
+      # 1. Standard: ends with "_options" (has underscore separator)
+      # 2. Empty prefix: exact match "options" (rare but valid)
       if [[ "$table" == *_options ]]; then
         # Extract the potential prefix (everything before "_options")
         potential_prefix="${table%_options}_"
+      elif [[ "$table" == "options" ]]; then
+        # Empty prefix case (no underscore separator)
+        potential_prefix=""
+      else
+        # Table doesn't end in "options" - skip it
+        continue
+      fi
 
-        # Skip obvious plugin tables (have text between what looks like a prefix and "options")
-        # e.g., "wp_statistics_options" has "statistics_options" after "wp_"
-        # We want to find cases where prefix + suffix = tablename for CORE tables
-
-        # Verify this prefix exists for ALL core WordPress tables
-        prefix_valid=true
-        for suffix in "${core_suffixes[@]}"; do
+      # Verify this prefix exists for ALL core WordPress tables
+      prefix_valid=true
+      for suffix in "${core_suffixes[@]}"; do
+        if [[ -z "$potential_prefix" ]]; then
+          # Empty prefix case: look for exact table names
+          expected_table="$suffix"
+        else
+          # Standard case: prefix + suffix
           expected_table="${potential_prefix}${suffix}"
-          # Check if this expected core table exists in our table list
-          if ! echo "$all_tables" | grep -q "^${expected_table}$"; then
-            prefix_valid=false
-            break
-          fi
-        done
-
-        # If all core tables exist with this prefix, collect it
-        if $prefix_valid; then
-          all_valid_prefixes+=("$potential_prefix")
         fi
+
+        # Check if this expected core table exists in our table list
+        if ! echo "$all_tables" | grep -q "^${expected_table}$"; then
+          prefix_valid=false
+          break
+        fi
+      done
+
+      # If all core tables exist with this prefix, collect it
+      if $prefix_valid; then
+        all_valid_prefixes+=("$potential_prefix")
       fi
     done <<< "$all_tables"
 
@@ -1407,10 +1464,26 @@ $(ls -la "$(dirname "$ARCHIVE_DB_FILE")" 2>&1 || echo "Unable to list directory"
       base_prefix=$(printf '%s\n' "${all_valid_prefixes[@]}" | awk '{ print length, $0 }' | sort -n | head -1 | cut -d' ' -f2-)
 
       # Check for multisite indicator tables
+      # Note: Prefixes stored with trailing underscore (e.g., "wp_"), so we need to
+      # handle concatenation carefully to avoid double underscores
       is_multisite=false
-      if echo "$all_tables" | grep -q "^${base_prefix}blogs$" && \
-         echo "$all_tables" | grep -q "^${base_prefix}sitemeta$"; then
-        is_multisite=true
+      if [[ -z "$base_prefix" ]]; then
+        # Empty prefix case: look for "blogs" and "sitemeta" directly
+        if echo "$all_tables" | grep -q "^blogs$" && \
+           echo "$all_tables" | grep -q "^sitemeta$"; then
+          is_multisite=true
+        fi
+      else
+        # Non-empty prefix: strip trailing underscore before checking
+        # (prefix is stored as "wp_", but table is "wp_blogs", not "wp__blogs")
+        prefix_without_underscore="${base_prefix%_}"
+        if echo "$all_tables" | grep -q "^${prefix_without_underscore}_blogs$" && \
+           echo "$all_tables" | grep -q "^${prefix_without_underscore}_sitemeta$"; then
+          is_multisite=true
+        fi
+      fi
+
+      if $is_multisite; then
         log "Detected WordPress multisite network with ${#all_valid_prefixes[@]} sites"
         log "  Base prefix: $base_prefix"
         log "  Site prefixes: ${all_valid_prefixes[*]}"

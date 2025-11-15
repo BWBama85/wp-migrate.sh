@@ -160,20 +160,49 @@ Common causes:
   • Manually crafted malicious archive"
   fi
 
+  # SAFETY: Validate ARCHIVE_ADAPTER before calling adapter function (Issue #87-2)
+  if [[ -z "$ARCHIVE_ADAPTER" ]]; then
+    err "Archive adapter not set. This indicates a bug in archive format detection.
+
+Please report this issue with the archive file details."
+  fi
+
   "adapter_${ARCHIVE_ADAPTER}_extract" "$archive" "$dest"
 }
 
 find_archive_database() {
   local extract_dir="$1"
+
+  # SAFETY: Validate ARCHIVE_ADAPTER before calling adapter function (Issue #87-2)
+  if [[ -z "$ARCHIVE_ADAPTER" ]]; then
+    err "Archive adapter not set. This indicates a bug in archive format detection.
+
+Please report this issue with the archive file details."
+  fi
+
   "adapter_${ARCHIVE_ADAPTER}_find_database" "$extract_dir"
 }
 
 find_archive_wp_content() {
   local extract_dir="$1"
+
+  # SAFETY: Validate ARCHIVE_ADAPTER before calling adapter function (Issue #87-2)
+  if [[ -z "$ARCHIVE_ADAPTER" ]]; then
+    err "Archive adapter not set. This indicates a bug in archive format detection.
+
+Please report this issue with the archive file details."
+  fi
+
   "adapter_${ARCHIVE_ADAPTER}_find_content" "$extract_dir"
 }
 
 get_archive_format_name() {
+  # SAFETY: Validate ARCHIVE_ADAPTER before calling adapter function (Issue #87-2)
+  if [[ -z "$ARCHIVE_ADAPTER" ]]; then
+    echo "Unknown"
+    return 0
+  fi
+
   "adapter_${ARCHIVE_ADAPTER}_get_name"
 }
 
@@ -865,7 +894,17 @@ exit_cleanup() {
     if [[ $status -eq 0 ]]; then
       cleanup_archive_temp
     elif [[ -n "$ARCHIVE_EXTRACT_DIR" && -d "$ARCHIVE_EXTRACT_DIR" ]]; then
+      # SAFETY: Warn about disk usage from failed migration (Issue #87-1)
+      local extract_size
+      extract_size=$(du -sh "$ARCHIVE_EXTRACT_DIR" 2>/dev/null | cut -f1 || echo "unknown")
+
       log "Keeping extraction directory for debugging: $ARCHIVE_EXTRACT_DIR"
+      log "  Directory size: $extract_size"
+      log ""
+      log "WARNING: This directory will NOT be automatically cleaned up."
+      log "Manual cleanup required to free disk space:"
+      log "  rm -rf \"$ARCHIVE_EXTRACT_DIR\""
+      log ""
     fi
   fi
   set -e
@@ -1778,24 +1817,97 @@ Next steps:
   # Rollback wp-content
   if [[ -n "$wp_content_backup" && -d "$wp_content_backup" ]]; then
     log "Restoring wp-content from backup..."
-    if [[ -d "$wp_content_path" ]]; then
-      log "  Removing current wp-content..."
-      rm -rf "$wp_content_path"
-    fi
-    log "  Restoring from backup..."
-    if mv "$wp_content_backup" "$wp_content_path"; then
-      log "✓ wp-content restored successfully"
-    else
-      err "Failed to restore wp-content from: $wp_content_backup
 
-The wp-content restore failed.
+    # SAFETY: Verify backup is accessible before deleting current wp-content (Issue #87-3)
+    # This prevents destroying current wp-content if backup is unavailable
+    if [[ ! -r "$wp_content_backup" ]]; then
+      err "Cannot access backup directory: $wp_content_backup
+
+Permissions or filesystem issue prevents reading backup.
+Current wp-content NOT removed (safety measure).
 
 Next steps:
-  1. Try restoring manually:
-       rm -rf $wp_content_path
-       mv $wp_content_backup $wp_content_path
-  2. Check file permissions
-  3. Verify disk space"
+  1. Check backup directory permissions:
+       ls -ld $wp_content_backup
+  2. Verify filesystem is mounted:
+       df -h
+  3. Fix permissions if needed:
+       sudo chown -R $(whoami) $wp_content_backup"
+    fi
+
+    # Use atomic rename when possible (same filesystem)
+    # This prevents any window where wp-content doesn't exist
+    if [[ -d "$wp_content_path" ]]; then
+      local temp_old="${wp_content_path}.old-$$"
+      log "  Moving current wp-content to temporary location..."
+      if ! mv "$wp_content_path" "$temp_old"; then
+        err "Failed to move current wp-content to temporary location.
+
+This may indicate a permissions or filesystem issue.
+Current wp-content NOT removed (safety measure)."
+      fi
+
+      log "  Restoring from backup..."
+      if mv "$wp_content_backup" "$wp_content_path"; then
+        log "  Removing old wp-content..."
+        rm -rf "$temp_old"
+        log "✓ wp-content restored successfully"
+      else
+        # Restore failed - attempt to put back the original
+        log "  ERROR: Restore failed, reverting..."
+        if mv "$temp_old" "$wp_content_path"; then
+          # Revert succeeded - original is back
+          err "Failed to restore wp-content from: $wp_content_backup
+
+Backup move failed. Original wp-content has been restored.
+No data loss occurred.
+
+Next steps:
+  1. Check if backup and wp-content are on different filesystems:
+       df $wp_content_backup
+       df $wp_content_path
+  2. If different filesystems, use cp instead of mv:
+       cp -a $wp_content_backup $wp_content_path
+  3. Check disk space:
+       df -h
+  4. Check file permissions:
+       ls -ld \"\$(dirname \"\$wp_content_path\")\""
+        else
+          # CATASTROPHIC: Both restore AND revert failed
+          err "CRITICAL: Failed to restore wp-content from backup AND failed to restore original
+
+wp-content directory may be in an inconsistent state!
+
+Original wp-content location: $temp_old
+Backup location: $wp_content_backup
+Target location: $wp_content_path
+
+IMMEDIATE RECOVERY STEPS:
+  1. Check filesystem status:
+       df -h
+       mount | grep \$(df \"$temp_old\" | tail -1 | awk '{print \$1}')
+  2. Manually restore original:
+       mv \"$temp_old\" \"$wp_content_path\"
+  3. If that fails, check disk space and permissions:
+       ls -ld \"\$(dirname \"\$wp_content_path\")\"
+       du -sh \"$temp_old\"
+
+DO NOT delete $temp_old until wp-content is confirmed working!"
+        fi
+      fi
+    else
+      log "  Restoring from backup (no current wp-content)..."
+      if mv "$wp_content_backup" "$wp_content_path"; then
+        log "✓ wp-content restored successfully"
+      else
+        err "Failed to restore wp-content from: $wp_content_backup
+
+Next steps:
+  1. Check file permissions
+  2. Verify disk space
+  3. Try manual restore:
+       mv $wp_content_backup $wp_content_path"
+      fi
     fi
   fi
 
