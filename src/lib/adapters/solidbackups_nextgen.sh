@@ -150,11 +150,30 @@ adapter_solidbackups_nextgen_find_database() {
   local candidate_dirs=()
 
   # NextGen stores database files in top-level data/ directory
-  # Collect ALL data/ directories and iterate through them (WordPress core and plugins
-  # have data/ dirs too: wp-includes/ID3/data, jetpack/tests/data, etc.)
-  while IFS= read -r -d '' dir; do
-    candidate_dirs+=("$dir")
-  done < <(find "$extract_dir" -type d -name "data" -print0 2>/dev/null)
+  # Optimize: search shallow first, then deeper (Issue #88-4)
+  # WordPress core and plugins have data/ dirs too (wp-includes/ID3/data, jetpack/tests/data)
+  # but NextGen's data/ is typically at depth 1-2
+  for depth in 1 2 999; do
+    local depth_candidates=()
+
+    # Build find command with optional maxdepth
+    if [[ $depth -lt 999 ]]; then
+      while IFS= read -r -d '' dir; do
+        depth_candidates+=("$dir")
+      done < <(find "$extract_dir" -maxdepth "$depth" -type d -name "data" -print0 2>/dev/null)
+    else
+      while IFS= read -r -d '' dir; do
+        depth_candidates+=("$dir")
+      done < <(find "$extract_dir" -type d -name "data" -print0 2>/dev/null)
+    fi
+
+    if [[ ${#depth_candidates[@]} -gt 0 ]]; then
+      log_verbose "  Found ${#depth_candidates[@]} data/ candidate(s) at depth $depth"
+      candidate_dirs+=("${depth_candidates[@]}")
+      # Stop searching deeper if we found candidates at shallow level
+      [[ $depth -lt 3 ]] && break
+    fi
+  done
 
   if [[ ${#candidate_dirs[@]} -eq 0 ]]; then
     log_verbose "  No data/ directory found in archive"
@@ -217,11 +236,29 @@ adapter_solidbackups_nextgen_find_content() {
   local candidate_dirs=()
 
   # NextGen stores files in top-level files/ directory
-  # Collect ALL files/ directories and iterate through them (plugins may have
-  # nested files/ dirs in their backup/test data)
-  while IFS= read -r -d '' dir; do
-    candidate_dirs+=("$dir")
-  done < <(find "$extract_dir" -type d -name "files" -print0 2>/dev/null)
+  # Optimize: search shallow first, then deeper (Issue #88-4)
+  # Plugins may have nested files/ dirs in backup/test data, but NextGen's is typically at depth 1-2
+  for depth in 1 2 999; do
+    local depth_candidates=()
+
+    # Build find command with optional maxdepth
+    if [[ $depth -lt 999 ]]; then
+      while IFS= read -r -d '' dir; do
+        depth_candidates+=("$dir")
+      done < <(find "$extract_dir" -maxdepth "$depth" -type d -name "files" -print0 2>/dev/null)
+    else
+      while IFS= read -r -d '' dir; do
+        depth_candidates+=("$dir")
+      done < <(find "$extract_dir" -type d -name "files" -print0 2>/dev/null)
+    fi
+
+    if [[ ${#depth_candidates[@]} -gt 0 ]]; then
+      log_verbose "  Found ${#depth_candidates[@]} files/ candidate(s) at depth $depth"
+      candidate_dirs+=("${depth_candidates[@]}")
+      # Stop searching deeper if we found candidates at shallow level
+      [[ $depth -lt 3 ]] && break
+    fi
+  done
 
   if [[ ${#candidate_dirs[@]} -eq 0 ]]; then
     log_verbose "  No files/ directory found in archive"
@@ -313,45 +350,12 @@ adapter_solidbackups_nextgen_find_content() {
 # Consolidate Solid Backups NextGen SQL files into single database dump
 # Usage: adapter_solidbackups_nextgen_consolidate_database <sql_dir> <output_file>
 # Returns: 0 on success, 1 on failure
+# Note: Delegates to shared adapter_base_consolidate_database (Issue #88-1)
 adapter_solidbackups_nextgen_consolidate_database() {
   local sql_dir="$1" output_file="$2"
 
-  log_verbose "  Consolidating SQL files from: $sql_dir"
-
-  # Find all SQL files and concatenate them (Bash 3.2 + BSD compatible)
-  # Use *.sql pattern to support custom table prefixes (e.g., tkI5z3G_options.sql)
-  # Collect files into array, then sort (BSD sort doesn't support -z)
-  local sql_files=()
-  while IFS= read -r -d '' file; do
-    sql_files+=("$file")
-  done < <(find "$sql_dir" -maxdepth 1 -type f -name "*.sql" -print0 2>/dev/null)
-
-  if [[ ${#sql_files[@]} -eq 0 ]]; then
-    log_verbose "  No SQL files found in $sql_dir"
-    return 1
-  fi
-
-  log_verbose "  Found ${#sql_files[@]} SQL files to consolidate"
-
-  # Sort the array using Bash built-in sorting (works on all platforms)
-  # Read sorted output back into array (ShellCheck compliant)
-  local sorted_files
-  sorted_files=$(printf '%s\n' "${sql_files[@]}" | sort)
-  sql_files=()
-  while IFS= read -r file; do
-    sql_files+=("$file")
-  done <<<"$sorted_files"
-
-  # Concatenate all SQL files into output file
-  : > "$output_file"  # Create/truncate output file
-  for sql_file in "${sql_files[@]}"; do
-    log_verbose "    Adding: $(basename "$sql_file")"
-    cat "$sql_file" >> "$output_file"
-    echo "" >> "$output_file"  # Add newline between files
-  done
-
-  log_verbose "  Consolidation complete: $output_file"
-  return 0
+  # Use shared consolidation function (maxdepth 1, verbose logging enabled)
+  adapter_base_consolidate_database "$sql_dir" "$output_file" "1" "verbose"
 }
 
 # Get human-readable format name

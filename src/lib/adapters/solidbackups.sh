@@ -174,38 +174,12 @@ adapter_solidbackups_find_content() {
 # Consolidate Solid Backups SQL files into single database dump
 # Usage: adapter_solidbackups_consolidate_database <sql_dir> <output_file>
 # Returns: 0 on success, 1 on failure
+# Note: Delegates to shared adapter_base_consolidate_database (Issue #88-1)
 adapter_solidbackups_consolidate_database() {
   local sql_dir="$1" output_file="$2"
 
-  # Find all SQL files and concatenate them (Bash 3.2 + BSD compatible)
-  # Use *.sql pattern to support custom table prefixes (e.g., abc123_options.sql)
-  # Collect files into array, then sort (BSD sort doesn't support -z)
-  local sql_files=()
-  while IFS= read -r -d '' file; do
-    sql_files+=("$file")
-  done < <(find "$sql_dir" -maxdepth 1 -type f -name "*.sql" -print0 2>/dev/null)
-
-  if [[ ${#sql_files[@]} -eq 0 ]]; then
-    return 1
-  fi
-
-  # Sort the array using Bash built-in sorting (works on all platforms)
-  # Read sorted output back into array (ShellCheck compliant)
-  local sorted_files
-  sorted_files=$(printf '%s\n' "${sql_files[@]}" | sort)
-  sql_files=()
-  while IFS= read -r file; do
-    sql_files+=("$file")
-  done <<<"$sorted_files"
-
-  # Concatenate all SQL files into output file
-  : > "$output_file"  # Create/truncate output file
-  for sql_file in "${sql_files[@]}"; do
-    cat "$sql_file" >> "$output_file"
-    echo "" >> "$output_file"  # Add newline between files
-  done
-
-  return 0
+  # Use shared consolidation function (maxdepth 1, no verbose logging)
+  adapter_base_consolidate_database "$sql_dir" "$output_file" "1"
 }
 
 # Get human-readable format name

@@ -34,6 +34,7 @@ load_adapter() {
 # Detect which adapter can handle the given archive
 # Usage: detect_adapter <archive_path>
 # Returns: echoes adapter name if detected, returns 1 if no match
+# Note: ADAPTER_VALIDATION_ERRORS array is populated by adapter validate functions
 detect_adapter() {
   local archive="$1"
   local adapter
@@ -41,10 +42,12 @@ detect_adapter() {
   log_verbose "Detecting archive format for: $(basename "$archive")"
 
   # Try each available adapter's validate function (already loaded in built script)
+  # Note: Don't suppress stderr - let adapters report issues (Issue #88-2)
   for adapter in "${AVAILABLE_ADAPTERS[@]}"; do
     log_verbose "  Testing: ${adapter} adapter..."
     # Call the adapter's validate function
-    if "adapter_${adapter}_validate" "$archive" 2>/dev/null; then
+    # Adapters populate ADAPTER_VALIDATION_ERRORS on failure
+    if "adapter_${adapter}_validate" "$archive"; then
       log_verbose "    ✓ Matched ${adapter} format"
       echo "$adapter"
       return 0
@@ -1083,15 +1086,27 @@ find_archive_database_file() {
   if ! db_file=$(find_archive_database "$extract_dir"); then
     local format_name
     format_name=$(get_archive_format_name)
+    # SAFETY: Show pattern for active adapter only (Issue #88-7)
+    local expected_pattern
+    case "$format_name" in
+      "Duplicator")
+        expected_pattern="  • dup-installer/dup-database__*.sql" ;;
+      "Jetpack Backup")
+        expected_pattern="  • sql/*.sql (multiple files)" ;;
+      "Solid Backups")
+        expected_pattern="  • wp-content/uploads/backupbuddy_temp/*/*.sql" ;;
+      "Solid Backups NextGen")
+        expected_pattern="  • data/*_*.sql (multiple files, one per table)" ;;
+      *)
+        expected_pattern="  • (Unknown pattern for adapter: $format_name)" ;;
+    esac
+
     err "Unable to locate database file in $format_name archive.
 
 Archive extracted to: $extract_dir
 
-Expected database file patterns for $format_name:
-$([ "$format_name" = "Duplicator" ] && echo "  • dup-installer/dup-database__*.sql")
-$([ "$format_name" = "Jetpack Backup" ] && echo "  • sql/*.sql (multiple files)")
-$([ "$format_name" = "Solid Backups" ] && echo "  • wp-content/uploads/backupbuddy_temp/*/*.sql")
-$([ "$format_name" = "Solid Backups NextGen" ] && echo "  • data/*_*.sql (multiple files, one per table)")
+Expected database file pattern:
+$expected_pattern
 
 Next steps:
   1. Inspect extracted archive contents:
@@ -1099,11 +1114,8 @@ Next steps:
   2. Look for SQL files manually:
        find \"$extract_dir\" -name \"*.sql\" -type f
   3. Verify this is a complete $format_name backup (not partial)
-  4. If using wrong adapter, try specifying format:
-       --archive-type duplicator
-       --archive-type jetpack
-       --archive-type solidbackups
-       --archive-type solidbackups_nextgen
+  4. If using wrong adapter, specify format explicitly:
+       --archive-type $ARCHIVE_ADAPTER
   5. Check if archive was created correctly by backup plugin"
   fi
 
@@ -1211,6 +1223,7 @@ cleanup_archive_temp() {
 # Compute array difference: items in arr1 NOT in arr2
 # Usage: array_diff result_var arr1_name arr2_name
 # Note: Bash 3.2 compatible (no namerefs)
+# Note: Properly handles items with spaces due to quoted expansion (Issue #88-8)
 array_diff() {
   local result_var="$1"
   local arr1_name="$2"
@@ -1222,6 +1235,7 @@ array_diff() {
   local item found check
 
   # Get array1 elements via eval (shellcheck can't track dynamic assignment)
+  # Quoted expansion preserves items with spaces/special chars
   eval "local arr1_items=(\"\${${arr1_name}[@]}\")"
   eval "local arr2_items=(\"\${${arr2_name}[@]}\")"
 
@@ -1230,6 +1244,7 @@ array_diff() {
   for item in "${arr1_items[@]}"; do
     found=false
     for check in "${arr2_items[@]}"; do
+      # Exact string match with proper quoting handles spaces correctly
       if [[ "$item" == "$check" ]]; then
         found=true
         break
@@ -1237,6 +1252,7 @@ array_diff() {
     done
 
     # If not found in arr2, add to result
+    # Quoted expansion preserves spaces in item
     if ! $found; then
       eval "$result_var+=(\"\$item\")"
     fi
