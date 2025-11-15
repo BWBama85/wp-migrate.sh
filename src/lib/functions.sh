@@ -949,10 +949,12 @@ Next steps:
 extract_archive_to_temp() {
   local archive_path="$1"
 
+  # SAFETY: Extract archive even in dry-run mode (Issue #86)
+  # Extraction is non-destructive (read-only operation on archive)
+  # This enables accurate preview with real file detection and sizes
+  # Cleanup happens automatically via exit_cleanup() or success path
   if $DRY_RUN; then
-    log "[dry-run] Would extract archive to temporary directory"
-    ARCHIVE_EXTRACT_DIR="/tmp/wp-migrate-archive-XXXXXX-dryrun"
-    return 0
+    log "[dry-run] Extracting archive to temporary directory (preview only - no changes to destination)"
   fi
 
   ARCHIVE_EXTRACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/wp-migrate-archive-XXXXXX")"
@@ -1029,10 +1031,11 @@ For security, this archive cannot be used. If you trust the source:
 find_archive_database_file() {
   local extract_dir="$1"
 
+  # SAFETY: Even in dry-run mode, do real database file detection (Issue #86)
+  # This allows preview to show accurate information and prevents crashes
+  # from fake file paths being used in file size operations
   if $DRY_RUN; then
-    log "[dry-run] Would search for database file using $(get_archive_format_name) adapter"
-    ARCHIVE_DB_FILE="$extract_dir/database-example.sql"
-    return 0
+    log "[dry-run] Searching for database file using $(get_archive_format_name) adapter (preview only)"
   fi
 
   # Use the adapter's find database function
@@ -1090,10 +1093,11 @@ Next steps:
 find_archive_wp_content_dir() {
   local extract_dir="$1"
 
+  # SAFETY: Even in dry-run mode, do real wp-content detection (Issue #86)
+  # This allows preview to show accurate information and prevents crashes
+  # from fake directory paths being used in file size operations
   if $DRY_RUN; then
-    log "[dry-run] Would auto-detect wp-content directory using $(get_archive_format_name) adapter"
-    ARCHIVE_WP_CONTENT="$extract_dir/wp-content"
-    return 0
+    log "[dry-run] Auto-detecting wp-content directory using $(get_archive_format_name) adapter (preview only)"
   fi
 
   # Use the adapter's find wp-content function
