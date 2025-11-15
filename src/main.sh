@@ -1198,8 +1198,41 @@ else
   DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
   log "Backing up current wp-content to: $DEST_WP_CONTENT_BACKUP"
   log_trace "cp -a \"$DEST_WP_CONTENT\" \"$DEST_WP_CONTENT_BACKUP\""
-  cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"
-  log "wp-content backup created: $DEST_WP_CONTENT_BACKUP"
+
+  # SAFETY: Verify backup succeeds before destructive operations (Issue #85)
+  if ! cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"; then
+    err "Failed to backup wp-content directory. Cannot proceed safely.
+
+The wp-content backup is critical for rollback if migration fails.
+Without a valid backup, data loss is permanent.
+
+Common causes:
+  - Insufficient disk space (check: df -h)
+  - Permission denied (check: ls -ld \"$(dirname "$DEST_WP_CONTENT")\")
+  - I/O errors (check: dmesg | tail)
+  - SELinux/AppArmor restrictions
+
+Current disk space:
+$(df -h "$DEST_WP_CONTENT" 2>/dev/null || echo "  Unable to check disk space")
+
+Migration aborted to prevent data loss."
+  fi
+
+  # Verify backup directory actually exists
+  if [[ ! -d "$DEST_WP_CONTENT_BACKUP" ]]; then
+    err "Backup directory was not created: $DEST_WP_CONTENT_BACKUP
+
+The cp command reported success but backup directory doesn't exist.
+This indicates a system-level problem. Migration aborted."
+  fi
+
+  # Verify backup has content (not empty directory)
+  backup_file_count=$(find "$DEST_WP_CONTENT_BACKUP" -type f 2>/dev/null | wc -l)
+  if [[ $backup_file_count -eq 0 ]]; then
+    log_warning "wp-content backup appears empty (0 files). This may be normal if wp-content was empty."
+  fi
+
+  log "wp-content backup created: $DEST_WP_CONTENT_BACKUP ($backup_file_count files)"
 fi
 
 # Phase 7: Import database
