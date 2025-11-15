@@ -949,10 +949,12 @@ Next steps:
 extract_archive_to_temp() {
   local archive_path="$1"
 
+  # SAFETY: Extract archive even in dry-run mode (Issue #86)
+  # Extraction is non-destructive (read-only operation on archive)
+  # This enables accurate preview with real file detection and sizes
+  # Cleanup happens automatically via exit_cleanup() or success path
   if $DRY_RUN; then
-    log "[dry-run] Would extract archive to temporary directory"
-    ARCHIVE_EXTRACT_DIR="/tmp/wp-migrate-archive-XXXXXX-dryrun"
-    return 0
+    log "[dry-run] Extracting archive to temporary directory (preview only - no changes to destination)"
   fi
 
   ARCHIVE_EXTRACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/wp-migrate-archive-XXXXXX")"
