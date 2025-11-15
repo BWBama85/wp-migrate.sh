@@ -471,33 +471,31 @@ adapter_base_archive_contains() {
 
   # Temporarily disable pipefail to avoid SIGPIPE (141) errors
   # when grep -q exits early, causing unzip/tar to receive SIGPIPE
+  # Use trap to ensure restoration even on early exit (Issue #88-3)
   local pipefail_was_set=false
   if [[ "$SHELLOPTS" =~ pipefail ]]; then
     pipefail_was_set=true
     set +o pipefail
+    # Ensure pipefail is restored on function exit (normal or error)
+    trap '[[ "$pipefail_was_set" == true ]] && set -o pipefail' RETURN
   fi
 
   if [[ "$archive_type" == "zip" ]]; then
     if unzip -l "$archive" 2>/dev/null | grep -q "$pattern"; then
-      [[ "$pipefail_was_set" == true ]] && set -o pipefail
       return 0
     fi
   elif [[ "$archive_type" == "tar.gz" ]]; then
     # Gzip-compressed tar: use -z flag
     if tar -tzf "$archive" 2>/dev/null | grep -q "$pattern"; then
-      [[ "$pipefail_was_set" == true ]] && set -o pipefail
       return 0
     fi
   elif [[ "$archive_type" == "tar" ]]; then
     # Uncompressed tar: no compression flag
     if tar -tf "$archive" 2>/dev/null | grep -q "$pattern"; then
-      [[ "$pipefail_was_set" == true ]] && set -o pipefail
       return 0
     fi
   fi
 
-  # Restore pipefail if it was set
-  [[ "$pipefail_was_set" == true ]] && set -o pipefail
   return 1
 }
 
@@ -520,6 +518,65 @@ adapter_base_get_archive_type() {
   else
     echo "unknown"
   fi
+}
+
+# Consolidate multiple SQL files into a single database dump
+# Usage: adapter_base_consolidate_database <sql_dir> <output_file> [maxdepth] [verbose]
+# Args:
+#   sql_dir: Directory containing SQL files to consolidate
+#   output_file: Path to output consolidated SQL file
+#   maxdepth: Optional max depth for find (default: no limit)
+#   verbose: Optional flag "verbose" to enable logging (default: silent)
+# Returns: 0 on success, 1 on failure
+# Note: This function extracts common SQL consolidation logic used by multiple adapters
+#       (Issue #88-1: Code deduplication)
+adapter_base_consolidate_database() {
+  local sql_dir="$1" output_file="$2" maxdepth="$3" verbose_flag="$4"
+  local enable_verbose=false
+
+  # Check if verbose mode enabled
+  [[ "$verbose_flag" == "verbose" ]] && enable_verbose=true
+
+  $enable_verbose && log_verbose "  Consolidating SQL files from: $sql_dir"
+
+  # Build find command with optional maxdepth
+  local find_cmd="find \"$sql_dir\""
+  [[ -n "$maxdepth" ]] && find_cmd="$find_cmd -maxdepth $maxdepth"
+  find_cmd="$find_cmd -type f -name \"*.sql\" -print0 2>/dev/null"
+
+  # Find all SQL files and concatenate them (Bash 3.2 + BSD compatible)
+  # Collect files into array, then sort (BSD sort doesn't support -z)
+  local sql_files=()
+  while IFS= read -r -d '' file; do
+    sql_files+=("$file")
+  done < <(eval "$find_cmd")
+
+  if [[ ${#sql_files[@]} -eq 0 ]]; then
+    $enable_verbose && log_verbose "  No SQL files found in $sql_dir"
+    return 1
+  fi
+
+  $enable_verbose && log_verbose "  Found ${#sql_files[@]} SQL files to consolidate"
+
+  # Sort the array using Bash built-in sorting (works on all platforms)
+  # Read sorted output back into array (ShellCheck compliant)
+  local sorted_files
+  sorted_files=$(printf '%s\n' "${sql_files[@]}" | sort)
+  sql_files=()
+  while IFS= read -r file; do
+    sql_files+=("$file")
+  done <<<"$sorted_files"
+
+  # Concatenate all SQL files into output file
+  : > "$output_file"  # Create/truncate output file
+  for sql_file in "${sql_files[@]}"; do
+    $enable_verbose && log_verbose "    Adding: $(basename "$sql_file")"
+    cat "$sql_file" >> "$output_file"
+    echo "" >> "$output_file"  # Add newline between files
+  done
+
+  $enable_verbose && log_verbose "  Consolidation complete: $output_file"
+  return 0
 }
 # shellcheck shell=bash
 # -----------------------
@@ -1017,37 +1074,12 @@ adapter_jetpack_detect_prefix() {
 # Consolidate Jetpack SQL files into single database dump
 # Usage: adapter_jetpack_consolidate_database <sql_dir> <output_file>
 # Returns: 0 on success, 1 on failure
+# Note: Delegates to shared adapter_base_consolidate_database (Issue #88-1)
 adapter_jetpack_consolidate_database() {
   local sql_dir="$1" output_file="$2"
 
-  # Find all SQL files and concatenate them (Bash 3.2 + BSD compatible)
-  # Collect files into array, then sort (BSD sort doesn't support -z)
-  local sql_files=()
-  while IFS= read -r -d '' file; do
-    sql_files+=("$file")
-  done < <(find "$sql_dir" -type f -name "*.sql" -print0 2>/dev/null)
-
-  if [[ ${#sql_files[@]} -eq 0 ]]; then
-    return 1
-  fi
-
-  # Sort the array using Bash built-in sorting (works on all platforms)
-  # Read sorted output back into array (ShellCheck compliant)
-  local sorted_files
-  sorted_files=$(printf '%s\n' "${sql_files[@]}" | sort)
-  sql_files=()
-  while IFS= read -r file; do
-    sql_files+=("$file")
-  done <<<"$sorted_files"
-
-  # Concatenate all SQL files into output file
-  : > "$output_file"  # Create/truncate output file
-  for sql_file in "${sql_files[@]}"; do
-    cat "$sql_file" >> "$output_file"
-    echo "" >> "$output_file"  # Add newline between files
-  done
-
-  return 0
+  # Use shared consolidation function (no maxdepth limit, no verbose logging)
+  adapter_base_consolidate_database "$sql_dir" "$output_file"
 }
 
 # Get human-readable format name
@@ -1239,38 +1271,12 @@ adapter_solidbackups_find_content() {
 # Consolidate Solid Backups SQL files into single database dump
 # Usage: adapter_solidbackups_consolidate_database <sql_dir> <output_file>
 # Returns: 0 on success, 1 on failure
+# Note: Delegates to shared adapter_base_consolidate_database (Issue #88-1)
 adapter_solidbackups_consolidate_database() {
   local sql_dir="$1" output_file="$2"
 
-  # Find all SQL files and concatenate them (Bash 3.2 + BSD compatible)
-  # Use *.sql pattern to support custom table prefixes (e.g., abc123_options.sql)
-  # Collect files into array, then sort (BSD sort doesn't support -z)
-  local sql_files=()
-  while IFS= read -r -d '' file; do
-    sql_files+=("$file")
-  done < <(find "$sql_dir" -maxdepth 1 -type f -name "*.sql" -print0 2>/dev/null)
-
-  if [[ ${#sql_files[@]} -eq 0 ]]; then
-    return 1
-  fi
-
-  # Sort the array using Bash built-in sorting (works on all platforms)
-  # Read sorted output back into array (ShellCheck compliant)
-  local sorted_files
-  sorted_files=$(printf '%s\n' "${sql_files[@]}" | sort)
-  sql_files=()
-  while IFS= read -r file; do
-    sql_files+=("$file")
-  done <<<"$sorted_files"
-
-  # Concatenate all SQL files into output file
-  : > "$output_file"  # Create/truncate output file
-  for sql_file in "${sql_files[@]}"; do
-    cat "$sql_file" >> "$output_file"
-    echo "" >> "$output_file"  # Add newline between files
-  done
-
-  return 0
+  # Use shared consolidation function (maxdepth 1, no verbose logging)
+  adapter_base_consolidate_database "$sql_dir" "$output_file" "1"
 }
 
 # Get human-readable format name
@@ -1438,11 +1444,30 @@ adapter_solidbackups_nextgen_find_database() {
   local candidate_dirs=()
 
   # NextGen stores database files in top-level data/ directory
-  # Collect ALL data/ directories and iterate through them (WordPress core and plugins
-  # have data/ dirs too: wp-includes/ID3/data, jetpack/tests/data, etc.)
-  while IFS= read -r -d '' dir; do
-    candidate_dirs+=("$dir")
-  done < <(find "$extract_dir" -type d -name "data" -print0 2>/dev/null)
+  # Optimize: search shallow first, then deeper (Issue #88-4)
+  # WordPress core and plugins have data/ dirs too (wp-includes/ID3/data, jetpack/tests/data)
+  # but NextGen's data/ is typically at depth 1-2
+  for depth in 1 2 999; do
+    local depth_candidates=()
+
+    # Build find command with optional maxdepth
+    if [[ $depth -lt 999 ]]; then
+      while IFS= read -r -d '' dir; do
+        depth_candidates+=("$dir")
+      done < <(find "$extract_dir" -maxdepth "$depth" -type d -name "data" -print0 2>/dev/null)
+    else
+      while IFS= read -r -d '' dir; do
+        depth_candidates+=("$dir")
+      done < <(find "$extract_dir" -type d -name "data" -print0 2>/dev/null)
+    fi
+
+    if [[ ${#depth_candidates[@]} -gt 0 ]]; then
+      log_verbose "  Found ${#depth_candidates[@]} data/ candidate(s) at depth $depth"
+      candidate_dirs+=("${depth_candidates[@]}")
+      # Stop searching deeper if we found candidates at shallow level
+      [[ $depth -lt 3 ]] && break
+    fi
+  done
 
   if [[ ${#candidate_dirs[@]} -eq 0 ]]; then
     log_verbose "  No data/ directory found in archive"
@@ -1505,11 +1530,29 @@ adapter_solidbackups_nextgen_find_content() {
   local candidate_dirs=()
 
   # NextGen stores files in top-level files/ directory
-  # Collect ALL files/ directories and iterate through them (plugins may have
-  # nested files/ dirs in their backup/test data)
-  while IFS= read -r -d '' dir; do
-    candidate_dirs+=("$dir")
-  done < <(find "$extract_dir" -type d -name "files" -print0 2>/dev/null)
+  # Optimize: search shallow first, then deeper (Issue #88-4)
+  # Plugins may have nested files/ dirs in backup/test data, but NextGen's is typically at depth 1-2
+  for depth in 1 2 999; do
+    local depth_candidates=()
+
+    # Build find command with optional maxdepth
+    if [[ $depth -lt 999 ]]; then
+      while IFS= read -r -d '' dir; do
+        depth_candidates+=("$dir")
+      done < <(find "$extract_dir" -maxdepth "$depth" -type d -name "files" -print0 2>/dev/null)
+    else
+      while IFS= read -r -d '' dir; do
+        depth_candidates+=("$dir")
+      done < <(find "$extract_dir" -type d -name "files" -print0 2>/dev/null)
+    fi
+
+    if [[ ${#depth_candidates[@]} -gt 0 ]]; then
+      log_verbose "  Found ${#depth_candidates[@]} files/ candidate(s) at depth $depth"
+      candidate_dirs+=("${depth_candidates[@]}")
+      # Stop searching deeper if we found candidates at shallow level
+      [[ $depth -lt 3 ]] && break
+    fi
+  done
 
   if [[ ${#candidate_dirs[@]} -eq 0 ]]; then
     log_verbose "  No files/ directory found in archive"
@@ -1601,45 +1644,12 @@ adapter_solidbackups_nextgen_find_content() {
 # Consolidate Solid Backups NextGen SQL files into single database dump
 # Usage: adapter_solidbackups_nextgen_consolidate_database <sql_dir> <output_file>
 # Returns: 0 on success, 1 on failure
+# Note: Delegates to shared adapter_base_consolidate_database (Issue #88-1)
 adapter_solidbackups_nextgen_consolidate_database() {
   local sql_dir="$1" output_file="$2"
 
-  log_verbose "  Consolidating SQL files from: $sql_dir"
-
-  # Find all SQL files and concatenate them (Bash 3.2 + BSD compatible)
-  # Use *.sql pattern to support custom table prefixes (e.g., tkI5z3G_options.sql)
-  # Collect files into array, then sort (BSD sort doesn't support -z)
-  local sql_files=()
-  while IFS= read -r -d '' file; do
-    sql_files+=("$file")
-  done < <(find "$sql_dir" -maxdepth 1 -type f -name "*.sql" -print0 2>/dev/null)
-
-  if [[ ${#sql_files[@]} -eq 0 ]]; then
-    log_verbose "  No SQL files found in $sql_dir"
-    return 1
-  fi
-
-  log_verbose "  Found ${#sql_files[@]} SQL files to consolidate"
-
-  # Sort the array using Bash built-in sorting (works on all platforms)
-  # Read sorted output back into array (ShellCheck compliant)
-  local sorted_files
-  sorted_files=$(printf '%s\n' "${sql_files[@]}" | sort)
-  sql_files=()
-  while IFS= read -r file; do
-    sql_files+=("$file")
-  done <<<"$sorted_files"
-
-  # Concatenate all SQL files into output file
-  : > "$output_file"  # Create/truncate output file
-  for sql_file in "${sql_files[@]}"; do
-    log_verbose "    Adding: $(basename "$sql_file")"
-    cat "$sql_file" >> "$output_file"
-    echo "" >> "$output_file"  # Add newline between files
-  done
-
-  log_verbose "  Consolidation complete: $output_file"
-  return 0
+  # Use shared consolidation function (maxdepth 1, verbose logging enabled)
+  adapter_base_consolidate_database "$sql_dir" "$output_file" "1" "verbose"
 }
 
 # Get human-readable format name
@@ -1691,6 +1701,7 @@ load_adapter() {
 # Detect which adapter can handle the given archive
 # Usage: detect_adapter <archive_path>
 # Returns: echoes adapter name if detected, returns 1 if no match
+# Note: ADAPTER_VALIDATION_ERRORS array is populated by adapter validate functions
 detect_adapter() {
   local archive="$1"
   local adapter
@@ -1698,10 +1709,12 @@ detect_adapter() {
   log_verbose "Detecting archive format for: $(basename "$archive")"
 
   # Try each available adapter's validate function (already loaded in built script)
+  # Note: Don't suppress stderr - let adapters report issues (Issue #88-2)
   for adapter in "${AVAILABLE_ADAPTERS[@]}"; do
     log_verbose "  Testing: ${adapter} adapter..."
     # Call the adapter's validate function
-    if "adapter_${adapter}_validate" "$archive" 2>/dev/null; then
+    # Adapters populate ADAPTER_VALIDATION_ERRORS on failure
+    if "adapter_${adapter}_validate" "$archive"; then
       log_verbose "    ✓ Matched ${adapter} format"
       echo "$adapter"
       return 0
@@ -2740,15 +2753,27 @@ find_archive_database_file() {
   if ! db_file=$(find_archive_database "$extract_dir"); then
     local format_name
     format_name=$(get_archive_format_name)
+    # SAFETY: Show pattern for active adapter only (Issue #88-7)
+    local expected_pattern
+    case "$format_name" in
+      "Duplicator")
+        expected_pattern="  • dup-installer/dup-database__*.sql" ;;
+      "Jetpack Backup")
+        expected_pattern="  • sql/*.sql (multiple files)" ;;
+      "Solid Backups")
+        expected_pattern="  • wp-content/uploads/backupbuddy_temp/*/*.sql" ;;
+      "Solid Backups NextGen")
+        expected_pattern="  • data/*_*.sql (multiple files, one per table)" ;;
+      *)
+        expected_pattern="  • (Unknown pattern for adapter: $format_name)" ;;
+    esac
+
     err "Unable to locate database file in $format_name archive.
 
 Archive extracted to: $extract_dir
 
-Expected database file patterns for $format_name:
-$([ "$format_name" = "Duplicator" ] && echo "  • dup-installer/dup-database__*.sql")
-$([ "$format_name" = "Jetpack Backup" ] && echo "  • sql/*.sql (multiple files)")
-$([ "$format_name" = "Solid Backups" ] && echo "  • wp-content/uploads/backupbuddy_temp/*/*.sql")
-$([ "$format_name" = "Solid Backups NextGen" ] && echo "  • data/*_*.sql (multiple files, one per table)")
+Expected database file pattern:
+$expected_pattern
 
 Next steps:
   1. Inspect extracted archive contents:
@@ -2756,11 +2781,8 @@ Next steps:
   2. Look for SQL files manually:
        find \"$extract_dir\" -name \"*.sql\" -type f
   3. Verify this is a complete $format_name backup (not partial)
-  4. If using wrong adapter, try specifying format:
-       --archive-type duplicator
-       --archive-type jetpack
-       --archive-type solidbackups
-       --archive-type solidbackups_nextgen
+  4. If using wrong adapter, specify format explicitly:
+       --archive-type $ARCHIVE_ADAPTER
   5. Check if archive was created correctly by backup plugin"
   fi
 
@@ -2868,6 +2890,7 @@ cleanup_archive_temp() {
 # Compute array difference: items in arr1 NOT in arr2
 # Usage: array_diff result_var arr1_name arr2_name
 # Note: Bash 3.2 compatible (no namerefs)
+# Note: Properly handles items with spaces due to quoted expansion (Issue #88-8)
 array_diff() {
   local result_var="$1"
   local arr1_name="$2"
@@ -2879,6 +2902,7 @@ array_diff() {
   local item found check
 
   # Get array1 elements via eval (shellcheck can't track dynamic assignment)
+  # Quoted expansion preserves items with spaces/special chars
   eval "local arr1_items=(\"\${${arr1_name}[@]}\")"
   eval "local arr2_items=(\"\${${arr2_name}[@]}\")"
 
@@ -2887,6 +2911,7 @@ array_diff() {
   for item in "${arr1_items[@]}"; do
     found=false
     for check in "${arr2_items[@]}"; do
+      # Exact string match with proper quoting handles spaces correctly
       if [[ "$item" == "$check" ]]; then
         found=true
         break
@@ -2894,6 +2919,7 @@ array_diff() {
     done
 
     # If not found in arr2, add to result
+    # Quoted expansion preserves spaces in item
     if ! $found; then
       eval "$result_var+=(\"\$item\")"
     fi
@@ -4974,6 +5000,46 @@ find_archive_wp_content_dir "$ARCHIVE_EXTRACT_DIR"
 
 # Phase 3b: Discover destination wp-content path (needed for preview)
 DEST_WP_CONTENT="$(discover_wp_content_local)"
+
+# SAFETY: Validate wp-content path before use (Issue #88-6)
+if [[ -z "$DEST_WP_CONTENT" ]]; then
+  err "Failed to discover wp-content directory
+
+WP-CLI did not return a valid wp-content path. Possible causes:
+  - WordPress not properly installed
+  - WP-CLI configuration error
+  - Custom WordPress directory structure
+
+Try running manually:
+  wp eval 'echo WP_CONTENT_DIR;'
+
+If this fails, verify WordPress installation is functional."
+fi
+
+if [[ ! -d "$DEST_WP_CONTENT" ]]; then
+  err "wp-content path is not a directory: $DEST_WP_CONTENT
+
+Path discovered but does not exist or is not a directory.
+
+Current path: $DEST_WP_CONTENT
+Check filesystem:
+  ls -ld \"$DEST_WP_CONTENT\" 2>&1"
+fi
+
+if [[ ! -w "$DEST_WP_CONTENT" ]]; then
+  err "wp-content directory is not writable: $DEST_WP_CONTENT
+
+Migration requires write access to wp-content directory.
+
+Check permissions:
+  ls -ld \"$DEST_WP_CONTENT\"
+
+Fix permissions:
+  sudo chown -R \$(whoami) \"$DEST_WP_CONTENT\"
+  # or
+  sudo chmod -R u+w \"$DEST_WP_CONTENT\""
+fi
+
 log "Destination WP_CONTENT_DIR: $DEST_WP_CONTENT"
 
 # Phase 3c: Detect plugins/themes for preservation (before preview)

@@ -1115,6 +1115,46 @@ find_archive_wp_content_dir "$ARCHIVE_EXTRACT_DIR"
 
 # Phase 3b: Discover destination wp-content path (needed for preview)
 DEST_WP_CONTENT="$(discover_wp_content_local)"
+
+# SAFETY: Validate wp-content path before use (Issue #88-6)
+if [[ -z "$DEST_WP_CONTENT" ]]; then
+  err "Failed to discover wp-content directory
+
+WP-CLI did not return a valid wp-content path. Possible causes:
+  - WordPress not properly installed
+  - WP-CLI configuration error
+  - Custom WordPress directory structure
+
+Try running manually:
+  wp eval 'echo WP_CONTENT_DIR;'
+
+If this fails, verify WordPress installation is functional."
+fi
+
+if [[ ! -d "$DEST_WP_CONTENT" ]]; then
+  err "wp-content path is not a directory: $DEST_WP_CONTENT
+
+Path discovered but does not exist or is not a directory.
+
+Current path: $DEST_WP_CONTENT
+Check filesystem:
+  ls -ld \"$DEST_WP_CONTENT\" 2>&1"
+fi
+
+if [[ ! -w "$DEST_WP_CONTENT" ]]; then
+  err "wp-content directory is not writable: $DEST_WP_CONTENT
+
+Migration requires write access to wp-content directory.
+
+Check permissions:
+  ls -ld \"$DEST_WP_CONTENT\"
+
+Fix permissions:
+  sudo chown -R \$(whoami) \"$DEST_WP_CONTENT\"
+  # or
+  sudo chmod -R u+w \"$DEST_WP_CONTENT\""
+fi
+
 log "Destination WP_CONTENT_DIR: $DEST_WP_CONTENT"
 
 # Phase 3c: Detect plugins/themes for preservation (before preview)

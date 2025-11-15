@@ -62,33 +62,31 @@ adapter_base_archive_contains() {
 
   # Temporarily disable pipefail to avoid SIGPIPE (141) errors
   # when grep -q exits early, causing unzip/tar to receive SIGPIPE
+  # Use trap to ensure restoration even on early exit (Issue #88-3)
   local pipefail_was_set=false
   if [[ "$SHELLOPTS" =~ pipefail ]]; then
     pipefail_was_set=true
     set +o pipefail
+    # Ensure pipefail is restored on function exit (normal or error)
+    trap '[[ "$pipefail_was_set" == true ]] && set -o pipefail' RETURN
   fi
 
   if [[ "$archive_type" == "zip" ]]; then
     if unzip -l "$archive" 2>/dev/null | grep -q "$pattern"; then
-      [[ "$pipefail_was_set" == true ]] && set -o pipefail
       return 0
     fi
   elif [[ "$archive_type" == "tar.gz" ]]; then
     # Gzip-compressed tar: use -z flag
     if tar -tzf "$archive" 2>/dev/null | grep -q "$pattern"; then
-      [[ "$pipefail_was_set" == true ]] && set -o pipefail
       return 0
     fi
   elif [[ "$archive_type" == "tar" ]]; then
     # Uncompressed tar: no compression flag
     if tar -tf "$archive" 2>/dev/null | grep -q "$pattern"; then
-      [[ "$pipefail_was_set" == true ]] && set -o pipefail
       return 0
     fi
   fi
 
-  # Restore pipefail if it was set
-  [[ "$pipefail_was_set" == true ]] && set -o pipefail
   return 1
 }
 
@@ -111,4 +109,63 @@ adapter_base_get_archive_type() {
   else
     echo "unknown"
   fi
+}
+
+# Consolidate multiple SQL files into a single database dump
+# Usage: adapter_base_consolidate_database <sql_dir> <output_file> [maxdepth] [verbose]
+# Args:
+#   sql_dir: Directory containing SQL files to consolidate
+#   output_file: Path to output consolidated SQL file
+#   maxdepth: Optional max depth for find (default: no limit)
+#   verbose: Optional flag "verbose" to enable logging (default: silent)
+# Returns: 0 on success, 1 on failure
+# Note: This function extracts common SQL consolidation logic used by multiple adapters
+#       (Issue #88-1: Code deduplication)
+adapter_base_consolidate_database() {
+  local sql_dir="$1" output_file="$2" maxdepth="$3" verbose_flag="$4"
+  local enable_verbose=false
+
+  # Check if verbose mode enabled
+  [[ "$verbose_flag" == "verbose" ]] && enable_verbose=true
+
+  $enable_verbose && log_verbose "  Consolidating SQL files from: $sql_dir"
+
+  # Build find command with optional maxdepth
+  local find_cmd="find \"$sql_dir\""
+  [[ -n "$maxdepth" ]] && find_cmd="$find_cmd -maxdepth $maxdepth"
+  find_cmd="$find_cmd -type f -name \"*.sql\" -print0 2>/dev/null"
+
+  # Find all SQL files and concatenate them (Bash 3.2 + BSD compatible)
+  # Collect files into array, then sort (BSD sort doesn't support -z)
+  local sql_files=()
+  while IFS= read -r -d '' file; do
+    sql_files+=("$file")
+  done < <(eval "$find_cmd")
+
+  if [[ ${#sql_files[@]} -eq 0 ]]; then
+    $enable_verbose && log_verbose "  No SQL files found in $sql_dir"
+    return 1
+  fi
+
+  $enable_verbose && log_verbose "  Found ${#sql_files[@]} SQL files to consolidate"
+
+  # Sort the array using Bash built-in sorting (works on all platforms)
+  # Read sorted output back into array (ShellCheck compliant)
+  local sorted_files
+  sorted_files=$(printf '%s\n' "${sql_files[@]}" | sort)
+  sql_files=()
+  while IFS= read -r file; do
+    sql_files+=("$file")
+  done <<<"$sorted_files"
+
+  # Concatenate all SQL files into output file
+  : > "$output_file"  # Create/truncate output file
+  for sql_file in "${sql_files[@]}"; do
+    $enable_verbose && log_verbose "    Adding: $(basename "$sql_file")"
+    cat "$sql_file" >> "$output_file"
+    echo "" >> "$output_file"  # Add newline between files
+  done
+
+  $enable_verbose && log_verbose "  Consolidation complete: $output_file"
+  return 0
 }
