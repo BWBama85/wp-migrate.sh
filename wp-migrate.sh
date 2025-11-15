@@ -4262,6 +4262,24 @@ if $DRY_RUN; then
   fi
 else
   mkdir -p "$LOG_DIR"
+
+  # SAFETY: Rotate old log files to prevent indefinite growth (Issue #88-9)
+  # Keep only the most recent 20 log files, delete older ones
+  # This prevents the logs directory from consuming excessive disk space over time
+  if [[ -d "$LOG_DIR" ]]; then
+    # Count existing log files
+    log_count=$(find "$LOG_DIR" -type f -name "migrate-*.log" 2>/dev/null | wc -l)
+
+    # Only rotate if we have more than 20 logs
+    if [[ $log_count -gt 20 ]]; then
+      # Delete all but the 20 most recent log files (sort by modification time)
+      find "$LOG_DIR" -type f -name "migrate-*.log" -print0 2>/dev/null | \
+        xargs -0 ls -t 2>/dev/null | \
+        tail -n +21 | \
+        xargs rm -f 2>/dev/null || true
+    fi
+  fi
+
   if [[ "$MIGRATION_MODE" == "push" ]]; then
     LOG_FILE="$LOG_DIR/migrate-wpcontent-push-$STAMP.log"
     log "Starting push migration. Log: $LOG_FILE"
@@ -5626,7 +5644,65 @@ else
       wp_local option update siteurl "$ORIGINAL_DEST_SITE_URL" >/dev/null
     fi
   else
-    log "Imported URLs match destination URLs; no replacement needed."
+    log "Imported URLs match destination URLs in options table."
+
+    # SAFETY: Verify post content doesn't contain mismatched URLs (Issue #88-5)
+    # Even if options table URLs match, post content might have old URLs
+    log_verbose "Verifying post content for URL consistency..."
+
+    # Sample post content to check for common URL patterns that might indicate old URLs
+    # Check for protocol-less URLs (//), http/https URLs in guid and post_content
+    # We use a small LIMIT to make this check fast (don't scan entire database)
+    sample_urls=$(wp_local db query "
+      SELECT DISTINCT
+        SUBSTRING_INDEX(SUBSTRING_INDEX(post_content, '://', 2), '/', 1) as url_fragment
+      FROM ${IMPORTED_DB_PREFIX}posts
+      WHERE post_content LIKE '%://%'
+      LIMIT 100
+    " --skip-column-names 2>/dev/null | grep -v '^$' | head -20 || true)
+
+    # Check if any sampled URLs contain hostnames different from destination
+    dest_hostname="$(url_host_only "$ORIGINAL_DEST_HOME_URL")"
+
+    if [[ -n "$sample_urls" && -n "$dest_hostname" ]]; then
+      found_mismatch=false
+      mismatched_urls=()
+
+      while IFS= read -r url_fragment; do
+        # Skip empty lines
+        [[ -z "$url_fragment" ]] && continue
+
+        # Extract hostname from fragment (remove protocol if present)
+        hostname="${url_fragment#http}"
+        hostname="${hostname#s}"
+        hostname="${hostname#://}"
+
+        # Check if this hostname differs from destination
+        if [[ "$hostname" != "$dest_hostname" && "$hostname" != "localhost"* ]]; then
+          found_mismatch=true
+          mismatched_urls+=("$hostname")
+        fi
+      done <<< "$sample_urls"
+
+      if $found_mismatch; then
+        log "WARNING: Post content may contain URLs from different domain(s):"
+        printf '  • %s\n' "${mismatched_urls[@]}" | sort -u
+        log ""
+        log "This might indicate:"
+        log "  - Archive contains mixed content from multiple environments"
+        log "  - Embedded media/links from external sources (this is normal)"
+        log "  - Incomplete URL replacement in source archive"
+        log ""
+        log "To fix potential issues, run manual search-replace:"
+        for mismatch in $(printf '%s\n' "${mismatched_urls[@]}" | sort -u | head -3); do
+          log "  wp search-replace 'http://$mismatch' '$ORIGINAL_DEST_HOME_URL' --dry-run"
+        done
+      else
+        log_verbose "  ✓ Post content URLs appear consistent with destination"
+      fi
+    fi
+
+    log "No URL replacement performed (URLs already aligned)."
   fi
 fi
 
