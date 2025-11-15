@@ -4926,7 +4926,9 @@ else
   DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
   log "Backing up current wp-content to: $DEST_WP_CONTENT_BACKUP"
   log_trace "cp -a \"$DEST_WP_CONTENT\" \"$DEST_WP_CONTENT_BACKUP\""
-  cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"
+  if ! cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"; then
+    err "Failed to backup wp-content to $DEST_WP_CONTENT_BACKUP. Check disk space and permissions."
+  fi
   log "wp-content backup created: $DEST_WP_CONTENT_BACKUP"
 fi
 
@@ -4976,15 +4978,8 @@ else
     # Use process substitution to avoid subshell issues with while-read
     while IFS= read -r table; do
       if [[ -n "$table" ]]; then
-        # SECURITY: Validate table name to prevent SQL injection (Issue #83)
-        # MySQL identifiers can only contain: alphanumeric, underscore, dollar sign
-        # Reject any table name with invalid characters to prevent injection attacks
-        if [[ ! "$table" =~ ^[a-zA-Z0-9_\$]+$ ]]; then
-          log "  WARNING: Skipping table with invalid name (possible injection): $table"
-          continue
-        fi
-
         log "  Dropping table: $table"
+        # SECURITY: Backticks properly escape table names for DROP TABLE (Issue #83)
         wp_local db query "DROP TABLE IF EXISTS \`$table\`" 2>/dev/null || {
           log "    WARNING: Could not drop $table"
         }
