@@ -1464,10 +1464,26 @@ If automatic restore fails, the snapshot will be preserved at:
       base_prefix=$(printf '%s\n' "${all_valid_prefixes[@]}" | awk '{ print length, $0 }' | sort -n | head -1 | cut -d' ' -f2-)
 
       # Check for multisite indicator tables
+      # Note: Prefixes stored with trailing underscore (e.g., "wp_"), so we need to
+      # handle concatenation carefully to avoid double underscores
       is_multisite=false
-      if echo "$all_tables" | grep -q "^${base_prefix}blogs$" && \
-         echo "$all_tables" | grep -q "^${base_prefix}sitemeta$"; then
-        is_multisite=true
+      if [[ -z "$base_prefix" ]]; then
+        # Empty prefix case: look for "blogs" and "sitemeta" directly
+        if echo "$all_tables" | grep -q "^blogs$" && \
+           echo "$all_tables" | grep -q "^sitemeta$"; then
+          is_multisite=true
+        fi
+      else
+        # Non-empty prefix: strip trailing underscore before checking
+        # (prefix is stored as "wp_", but table is "wp_blogs", not "wp__blogs")
+        prefix_without_underscore="${base_prefix%_}"
+        if echo "$all_tables" | grep -q "^${prefix_without_underscore}_blogs$" && \
+           echo "$all_tables" | grep -q "^${prefix_without_underscore}_sitemeta$"; then
+          is_multisite=true
+        fi
+      fi
+
+      if $is_multisite; then
         log "Detected WordPress multisite network with ${#all_valid_prefixes[@]} sites"
         log "  Base prefix: $base_prefix"
         log "  Site prefixes: ${all_valid_prefixes[*]}"
