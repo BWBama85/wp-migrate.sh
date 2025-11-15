@@ -1364,6 +1364,9 @@ $(ls -la "$(dirname "$ARCHIVE_DB_FILE")" 2>&1 || echo "Unable to list directory"
     # Define core WordPress table suffixes that must all exist
     core_suffixes=("options" "posts" "users")
 
+    # SAFETY: Collect ALL valid WordPress prefixes to detect multiple installations (Issue #84)
+    all_valid_prefixes=()
+
     # Extract all potential prefixes by looking at tables ending in "options"
     # A table like "wp_options" gives prefix "wp_", "my_site_options" gives "my_site_"
     while IFS= read -r table; do
@@ -1387,15 +1390,65 @@ $(ls -la "$(dirname "$ARCHIVE_DB_FILE")" 2>&1 || echo "Unable to list directory"
           fi
         done
 
-        # If all core tables exist with this prefix, we found it
+        # If all core tables exist with this prefix, collect it
         if $prefix_valid; then
-          IMPORTED_DB_PREFIX="$potential_prefix"
-          log "Detected imported database prefix: $IMPORTED_DB_PREFIX"
-          log "  Verified core tables: ${IMPORTED_DB_PREFIX}options, ${IMPORTED_DB_PREFIX}posts, ${IMPORTED_DB_PREFIX}users"
-          break
+          all_valid_prefixes+=("$potential_prefix")
         fi
       fi
     done <<< "$all_tables"
+
+    # SAFETY: Check if multiple WordPress installations detected (Issue #84)
+    if [[ ${#all_valid_prefixes[@]} -gt 1 ]]; then
+      # Multiple prefixes found - check if this is a multisite network
+      # WordPress multisite has wp_blogs and wp_sitemeta tables (only in base prefix)
+      # Additional sites have wp_2_, wp_3_, etc. prefixes with their own core tables
+
+      # Get the shortest prefix (likely the base site in multisite)
+      base_prefix=$(printf '%s\n' "${all_valid_prefixes[@]}" | awk '{ print length, $0 }' | sort -n | head -1 | cut -d' ' -f2-)
+
+      # Check for multisite indicator tables
+      is_multisite=false
+      if echo "$all_tables" | grep -q "^${base_prefix}blogs$" && \
+         echo "$all_tables" | grep -q "^${base_prefix}sitemeta$"; then
+        is_multisite=true
+        log "Detected WordPress multisite network with ${#all_valid_prefixes[@]} sites"
+        log "  Base prefix: $base_prefix"
+        log "  Site prefixes: ${all_valid_prefixes[*]}"
+      fi
+
+      if ! $is_multisite; then
+        err "Multiple WordPress installations detected in the same database!
+
+Found ${#all_valid_prefixes[@]} complete WordPress installations:
+$(printf '  - %s\n' "${all_valid_prefixes[@]}")
+
+This creates ambiguity about which WordPress installation to use.
+Using the wrong prefix will cause data corruption or complete site failure.
+
+Common causes:
+  - Staging + Production in same database
+  - Multiple test environments
+  - Shared hosting with multiple sites
+
+Cannot auto-detect prefix safely. Migration aborted.
+
+NEXT STEPS:
+  1. Export a clean archive with only ONE WordPress installation
+  2. Use separate databases for staging/production
+  3. Or manually specify which tables to include in the archive
+
+NOTE: If this is a WordPress multisite network, ensure wp_blogs and
+      wp_sitemeta tables are present in the archive."
+      fi
+
+      # For multisite, use the base prefix
+      IMPORTED_DB_PREFIX="$base_prefix"
+      log "Detected imported database prefix: $IMPORTED_DB_PREFIX"
+    elif [[ ${#all_valid_prefixes[@]} -eq 1 ]]; then
+      IMPORTED_DB_PREFIX="${all_valid_prefixes[0]}"
+      log "Detected imported database prefix: $IMPORTED_DB_PREFIX"
+      log "  Verified core tables: ${IMPORTED_DB_PREFIX}options, ${IMPORTED_DB_PREFIX}posts, ${IMPORTED_DB_PREFIX}users"
+    fi
   fi
 
   if [[ -n "$IMPORTED_DB_PREFIX" ]]; then
