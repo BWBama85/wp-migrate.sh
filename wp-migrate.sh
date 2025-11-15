@@ -477,7 +477,8 @@ adapter_base_archive_contains() {
     pipefail_was_set=true
     set +o pipefail
     # Ensure pipefail is restored on function exit (normal or error)
-    trap '[[ "$pipefail_was_set" == true ]] && set -o pipefail' RETURN
+    # Use parameter expansion to handle set -u (unbound variable check)
+    trap '[[ "${pipefail_was_set:-false}" == true ]] && set -o pipefail' RETURN
   fi
 
   if [[ "$archive_type" == "zip" ]]; then
