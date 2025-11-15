@@ -1853,10 +1853,11 @@ Current wp-content NOT removed (safety measure)."
         rm -rf "$temp_old"
         log "✓ wp-content restored successfully"
       else
-        # Restore failed - put back the original
+        # Restore failed - attempt to put back the original
         log "  ERROR: Restore failed, reverting..."
-        mv "$temp_old" "$wp_content_path"
-        err "Failed to restore wp-content from: $wp_content_backup
+        if mv "$temp_old" "$wp_content_path"; then
+          # Revert succeeded - original is back
+          err "Failed to restore wp-content from: $wp_content_backup
 
 Backup move failed. Original wp-content has been restored.
 No data loss occurred.
@@ -1871,6 +1872,28 @@ Next steps:
        df -h
   4. Check file permissions:
        ls -ld \"\$(dirname \"\$wp_content_path\")\""
+        else
+          # CATASTROPHIC: Both restore AND revert failed
+          err "CRITICAL: Failed to restore wp-content from backup AND failed to restore original
+
+wp-content directory may be in an inconsistent state!
+
+Original wp-content location: $temp_old
+Backup location: $wp_content_backup
+Target location: $wp_content_path
+
+IMMEDIATE RECOVERY STEPS:
+  1. Check filesystem status:
+       df -h
+       mount | grep \$(df \"$temp_old\" | tail -1 | awk '{print \$1}')
+  2. Manually restore original:
+       mv \"$temp_old\" \"$wp_content_path\"
+  3. If that fails, check disk space and permissions:
+       ls -ld \"\$(dirname \"\$wp_content_path\")\"
+       du -sh \"$temp_old\"
+
+DO NOT delete $temp_old until wp-content is confirmed working!"
+        fi
       fi
     else
       log "  Restoring from backup (no current wp-content)..."

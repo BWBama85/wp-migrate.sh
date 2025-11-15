@@ -1356,10 +1356,11 @@ WP-CLI reported an error during import. Possible causes:
   - Database connection issues
   - Insufficient database permissions
 
-Emergency snapshot available at: $EMERGENCY_DB_SNAPSHOT
-Manual recovery steps:
-  wp db reset --yes
-  wp db import \"$EMERGENCY_DB_SNAPSHOT\""
+AUTOMATIC ROLLBACK: The script will now restore your original database
+from the emergency snapshot taken before migration began.
+
+If automatic restore fails, the snapshot will be preserved at:
+  $EMERGENCY_DB_SNAPSHOT"
   fi
 
   # Verify import actually created tables
@@ -1375,7 +1376,11 @@ Import command succeeded but database is empty. Possible causes:
 Archive database file: $ARCHIVE_DB_FILE
 File size: $(stat -f%z "$ARCHIVE_DB_FILE" 2>/dev/null || stat -c%s "$ARCHIVE_DB_FILE" 2>/dev/null) bytes
 
-Emergency snapshot available at: $EMERGENCY_DB_SNAPSHOT"
+AUTOMATIC ROLLBACK: The script will now restore your original database
+from the emergency snapshot taken before migration began.
+
+If automatic restore fails, the snapshot will be preserved at:
+  $EMERGENCY_DB_SNAPSHOT"
   fi
 
   log "Database imported successfully ($imported_tables tables)"
