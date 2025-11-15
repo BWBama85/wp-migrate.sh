@@ -7,6 +7,128 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] - 2025-11-15
+
+**🛡️ Security & Stability Hardening**
+
+This minor release addresses critical security vulnerabilities and data loss scenarios identified during a comprehensive security audit (#89). All critical, high-priority, and medium-priority issues have been resolved.
+
+### Security Fixes
+
+- **CRITICAL: Zip Slip path traversal protection**: Archive extraction now validates all paths to prevent malicious archives from writing files outside the extraction directory (#81, #90)
+  - Prevents remote code execution via crafted archives containing paths like `../../etc/passwd`
+  - All adapter extraction functions now sanitize and validate paths
+  - Archives attempting path traversal are rejected with detailed error messages
+
+- **CRITICAL: SQL injection prevention**: Table name validation added to prevent SQL injection in DROP TABLE operations (#83, #92)
+  - Table names must match WordPress naming pattern: `{prefix}_{tablename}` or `{prefix}{number}_{tablename}` (multisite)
+  - Prevents malicious table names from executing arbitrary SQL
+  - Invalid table names are rejected with detailed error messages
+
+- **CRITICAL: Emergency database snapshot**: Database reset now creates emergency snapshot before dropping tables (#82, #91)
+  - Automatic rollback if import fails or produces zero tables
+  - Snapshot automatically restored on script exit if needed
+  - Prevents permanent database loss from crashes during reset
+  - Temporary snapshot cleaned up after successful migration
+
+### Data Protection Fixes
+
+- **CRITICAL: Multi-WordPress database detection**: Script now detects and prevents ambiguous migrations when multiple WordPress installations share a database (#84, #93)
+  - Prevents importing from wrong WordPress installation
+  - Users must confirm which installation to use
+  - Clear error messages with instructions for single-site migration
+
+- **CRITICAL: wp-content backup verification**: Backup operations are now validated before proceeding with destructive changes (#85, #94)
+  - Verifies backup directory exists and is not empty
+  - Checks backup size matches source (within 10% tolerance)
+  - Prevents data loss from failed backup operations
+  - Detailed error messages with filesystem diagnostics
+
+- **CRITICAL: Dry-run mode crash fixes**: Dry-run mode no longer crashes when preview logic attempts file operations (#86, #95)
+  - All file stat and size operations check $DRY_RUN flag first
+  - Dry-run mode now fully functional for testing migrations
+  - Provides accurate preview without touching filesystem
+
+### High-Priority Improvements (Issue #87)
+
+- **Resource leak fixes**: Temporary extraction directories are now cleaned up in all exit paths (#96)
+  - Added exit_cleanup trap to ensure cleanup even on errors
+  - Prevents disk space exhaustion from abandoned temp directories
+
+- **Database import verification**: Import success is validated by checking table count (#96)
+  - Zero-table imports are detected and trigger rollback
+  - Prevents silent import failures
+
+- **Rollback safety improvements**: Rollback operations now validate both restore and revert operations (#96)
+  - Nested validation prevents false success claims
+  - Catastrophic failures provide detailed recovery instructions
+  - Users always know the true state of their wp-content directory
+
+- **Adapter validation**: ARCHIVE_ADAPTER variable is validated before use (#96)
+  - Prevents undefined behavior from invalid adapter names
+  - Clear error messages for unsupported archive types
+
+- **Foreign key constraint handling**: Database import now temporarily disables foreign key checks (#96)
+  - Prevents import failures from constraint violations
+  - Re-enables checks after import completes
+
+- **Emergency snapshot error messages**: Error messages now accurately describe automatic vs manual recovery (#96)
+  - Messages explain that automatic rollback will occur
+  - No longer reference snapshots that get auto-deleted
+
+### Code Quality Improvements (Issue #88)
+
+- **SQL consolidation deduplication**: Eliminated ~90 lines of duplicate code by creating shared `adapter_base_consolidate_database()` function (#97)
+  - All adapters now use common implementation
+  - Consistent error handling and logging across formats
+
+- **Adapter detection error reporting**: Removed stderr suppression to improve troubleshooting (#97)
+  - Adapter validation errors now visible in verbose mode
+  - Helps diagnose archive format issues
+
+- **Pipefail state management**: Added trap-based restoration to prevent pipefail state leakage (#97)
+  - Fixes unbound variable errors with set -u
+  - Ensures pipefail is restored even on early function exit
+
+- **Directory search optimization**: Adapter directory searches now check shallow depths first (#97)
+  - Dramatically improves performance on large archives
+  - Reduces false positives from nested test/backup directories
+
+- **wp-content path validation**: Comprehensive validation before using wp-content paths (#97)
+  - Verifies path is not empty, is a directory, and is writable
+  - Detailed error messages with filesystem diagnostics and recovery steps
+
+- **Error message simplification**: Archive format errors now show only the active adapter's expected pattern (#97)
+  - Reduces confusion by eliminating irrelevant format information
+  - Users see exactly what their chosen format should contain
+
+- **Array difference documentation**: Clarified space handling in array comparison operations (#97)
+  - Documents that quoted expansion preserves items with spaces
+  - Prevents future bugs in array manipulation
+
+- **Log file rotation**: Automatic cleanup keeps only the 20 most recent log files (#98)
+  - Prevents log directory from growing indefinitely
+  - Transparent operation - no user intervention required
+
+- **URL consistency verification**: Post-import verification samples post content for mismatched URLs (#98)
+  - Detects if archive contains mixed content from multiple domains
+  - Provides actionable search-replace commands for fixes
+  - Helps identify incomplete URL replacement in source archives
+
+### Developer Notes
+
+- All fixes maintain backward compatibility
+- No changes to command-line interface or behavior
+- Existing scripts and workflows continue to work unchanged
+- Security improvements are transparent to users
+
+### Upgrade Recommendations
+
+- **Immediate upgrade recommended** for all users due to critical security fixes
+- Zip Slip vulnerability (CVE pending) allows arbitrary file writes - upgrade before processing untrusted archives
+- Emergency snapshot feature provides automatic recovery - highly recommended for production migrations
+- All existing functionality preserved - safe drop-in replacement
+
 ## [2.9.0] - 2025-11-13
 
 **🛡️ Enhanced Reliability**
