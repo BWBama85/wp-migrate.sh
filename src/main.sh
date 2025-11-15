@@ -1201,7 +1201,19 @@ else
   if ! cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"; then
     err "Failed to backup wp-content to $DEST_WP_CONTENT_BACKUP. Check disk space and permissions."
   fi
-  log "wp-content backup created: $DEST_WP_CONTENT_BACKUP"
+
+  # Verify backup actually exists and contains files
+  if [[ ! -d "$DEST_WP_CONTENT_BACKUP" ]]; then
+    err "wp-content backup directory was not created: $DEST_WP_CONTENT_BACKUP"
+  fi
+
+  # Count files in backup to ensure it's not empty
+  backup_file_count=$(find "$DEST_WP_CONTENT_BACKUP" -type f 2>/dev/null | wc -l)
+  if [[ $backup_file_count -eq 0 ]]; then
+    err "wp-content backup is empty. Cannot proceed without valid rollback."
+  fi
+
+  log "wp-content backup created: $DEST_WP_CONTENT_BACKUP ($backup_file_count files)"
 fi
 
 # Phase 7: Import database
@@ -1251,12 +1263,14 @@ else
     while IFS= read -r table; do
       if [[ -n "$table" ]]; then
         log "  Dropping table: $table"
-        # SECURITY: Use printf to prevent shell injection (Issue #83)
-        # The table name is passed through printf %s which outputs it literally,
-        # preventing bash from interpreting backticks, $(...), quotes, etc.
-        wp_local db query "DROP TABLE IF EXISTS \`$(printf '%s' "$table")\`" 2>/dev/null || {
+        # SECURITY: Prevent shell injection by passing SQL via stdin (Issue #83)
+        # printf receives table name as argument (no shell interpretation)
+        # Output goes to wp_local via pipe (never through variable expansion)
+        # This prevents bash from interpreting backticks, $(...), quotes, etc.
+        # shellcheck disable=SC2016  # Backticks are SQL identifier quotes, not bash command substitution
+        if ! printf 'DROP TABLE IF EXISTS `%s`;' "$table" | wp_local db query 2>/dev/null; then
           log "    WARNING: Could not drop $table"
-        }
+        fi
       fi
     done < <(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null)
 
