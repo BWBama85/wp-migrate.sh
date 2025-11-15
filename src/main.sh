@@ -1202,15 +1202,16 @@ else
     err "Failed to backup wp-content to $DEST_WP_CONTENT_BACKUP. Check disk space and permissions."
   fi
 
-  # Verify backup actually exists and contains files
+  # Verify backup directory was actually created
   if [[ ! -d "$DEST_WP_CONTENT_BACKUP" ]]; then
     err "wp-content backup directory was not created: $DEST_WP_CONTENT_BACKUP"
   fi
 
-  # Count files in backup to ensure it's not empty
+  # Count files in backup (informational - some valid installs have only directories)
   backup_file_count=$(find "$DEST_WP_CONTENT_BACKUP" -type f 2>/dev/null | wc -l)
   if [[ $backup_file_count -eq 0 ]]; then
-    err "wp-content backup is empty. Cannot proceed without valid rollback."
+    log "  WARNING: wp-content backup contains no files (only directories)"
+    log "  This is normal if themes/plugins are symlinked or wp-content is minimal"
   fi
 
   log "wp-content backup created: $DEST_WP_CONTENT_BACKUP ($backup_file_count files)"
