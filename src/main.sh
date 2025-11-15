@@ -1295,9 +1295,14 @@ else
     while IFS= read -r table; do
       if [[ -n "$table" ]]; then
         log "  Dropping table: $table"
-        wp_local db query "DROP TABLE IF EXISTS \`$table\`" 2>/dev/null || {
+        # SECURITY: Prevent shell injection by passing SQL via stdin (Issue #83)
+        # printf receives table name as argument (no shell interpretation)
+        # Output goes to wp_local via pipe (never through variable expansion)
+        # This prevents bash from interpreting backticks, $(...), quotes, etc.
+        # shellcheck disable=SC2016  # Backticks are SQL identifier quotes, not bash command substitution
+        if ! printf 'DROP TABLE IF EXISTS `%s`;' "$table" | wp_local db query 2>/dev/null; then
           log "    WARNING: Could not drop $table"
-        }
+        fi
       fi
     done < <(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null)
 
