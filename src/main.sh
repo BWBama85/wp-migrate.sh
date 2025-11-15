@@ -1336,14 +1336,49 @@ Contents:
 $(ls -la "$(dirname "$ARCHIVE_DB_FILE")" 2>&1 || echo "Unable to list directory")"
   fi
 
+  # SAFETY: Check exit status and verify import succeeded (Issue #87-4)
+  import_exit_code=0
   if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
     # Show progress with pv
     DB_SIZE=$(stat -f%z "$ARCHIVE_DB_FILE" 2>/dev/null || stat -c%s "$ARCHIVE_DB_FILE" 2>/dev/null)
-    pv -N "Database import" -s "$DB_SIZE" "$ARCHIVE_DB_FILE" | wp_local db import -
+    pv -N "Database import" -s "$DB_SIZE" "$ARCHIVE_DB_FILE" | wp_local db import - || import_exit_code=$?
   else
-    wp_local db import "$ARCHIVE_DB_FILE"
+    wp_local db import "$ARCHIVE_DB_FILE" || import_exit_code=$?
   fi
-  log "Database imported successfully"
+
+  # Check import command exit status
+  if [[ $import_exit_code -ne 0 ]]; then
+    err "Database import failed (exit code: $import_exit_code)
+
+WP-CLI reported an error during import. Possible causes:
+  - Corrupted SQL file
+  - Invalid SQL syntax in backup
+  - Database connection issues
+  - Insufficient database permissions
+
+Emergency snapshot available at: $EMERGENCY_DB_SNAPSHOT
+Manual recovery steps:
+  wp db reset --yes
+  wp db import \"$EMERGENCY_DB_SNAPSHOT\""
+  fi
+
+  # Verify import actually created tables
+  imported_tables=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+  if [[ $imported_tables -eq 0 ]]; then
+    err "Database import produced no tables
+
+Import command succeeded but database is empty. Possible causes:
+  - SQL file contains no CREATE TABLE statements
+  - Wrong database selected
+  - SQL file is empty or corrupted
+
+Archive database file: $ARCHIVE_DB_FILE
+File size: $(stat -f%z "$ARCHIVE_DB_FILE" 2>/dev/null || stat -c%s "$ARCHIVE_DB_FILE" 2>/dev/null) bytes
+
+Emergency snapshot available at: $EMERGENCY_DB_SNAPSHOT"
+  fi
+
+  log "Database imported successfully ($imported_tables tables)"
 
   # SAFETY: Import succeeded - clean up emergency snapshot
   if [[ -n "$EMERGENCY_DB_SNAPSHOT" && -f "$EMERGENCY_DB_SNAPSHOT" ]]; then
@@ -1369,31 +1404,48 @@ $(ls -la "$(dirname "$ARCHIVE_DB_FILE")" 2>&1 || echo "Unable to list directory"
 
     # Extract all potential prefixes by looking at tables ending in "options"
     # A table like "wp_options" gives prefix "wp_", "my_site_options" gives "my_site_"
+    # SAFETY: Handle edge cases (Issue #87-5):
+    #   - Empty prefix: "options" → ""
+    #   - Leading underscores: "_wp_options" → "_wp_"
+    #   - Numeric prefixes: "123_wp_options" → "123_wp_"
     while IFS= read -r table; do
-      # Check if this table ends with "_options"
+      potential_prefix=""
+
+      # Handle two patterns:
+      # 1. Standard: ends with "_options" (has underscore separator)
+      # 2. Empty prefix: exact match "options" (rare but valid)
       if [[ "$table" == *_options ]]; then
         # Extract the potential prefix (everything before "_options")
         potential_prefix="${table%_options}_"
+      elif [[ "$table" == "options" ]]; then
+        # Empty prefix case (no underscore separator)
+        potential_prefix=""
+      else
+        # Table doesn't end in "options" - skip it
+        continue
+      fi
 
-        # Skip obvious plugin tables (have text between what looks like a prefix and "options")
-        # e.g., "wp_statistics_options" has "statistics_options" after "wp_"
-        # We want to find cases where prefix + suffix = tablename for CORE tables
-
-        # Verify this prefix exists for ALL core WordPress tables
-        prefix_valid=true
-        for suffix in "${core_suffixes[@]}"; do
+      # Verify this prefix exists for ALL core WordPress tables
+      prefix_valid=true
+      for suffix in "${core_suffixes[@]}"; do
+        if [[ -z "$potential_prefix" ]]; then
+          # Empty prefix case: look for exact table names
+          expected_table="$suffix"
+        else
+          # Standard case: prefix + suffix
           expected_table="${potential_prefix}${suffix}"
-          # Check if this expected core table exists in our table list
-          if ! echo "$all_tables" | grep -q "^${expected_table}$"; then
-            prefix_valid=false
-            break
-          fi
-        done
-
-        # If all core tables exist with this prefix, collect it
-        if $prefix_valid; then
-          all_valid_prefixes+=("$potential_prefix")
         fi
+
+        # Check if this expected core table exists in our table list
+        if ! echo "$all_tables" | grep -q "^${expected_table}$"; then
+          prefix_valid=false
+          break
+        fi
+      done
+
+      # If all core tables exist with this prefix, collect it
+      if $prefix_valid; then
+        all_valid_prefixes+=("$potential_prefix")
       fi
     done <<< "$all_tables"
 
