@@ -2499,6 +2499,21 @@ exit_cleanup() {
   local status=$?
   trap - EXIT
   set +e
+
+  # SAFETY: Emergency database restore on failure (Issue #82)
+  # If script failed during database operations and we have a snapshot, restore it
+  if [[ $status -ne 0 && -f "${EMERGENCY_DB_SNAPSHOT:-}" ]]; then
+    echo "EMERGENCY: Script failed during database operations. Restoring from snapshot..."
+    wp_local db reset --yes 2>/dev/null || true
+    if wp_local db import "$EMERGENCY_DB_SNAPSHOT" 2>/dev/null; then
+      echo "Emergency database restore successful"
+      rm -f "$EMERGENCY_DB_SNAPSHOT" 2>/dev/null || true
+    else
+      echo "WARNING: Emergency database restore failed - manual recovery may be needed"
+      echo "Snapshot file preserved at: $EMERGENCY_DB_SNAPSHOT"
+    fi
+  fi
+
   # Maintenance cleanup is non-critical - don't let it affect exit status
   maintenance_cleanup || true
   cleanup_ssh_control
@@ -2591,10 +2606,12 @@ Next steps:
 extract_archive_to_temp() {
   local archive_path="$1"
 
+  # SAFETY: Extract archive even in dry-run mode (Issue #86)
+  # Extraction is non-destructive (read-only operation on archive)
+  # This enables accurate preview with real file detection and sizes
+  # Cleanup happens automatically via exit_cleanup() or success path
   if $DRY_RUN; then
-    log "[dry-run] Would extract archive to temporary directory"
-    ARCHIVE_EXTRACT_DIR="/tmp/wp-migrate-archive-XXXXXX-dryrun"
-    return 0
+    log "[dry-run] Extracting archive to temporary directory (preview only - no changes to destination)"
   fi
 
   ARCHIVE_EXTRACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/wp-migrate-archive-XXXXXX")"
@@ -2671,10 +2688,11 @@ For security, this archive cannot be used. If you trust the source:
 find_archive_database_file() {
   local extract_dir="$1"
 
+  # SAFETY: Even in dry-run mode, do real database file detection (Issue #86)
+  # This allows preview to show accurate information and prevents crashes
+  # from fake file paths being used in file size operations
   if $DRY_RUN; then
-    log "[dry-run] Would search for database file using $(get_archive_format_name) adapter"
-    ARCHIVE_DB_FILE="$extract_dir/database-example.sql"
-    return 0
+    log "[dry-run] Searching for database file using $(get_archive_format_name) adapter (preview only)"
   fi
 
   # Use the adapter's find database function
@@ -2732,10 +2750,11 @@ Next steps:
 find_archive_wp_content_dir() {
   local extract_dir="$1"
 
+  # SAFETY: Even in dry-run mode, do real wp-content detection (Issue #86)
+  # This allows preview to show accurate information and prevents crashes
+  # from fake directory paths being used in file size operations
   if $DRY_RUN; then
-    log "[dry-run] Would auto-detect wp-content directory using $(get_archive_format_name) adapter"
-    ARCHIVE_WP_CONTENT="$extract_dir/wp-content"
-    return 0
+    log "[dry-run] Auto-detecting wp-content directory using $(get_archive_format_name) adapter (preview only)"
   fi
 
   # Use the adapter's find wp-content function
@@ -4926,8 +4945,41 @@ else
   DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
   log "Backing up current wp-content to: $DEST_WP_CONTENT_BACKUP"
   log_trace "cp -a \"$DEST_WP_CONTENT\" \"$DEST_WP_CONTENT_BACKUP\""
-  cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"
-  log "wp-content backup created: $DEST_WP_CONTENT_BACKUP"
+
+  # SAFETY: Verify backup succeeds before destructive operations (Issue #85)
+  if ! cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"; then
+    err "Failed to backup wp-content directory. Cannot proceed safely.
+
+The wp-content backup is critical for rollback if migration fails.
+Without a valid backup, data loss is permanent.
+
+Common causes:
+  - Insufficient disk space (check: df -h)
+  - Permission denied (check: ls -ld \"$(dirname "$DEST_WP_CONTENT")\")
+  - I/O errors (check: dmesg | tail)
+  - SELinux/AppArmor restrictions
+
+Current disk space:
+$(df -h "$DEST_WP_CONTENT" 2>/dev/null || echo "  Unable to check disk space")
+
+Migration aborted to prevent data loss."
+  fi
+
+  # Verify backup directory actually exists
+  if [[ ! -d "$DEST_WP_CONTENT_BACKUP" ]]; then
+    err "Backup directory was not created: $DEST_WP_CONTENT_BACKUP
+
+The cp command reported success but backup directory doesn't exist.
+This indicates a system-level problem. Migration aborted."
+  fi
+
+  # Verify backup has content (not empty directory)
+  backup_file_count=$(find "$DEST_WP_CONTENT_BACKUP" -type f 2>/dev/null | wc -l)
+  if [[ $backup_file_count -eq 0 ]]; then
+    log_warning "wp-content backup appears empty (0 files). This may be normal if wp-content was empty."
+  fi
+
+  log "wp-content backup created: $DEST_WP_CONTENT_BACKUP ($backup_file_count files)"
 fi
 
 # Phase 7: Import database
@@ -4949,6 +5001,19 @@ else
   # Count tables before reset
   tables_before=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
   log "  Tables before reset: $tables_before"
+
+  # SAFETY: Create emergency database snapshot before destructive operations
+  # This provides atomicity - if import fails, we can restore from snapshot
+  # The exit_cleanup() function will auto-restore on failure
+  EMERGENCY_DB_SNAPSHOT="${TMPDIR:-/tmp}/wp-migrate-emergency-snapshot-${STAMP}.sql"
+  log "Creating emergency database snapshot (safety backup)..."
+  if ! wp_local db export "$EMERGENCY_DB_SNAPSHOT" 2>&1 | tee -a "$LOG_FILE"; then
+    log_warning "Could not create emergency snapshot. Proceeding without safety backup."
+    log_warning "Database reset will NOT be atomic - recovery may be manual if script crashes."
+    EMERGENCY_DB_SNAPSHOT=""
+  else
+    log_verbose "Emergency snapshot created: $EMERGENCY_DB_SNAPSHOT"
+  fi
 
   # Attempt reset - allow failure without aborting script (set -e)
   # Run command and capture exit code before set -e can abort
@@ -4977,9 +5042,14 @@ else
     while IFS= read -r table; do
       if [[ -n "$table" ]]; then
         log "  Dropping table: $table"
-        wp_local db query "DROP TABLE IF EXISTS \`$table\`" 2>/dev/null || {
+        # SECURITY: Prevent shell injection by passing SQL via stdin (Issue #83)
+        # printf receives table name as argument (no shell interpretation)
+        # Output goes to wp_local via pipe (never through variable expansion)
+        # This prevents bash from interpreting backticks, $(...), quotes, etc.
+        # shellcheck disable=SC2016  # Backticks are SQL identifier quotes, not bash command substitution
+        if ! printf 'DROP TABLE IF EXISTS `%s`;' "$table" | wp_local db query 2>/dev/null; then
           log "    WARNING: Could not drop $table"
-        }
+        fi
       fi
     done < <(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null)
 
@@ -4997,6 +5067,22 @@ else
 
   # Import the database
   log "Importing database (this may take a few minutes for large databases)..."
+
+  # SAFETY: Verify file exists before attempting file size operations (Issue #86)
+  # In dry-run mode, ARCHIVE_DB_FILE may be set to non-existent placeholder path
+  if [[ ! -f "$ARCHIVE_DB_FILE" ]]; then
+    err "Database file not found: $ARCHIVE_DB_FILE
+
+This should not happen in normal operation. Possible causes:
+  - Archive extraction failed silently
+  - File was deleted between extraction and import
+  - Incorrect archive format detected
+
+Archive directory: $(dirname "$ARCHIVE_DB_FILE")
+Contents:
+$(ls -la "$(dirname "$ARCHIVE_DB_FILE")" 2>&1 || echo "Unable to list directory")"
+  fi
+
   if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
     # Show progress with pv
     DB_SIZE=$(stat -f%z "$ARCHIVE_DB_FILE" 2>/dev/null || stat -c%s "$ARCHIVE_DB_FILE" 2>/dev/null)
@@ -5005,6 +5091,13 @@ else
     wp_local db import "$ARCHIVE_DB_FILE"
   fi
   log "Database imported successfully"
+
+  # SAFETY: Import succeeded - clean up emergency snapshot
+  if [[ -n "$EMERGENCY_DB_SNAPSHOT" && -f "$EMERGENCY_DB_SNAPSHOT" ]]; then
+    log_verbose "Cleaning up emergency snapshot (no longer needed)"
+    rm -f "$EMERGENCY_DB_SNAPSHOT"
+    EMERGENCY_DB_SNAPSHOT=""
+  fi
 
   # Detect the prefix from the imported database
   # Strategy: Find a prefix that exists for ALL core WordPress tables (options, posts, users)
@@ -5053,7 +5146,25 @@ else
 
     # SAFETY: Check if multiple WordPress installations detected (Issue #84)
     if [[ ${#all_valid_prefixes[@]} -gt 1 ]]; then
-      err "Multiple WordPress installations detected in the same database!
+      # Multiple prefixes found - check if this is a multisite network
+      # WordPress multisite has wp_blogs and wp_sitemeta tables (only in base prefix)
+      # Additional sites have wp_2_, wp_3_, etc. prefixes with their own core tables
+
+      # Get the shortest prefix (likely the base site in multisite)
+      base_prefix=$(printf '%s\n' "${all_valid_prefixes[@]}" | awk '{ print length, $0 }' | sort -n | head -1 | cut -d' ' -f2-)
+
+      # Check for multisite indicator tables
+      is_multisite=false
+      if echo "$all_tables" | grep -q "^${base_prefix}blogs$" && \
+         echo "$all_tables" | grep -q "^${base_prefix}sitemeta$"; then
+        is_multisite=true
+        log "Detected WordPress multisite network with ${#all_valid_prefixes[@]} sites"
+        log "  Base prefix: $base_prefix"
+        log "  Site prefixes: ${all_valid_prefixes[*]}"
+      fi
+
+      if ! $is_multisite; then
+        err "Multiple WordPress installations detected in the same database!
 
 Found ${#all_valid_prefixes[@]} complete WordPress installations:
 $(printf '  - %s\n' "${all_valid_prefixes[@]}")
@@ -5065,14 +5176,21 @@ Common causes:
   - Staging + Production in same database
   - Multiple test environments
   - Shared hosting with multiple sites
-  - WordPress multisite network
 
 Cannot auto-detect prefix safely. Migration aborted.
 
 NEXT STEPS:
   1. Export a clean archive with only ONE WordPress installation
   2. Use separate databases for staging/production
-  3. Or manually specify which tables to include in the archive"
+  3. Or manually specify which tables to include in the archive
+
+NOTE: If this is a WordPress multisite network, ensure wp_blogs and
+      wp_sitemeta tables are present in the archive."
+      fi
+
+      # For multisite, use the base prefix
+      IMPORTED_DB_PREFIX="$base_prefix"
+      log "Detected imported database prefix: $IMPORTED_DB_PREFIX"
     elif [[ ${#all_valid_prefixes[@]} -eq 1 ]]; then
       IMPORTED_DB_PREFIX="${all_valid_prefixes[0]}"
       log "Detected imported database prefix: $IMPORTED_DB_PREFIX"
