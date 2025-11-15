@@ -2499,6 +2499,21 @@ exit_cleanup() {
   local status=$?
   trap - EXIT
   set +e
+
+  # SAFETY: Emergency database restore on failure (Issue #82)
+  # If script failed during database operations and we have a snapshot, restore it
+  if [[ $status -ne 0 && -f "${EMERGENCY_DB_SNAPSHOT:-}" ]]; then
+    echo "EMERGENCY: Script failed during database operations. Restoring from snapshot..."
+    wp_local db reset --yes 2>/dev/null || true
+    if wp_local db import "$EMERGENCY_DB_SNAPSHOT" 2>/dev/null; then
+      echo "Emergency database restore successful"
+      rm -f "$EMERGENCY_DB_SNAPSHOT" 2>/dev/null || true
+    else
+      echo "WARNING: Emergency database restore failed - manual recovery may be needed"
+      echo "Snapshot file preserved at: $EMERGENCY_DB_SNAPSHOT"
+    fi
+  fi
+
   # Maintenance cleanup is non-critical - don't let it affect exit status
   maintenance_cleanup || true
   cleanup_ssh_control
@@ -4926,20 +4941,38 @@ else
   DEST_WP_CONTENT_BACKUP="${DEST_WP_CONTENT}.backup-${STAMP}"
   log "Backing up current wp-content to: $DEST_WP_CONTENT_BACKUP"
   log_trace "cp -a \"$DEST_WP_CONTENT\" \"$DEST_WP_CONTENT_BACKUP\""
+
+  # SAFETY: Verify backup succeeds before destructive operations (Issue #85)
   if ! cp -a "$DEST_WP_CONTENT" "$DEST_WP_CONTENT_BACKUP"; then
-    err "Failed to backup wp-content to $DEST_WP_CONTENT_BACKUP. Check disk space and permissions."
+    err "Failed to backup wp-content directory. Cannot proceed safely.
+
+The wp-content backup is critical for rollback if migration fails.
+Without a valid backup, data loss is permanent.
+
+Common causes:
+  - Insufficient disk space (check: df -h)
+  - Permission denied (check: ls -ld \"$(dirname "$DEST_WP_CONTENT")\")
+  - I/O errors (check: dmesg | tail)
+  - SELinux/AppArmor restrictions
+
+Current disk space:
+$(df -h "$DEST_WP_CONTENT" 2>/dev/null || echo "  Unable to check disk space")
+
+Migration aborted to prevent data loss."
   fi
 
-  # Verify backup directory was actually created
+  # Verify backup directory actually exists
   if [[ ! -d "$DEST_WP_CONTENT_BACKUP" ]]; then
-    err "wp-content backup directory was not created: $DEST_WP_CONTENT_BACKUP"
+    err "Backup directory was not created: $DEST_WP_CONTENT_BACKUP
+
+The cp command reported success but backup directory doesn't exist.
+This indicates a system-level problem. Migration aborted."
   fi
 
-  # Count files in backup (informational - some valid installs have only directories)
+  # Verify backup has content (not empty directory)
   backup_file_count=$(find "$DEST_WP_CONTENT_BACKUP" -type f 2>/dev/null | wc -l)
   if [[ $backup_file_count -eq 0 ]]; then
-    log "  WARNING: wp-content backup contains no files (only directories)"
-    log "  This is normal if themes/plugins are symlinked or wp-content is minimal"
+    log_warning "wp-content backup appears empty (0 files). This may be normal if wp-content was empty."
   fi
 
   log "wp-content backup created: $DEST_WP_CONTENT_BACKUP ($backup_file_count files)"
@@ -4964,6 +4997,19 @@ else
   # Count tables before reset
   tables_before=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
   log "  Tables before reset: $tables_before"
+
+  # SAFETY: Create emergency database snapshot before destructive operations
+  # This provides atomicity - if import fails, we can restore from snapshot
+  # The exit_cleanup() function will auto-restore on failure
+  EMERGENCY_DB_SNAPSHOT="${TMPDIR:-/tmp}/wp-migrate-emergency-snapshot-${STAMP}.sql"
+  log "Creating emergency database snapshot (safety backup)..."
+  if ! wp_local db export "$EMERGENCY_DB_SNAPSHOT" 2>&1 | tee -a "$LOG_FILE"; then
+    log_warning "Could not create emergency snapshot. Proceeding without safety backup."
+    log_warning "Database reset will NOT be atomic - recovery may be manual if script crashes."
+    EMERGENCY_DB_SNAPSHOT=""
+  else
+    log_verbose "Emergency snapshot created: $EMERGENCY_DB_SNAPSHOT"
+  fi
 
   # Attempt reset - allow failure without aborting script (set -e)
   # Run command and capture exit code before set -e can abort
@@ -5025,6 +5071,13 @@ else
     wp_local db import "$ARCHIVE_DB_FILE"
   fi
   log "Database imported successfully"
+
+  # SAFETY: Import succeeded - clean up emergency snapshot
+  if [[ -n "$EMERGENCY_DB_SNAPSHOT" && -f "$EMERGENCY_DB_SNAPSHOT" ]]; then
+    log_verbose "Cleaning up emergency snapshot (no longer needed)"
+    rm -f "$EMERGENCY_DB_SNAPSHOT"
+    EMERGENCY_DB_SNAPSHOT=""
+  fi
 
   # Detect the prefix from the imported database
   # Strategy: Find a prefix that exists for ALL core WordPress tables (options, posts, users)
