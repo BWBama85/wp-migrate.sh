@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.1] - 2025-11-17
+
+**📚 Documentation Updates**
+
+This patch release improves documentation accuracy and removes obsolete files. No functional changes.
+
+### Documentation
+
+- **Comprehensive documentation audit**: Added missing wp-migrate format references throughout README.md (#103, #105)
+  - Added wp-migrate format to all 8 locations where archive formats are listed
+  - Documented jq dependency requirement for wp-migrate format validation
+  - Distinguished Solid Backups Legacy vs NextGen consistently
+
+- **Security feature documentation**: Added comprehensive Security Features section to README.md (#103, #105)
+  - Documented v2.10.0 Zip Slip path traversal protection
+  - Documented v2.10.0 SQL injection prevention
+  - Documented v2.10.0 emergency database snapshot feature
+
+- **WP-CLI documentation**: Added WP-CLI Automatic Error Recovery section to README.md (#103, #105)
+  - Documented v2.9.0 automatic `--skip-plugins --skip-themes` flags
+  - Explained when and why error recovery helps migrations succeed
+
+- **Troubleshooting expansion**: Expanded troubleshooting from 3 bullets to comprehensive sections (#103, #105)
+  - Added guidance for v2.9.0-v2.10.0 scenarios
+  - Improved common error resolution steps
+
+- **Developer documentation updates**: Updated CLAUDE.md from v2.8.3 to v2.10.0 (#102, #105)
+  - Added v2.10.0 security protections to Key Safety Features
+  - Added v2.9.0 WP-CLI error recovery documentation
+  - Added v2.8.3 plugin filtering documentation
+  - Fixed incorrect version references
+
+- **Test documentation improvements**: Enhanced test suite documentation (#104, #105)
+  - Added comprehensive overview of all test types to tests/README.md
+  - Documented integration tests for archive format detection
+  - Added "What's NOT Tested" section explaining manual test scenarios
+  - Documented missing test fixtures and regeneration procedures in tests/fixtures/README.md
+  - Updated fixture creation date to 2025-11-17
+
+- **Obsolete file removal**: Deleted 9 outdated/duplicate documentation files (#101, #105)
+  - Removed duplicate release notes (RELEASE_NOTES_v2.0.0.md, RELEASE_NOTES_v2.1.0.md, release-notes.md)
+  - Removed obsolete IMPLEMENTATION_STATUS.md
+  - Removed 5 implementation plan documents for completed features (v2.8.0-v2.9.0)
+  - CHANGELOG.md is now the single source of truth for release information
+
 ## [2.10.0] - 2025-11-15
 
 **🛡️ Security & Stability Hardening**
