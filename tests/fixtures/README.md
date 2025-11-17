@@ -79,15 +79,33 @@ echo "CREATE TABLE wp_options (option_name varchar(191));" > test/dup-installer/
 cd test && zip -r duplicator-test.zip . && cd ..
 ```
 
-## Maintenance
+## Missing Fixtures
 
-These fixtures should be regenerated if:
+The following adapters do not yet have test fixtures:
 
-- Adapter validation logic changes significantly
-- New required signature files are added
-- Format specifications change
+- **wp-migrate native format** (v2.8.0+) - Should include `wpmigrate-backup.json`, `database.sql`, and `wp-content/`
+- **Solid Backups NextGen** (v2.7.0+) - Should include `data/` directory with SQL files and `files/` directory
 
-Current versions created: 2025-10-20
+These should be added to provide complete test coverage for all 5 supported formats.
+
+## Updating Test Fixtures
+
+Test fixtures should be regenerated when:
+
+1. **Adapter validation logic changes significantly** - If validation functions add new requirements
+2. **New required signature files are added** - If formats add mandatory metadata files
+3. **Format specifications change** - If backup plugins change their archive structure
+4. **Security fixes affect extraction** - After v2.10.0 Zip Slip protection, verify paths are clean
+
+### Regeneration Procedure
+
+1. Study current adapter requirements in `src/lib/adapters/<format>.sh`
+2. Create minimal structure satisfying validation (see "Creating New Test Fixtures" above)
+3. Test with: `./wp-migrate.sh --archive <file> --dry-run --verbose`
+4. Verify format detection works: `./tests/integration/test-archive-detection.sh`
+5. Update "Current versions created" date below
+
+Current versions created: 2025-11-17
 
 ## See Also
 
