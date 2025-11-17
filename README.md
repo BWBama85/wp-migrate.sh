@@ -5,7 +5,7 @@
 `wp-migrate.sh` migrates WordPress sites in two modes:
 
 1. **Push mode**: Pushes a WordPress site's `wp-content` directory and database export from a source server to a destination server via SSH.
-2. **Archive mode**: Imports WordPress backup archives (currently supports **Duplicator**, **Jetpack Backup**, and **Solid Backups** (formerly BackupBuddy); designed to support UpdraftPlus and other formats in future releases) directly on the destination server without requiring SSH access to the source.
+2. **Archive mode**: Imports WordPress backup archives (currently supports **wp-migrate native backups**, **Duplicator**, **Jetpack Backup**, **Solid Backups Legacy**, and **Solid Backups NextGen**; designed to support UpdraftPlus and other formats in future releases) directly on the destination server without requiring SSH access to the source.
 
 Both modes coordinate the entire workflow, including maintenance mode, database handling, file sync, and cache maintenance.
 
@@ -33,10 +33,12 @@ Both modes coordinate the entire workflow, including maintenance mode, database 
 - Supports a comprehensive dry-run mode that previews every step without mutating either server.
 
 ### Archive Mode
-- Imports WordPress backup archives (currently supports **Duplicator**, **Jetpack Backup**, and **Solid Backups**; designed to support additional formats).
+- Imports WordPress backup archives (currently supports **wp-migrate native backups**, **Duplicator**, **Jetpack Backup**, **Solid Backups Legacy**, and **Solid Backups NextGen**; designed to support additional formats).
+  - **wp-migrate**: Native backup format with JSON metadata, simple structure (created by `--create-backup` mode)
   - **Duplicator**: ZIP archives with `dup-installer/dup-database__*.sql` structure
-  - **Jetpack Backup**: ZIP archives with `sql/*.sql` multi-file structure
-  - **Solid Backups** (formerly BackupBuddy): ZIP archives with split SQL files in `wp-content/uploads/backupbuddy_temp/{BACKUP_ID}/` (one file per table, automatically consolidated during import)
+  - **Jetpack Backup**: ZIP, TAR.GZ, or TAR archives with `sql/*.sql` multi-file structure
+  - **Solid Backups Legacy** (formerly BackupBuddy): ZIP archives with split SQL files in `wp-content/uploads/backupbuddy_temp/{BACKUP_ID}/` (one file per table, automatically consolidated during import)
+  - **Solid Backups NextGen**: ZIP archives with completely different structure using `data/` and `files/` directories (one SQL file per table in `data/`, WordPress files in `files/`)
 - **Extensible adapter system** makes adding new backup formats simple (see [src/lib/adapters/README.md](src/lib/adapters/README.md) for contributor guide).
 - **Auto-detects backup format** or accepts explicit `--archive-type` for manual override.
 - **Shows migration preview** with archive details, format, size, file counts, and planned operations.
@@ -73,7 +75,8 @@ Run the script from the WordPress root on the source server (where `wp-config.ph
 ### Archive Mode
 - WordPress CLI (`wp`)
 - `file` (for archive type detection)
-- `unzip` and `tar` (for archive format extraction - Duplicator uses ZIP, Jetpack uses TAR.GZ)
+- `unzip` and `tar` (for archive format extraction - wp-migrate, Duplicator, and Solid Backups use ZIP; Jetpack uses TAR.GZ or TAR)
+- `jq` (for wp-migrate format JSON validation - optional, only needed when importing wp-migrate archives)
 
 Run the script from the WordPress root on the destination server (where `wp-config.php` lives). The backup archive must be accessible on the filesystem.
 
@@ -88,11 +91,14 @@ These tools are optional but provide enhanced functionality when installed:
   - Install: `apt-get install libarchive-tools` (Debian/Ubuntu) or `brew install libarchive` (macOS)
   - Note: On macOS, `bsdtar` is typically pre-installed
 
+- **`jq` (JSON processor)**: Required for wp-migrate format validation when importing native backups. The wp-migrate format uses JSON metadata (`wpmigrate-backup.json`) that must be validated. Without `jq`, wp-migrate archives cannot be imported, but other formats work normally.
+  - Install: `apt-get install jq` (Debian/Ubuntu) or `brew install jq` (macOS)
+
 **Progress Matrix:**
 
 | Archive Format | pv | bsdtar | Progress Shown? |
 |----------------|-----|--------|-----------------|
-| ZIP (Duplicator, Solid Backups) | ✅ | ✅ | ✅ Yes |
+| ZIP (wp-migrate, Duplicator, Solid Backups) | ✅ | ✅ | ✅ Yes |
 | ZIP | ✅ | ❌ | ❌ No (but works) |
 | ZIP | ❌ | - | ❌ No |
 | tar.gz/tar (Jetpack) | ✅ | - | ✅ Yes (via GNU tar) |
@@ -128,20 +134,28 @@ Common examples:
 Common examples:
 - Import a backup archive (auto-detect format):
   ```bash
+  # wp-migrate native backup
+  ./wp-migrate.sh --archive /backups/example-com-2025-11-15-143022.zip
+
   # Duplicator
   ./wp-migrate.sh --archive /backups/duplicator-site.zip
 
   # Jetpack Backup
   ./wp-migrate.sh --archive /backups/jetpack-backup.tar.gz
 
-  # Solid Backups (formerly BackupBuddy)
-  ./wp-migrate.sh --archive /backups/solidbackups-full.zip
+  # Solid Backups Legacy (formerly BackupBuddy)
+  ./wp-migrate.sh --archive /backups/solidbackups-legacy.zip
+
+  # Solid Backups NextGen
+  ./wp-migrate.sh --archive /backups/solidbackups-nextgen.zip
   ```
 - Import with explicit format specification:
   ```bash
+  ./wp-migrate.sh --archive /backups/site.zip --archive-type wpmigrate
   ./wp-migrate.sh --archive /backups/site.zip --archive-type duplicator
   ./wp-migrate.sh --archive /backups/backup.tar.gz --archive-type jetpack
   ./wp-migrate.sh --archive /backups/backup.zip --archive-type solidbackups
+  ./wp-migrate.sh --archive /backups/backup.zip --archive-type solidbackups_nextgen
   ```
 - Preview import without making changes (dry run):
   ```bash
@@ -152,7 +166,7 @@ Common examples:
   ./wp-migrate.sh --duplicator-archive /backups/site.zip
   ```
 
-**Note:** Currently supports **Duplicator**, **Jetpack Backup**, and **Solid Backups** archives. The extensible adapter architecture supports adding UpdraftPlus and other formats—contributors can add adapters following the guide in [src/lib/adapters/README.md](src/lib/adapters/README.md).
+**Note:** Currently supports **wp-migrate native backups** (created with `--create-backup`), **Duplicator**, **Jetpack Backup**, **Solid Backups Legacy**, and **Solid Backups NextGen** archives. The extensible adapter architecture supports adding UpdraftPlus and other formats—contributors can add adapters following the guide in [src/lib/adapters/README.md](src/lib/adapters/README.md).
 
 ### Backup Creation Mode
 
@@ -184,13 +198,16 @@ Create a backup on a remote server:
 ```
 
 **Features:**
-- Creates timestamped ZIP archive with database and wp-content
+- Creates timestamped ZIP archive with database and wp-content in **wp-migrate native format**
+- Includes JSON metadata (`wpmigrate-backup.json`) for format validation
 - Automatically excludes cache directories, object cache files, and debug logs
 - Stores backup in `~/wp-migrate-backups/`
-- Compatible with `--archive` import mode
+- **Fully compatible with `--archive` import mode** - backups can be imported on any WordPress installation
 - Local mode requires no SSH configuration
 
 **Backup location:** `~/wp-migrate-backups/{domain}-{YYYY-MM-DD-HHMMSS}.zip`
+
+**Archive format:** wp-migrate native format with simple structure (see [src/lib/adapters/README.md](src/lib/adapters/README.md) for format details)
 
 **Example workflows:**
 
@@ -308,8 +325,8 @@ Common examples:
 #### Required Flags
 | Flag | Description |
 | ---- | ----------- |
-| `--archive </path/to/backup>` | **Required.** Path to backup archive file or extracted directory. Supports Duplicator (ZIP), Jetpack Backup (ZIP, TAR.GZ, TAR, or extracted directory), Solid Backups Legacy (ZIP or extracted directory), and Solid Backups NextGen (ZIP or extracted directory). Format is auto-detected. Mutually exclusive with `--dest-host`. |
-| `--archive-type <type>` | **Optional.** Explicitly specify archive format: `duplicator`, `jetpack`, `solidbackups` (legacy), or `solidbackups_nextgen`. Useful when auto-detection fails or you want to skip detection. If not specified, the script tries each adapter's validation function to identify the format. Use `solidbackups` for old Solid Backups/BackupBuddy archives (with `backupbuddy_temp/` structure) and `solidbackups_nextgen` for new NextGen archives (with `data/` and `files/` structure). |
+| `--archive </path/to/backup>` | **Required.** Path to backup archive file or extracted directory. Supports wp-migrate native backups (ZIP), Duplicator (ZIP), Jetpack Backup (ZIP, TAR.GZ, TAR, or extracted directory), Solid Backups Legacy (ZIP or extracted directory), and Solid Backups NextGen (ZIP or extracted directory). Format is auto-detected. Mutually exclusive with `--dest-host`. |
+| `--archive-type <type>` | **Optional.** Explicitly specify archive format: `wpmigrate`, `duplicator`, `jetpack`, `solidbackups` (legacy), or `solidbackups_nextgen`. Useful when auto-detection fails or you want to skip detection. If not specified, the script tries each adapter's validation function to identify the format. Use `wpmigrate` for native backups created with `--create-backup`, `solidbackups` for old Solid Backups/BackupBuddy archives (with `backupbuddy_temp/` structure), and `solidbackups_nextgen` for new NextGen archives (with `data/` and `files/` structure). |
 | `--duplicator-archive </path/to/backup.zip>` | **Deprecated.** Use `--archive` instead. Maintained for backward compatibility - internally converted to `--archive --archive-type=duplicator`. Will be removed in v3.0.0. |
 
 #### Database Options
@@ -339,19 +356,23 @@ Common examples:
 
 ### Archive Mode
 1. **Preflight**: Ensures the script runs from a WordPress root, verifies required binaries, confirms WordPress installation, validates the archive file exists.
-2. **Format Detection**: Auto-detects archive format (Duplicator, Jetpack Backup, or Solid Backups) by trying each adapter's validation function. Each adapter checks for format-specific signature files:
+2. **Format Detection**: Auto-detects archive format (wp-migrate, Duplicator, Jetpack Backup, Solid Backups Legacy, or Solid Backups NextGen) by trying each adapter's validation function. Each adapter checks for format-specific signature files:
+   - **wp-migrate**: Looks for `wpmigrate-backup.json` metadata file (checked first for performance)
    - **Duplicator**: Looks for `installer.php` and `dup-installer/` directory
    - **Jetpack Backup**: Looks for `meta.json` + `sql/wp_options.sql` (archives) or `sql/` + `meta.json` + `wp-content/` (extracted directories)
-   - **Solid Backups**: Looks for `importbuddy.php` or `backupbuddy_dat.php` signature files
+   - **Solid Backups Legacy**: Looks for `importbuddy.php` or `backupbuddy_dat.php` signature files in `wp-content/uploads/backupbuddy_temp/`
+   - **Solid Backups NextGen**: Looks for `data/` directory with SQL files and `files/` directory
    - Alternatively, use explicit `--archive-type` to skip auto-detection
 3. **Dependency Check**: Verifies format-specific tools are available (e.g., `unzip` for ZIP archives, `tar` for TAR/GZ archives).
 4. **URL Capture**: Captures current destination site URLs (`home` and `siteurl` options) before any operations.
 5. **Disk Space Check**: Validates that 3x the archive size is available (archive + extraction + buffer) and fails early if insufficient.
 6. **Extraction**: Extracts the archive to a temporary directory using the appropriate adapter's extract function.
 7. **Discovery**: Auto-detects the database file and wp-content directory using format-specific adapter functions:
+   - **wp-migrate**: Single SQL file at root (`database.sql`), wp-content at root
    - **Duplicator**: Single SQL file in `dup-installer/dup-database__*.sql`
-   - **Jetpack Backup**: Multiple SQL files in `sql/*.sql` directory
-   - **Solid Backups**: Split SQL files (one per table) in `wp-content/uploads/backupbuddy_temp/{BACKUP_ID}/`, automatically consolidated during import
+   - **Jetpack Backup**: Multiple SQL files in `sql/*.sql` directory, automatically consolidated during import
+   - **Solid Backups Legacy**: Split SQL files (one per table) in `wp-content/uploads/backupbuddy_temp/{BACKUP_ID}/`, automatically consolidated during import
+   - **Solid Backups NextGen**: Split SQL files (one per table) in `data/` directory, WordPress files in `files/` directory, automatically consolidated during import
    - Smart directory scoring based on presence of plugins/themes/uploads subdirectories
 8. **Maintenance Mode**: Activates maintenance mode on the destination during a real import. Dry runs only log what would happen.
 9. **Backup Database**: Creates a timestamped gzipped backup of the current destination database in `db-backups/` before import.
@@ -377,6 +398,32 @@ Common examples:
 - Dry runs do **not** create or modify directories; logging is routed to `/dev/null` to ensure a zero-impact preview.
 
 ## Safety Characteristics
+
+### Security Features (v2.10.0)
+
+The script includes comprehensive security protections added in v2.10.0 to prevent common attack vectors and data loss scenarios:
+
+- **Zip Slip Path Traversal Protection**: All archive extraction validates paths to prevent malicious archives from writing files outside the extraction directory. Archives containing paths like `../../etc/passwd` are rejected with detailed error messages. This prevents potential remote code execution via crafted archives.
+
+- **SQL Injection Prevention**: Table names are validated before DROP TABLE operations. Only WordPress-pattern table names are allowed: `{prefix}_{tablename}` or `{prefix}{number}_{tablename}` (multisite). This prevents malicious table names from executing arbitrary SQL commands.
+
+- **Emergency Database Snapshot**: Before database reset, an emergency snapshot is automatically created. If import fails or produces zero tables, the original database is automatically restored on script exit. The snapshot is cleaned up after successful migration, preventing permanent database loss from crashes.
+
+- **Multi-WordPress Database Detection**: The script detects when multiple WordPress installations share a database and prevents ambiguous migrations. Users must confirm which installation to import, preventing accidental imports from the wrong site.
+
+- **wp-content Backup Verification**: Backup operations are validated before proceeding with destructive changes. The script verifies backup existence, non-emptiness, and that backup size matches source (within 10% tolerance). This prevents data loss from failed backup operations.
+
+- **Dry-run Mode Safety**: Dry-run mode is fully functional and performs no file operations. All file stat, size checks, and filesystem operations check the `$DRY_RUN` flag first, providing accurate migration previews without touching the filesystem.
+
+### WP-CLI Automatic Error Recovery (v2.9.0)
+
+All WP-CLI commands automatically use `--skip-plugins --skip-themes` flags:
+- **Prevents plugin/theme errors** from breaking migrations or rollbacks
+- **Provides automatic recovery** when plugin/theme code causes fatal errors
+- **Safe for all migration operations** - the script uses only low-level database and filesystem commands (plugin/theme code is not needed)
+- **Consistent behavior** between local (`wp_local`) and remote (`wp_remote`) WP-CLI operations
+
+This means migrations will succeed even if destination plugins or themes have errors, and rollbacks will work even if the migration introduced problematic code.
 
 ### Push Mode
 - A timestamped backup of the destination `wp-content` directory is created before files are overwritten.
