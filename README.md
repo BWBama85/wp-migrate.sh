@@ -451,9 +451,47 @@ Use the repo's Git helpers to keep changes small, reviewable, and easy to trace.
 6. Releases: tag meaningful milestones (e.g., `git tag v0.3.0`) and include a brief summary in the pull request or release notes.
 
 ## Troubleshooting
+
+### Common Issues
+
+**WP-CLI errors:**
 - Ensure `wp` runs correctly on both hosts; authentication or environment issues will surface during the verification step.
 - Supply additional SSH options with repeated `--ssh-opt` flags (e.g., alternate ports or identities).
-- Install [ShellCheck](https://www.shellcheck.net/) to lint modifications; the current script is ShellCheck-clean.
+- **Note:** All WP-CLI commands automatically use `--skip-plugins --skip-themes` (v2.9.0+), so plugin/theme errors won't break migrations. If you need WP-CLI with plugins loaded, use the `wp` command directly instead of the migration script.
+
+**Archive extraction errors:**
+
+- **"Archive contains path traversal attempt"** (v2.10.0+) - Archive includes files with paths like `../../` which could write outside extraction directory. This is a security protection (Zip Slip). Only import archives from trusted sources. If you created the archive yourself, check for symbolic links or unusual path structures.
+
+- **Format detection fails** - Use `--archive-type` to explicitly specify format (`wpmigrate`, `duplicator`, `jetpack`, `solidbackups`, `solidbackups_nextgen`) or use `--verbose` to see why validation failed.
+
+- **"Insufficient disk space"** - Archive mode requires 3x archive size (archive + extraction + buffer). Free up space or use a different temporary directory.
+
+**Database import errors:**
+
+- **"Multiple WordPress installations detected"** (v2.10.0+) - Database contains tables for multiple WordPress sites. Script cannot determine which to import. Use separate databases for each WordPress installation, or manually specify which prefix to use.
+
+- **"Database import failed, restoring from snapshot"** (v2.10.0+) - Import produced errors or zero tables. Emergency snapshot is being automatically restored. Check archive SQL file for corruption or syntax errors. Use `--verbose` to see detailed import errors.
+
+- **"Imported database has different table prefix"** - This is normal. The script automatically updates `wp-config.php` to match the imported prefix. Use `--verbose` to see prefix detection.
+
+**wp-content transfer errors:**
+
+- **"wp-content backup verification failed"** (v2.10.0+) - Backup doesn't exist, is empty, or size doesn't match source. Check disk space and filesystem permissions. The script will abort before making destructive changes.
+
+- **"Object cache errors after migration"** - Normal if source and destination use different caching backends. The script excludes `object-cache.php` to preserve destination caching infrastructure. Verify destination cache configuration is correct.
+
+**Rollback mode errors:**
+
+- **"No backups found"** - Rollback mode looks for backups in `db-backups/` and `wp-content.backup-*` directories. These are only created during archive mode migrations. Push mode creates backups with different naming.
+
+- **"Backup restoration failed"** - Check file permissions and disk space. Use `--verbose` to see detailed error messages.
+
+### Development Issues
+
+- **ShellCheck linting** - Install [ShellCheck](https://www.shellcheck.net/) to lint modifications; the current script is ShellCheck-clean. Run `make test` before committing.
+
+- **Source vs built script out of sync** - Never edit `wp-migrate.sh` directly. Edit files in `src/` directory and run `make build`. Install the pre-commit hook to prevent committing out-of-sync changes: `ln -s ../../.githooks/pre-commit .git/hooks/pre-commit`
 
 ## Development
 
