@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. **Archive Mode**: Imports backup archives (Duplicator, Jetpack Backup, Solid Backups)
 3. **Backup Mode**: Creates portable WordPress backups locally or remotely
 
-Current version: 2.8.3
+Current version: 2.10.0
 
 ## Critical Build Workflow
 
@@ -126,6 +126,20 @@ See `src/lib/adapters/README.md` for adapter development guide.
 
 ### Key Safety Features
 
+**Security Protections (v2.10.0):**
+- **Zip Slip Protection** - All archive extraction validates paths to prevent malicious archives from writing outside extraction directory (CVE protection)
+- **SQL Injection Prevention** - Table names validated before DROP TABLE operations, only WordPress-pattern names allowed
+- **Emergency Database Snapshot** - Automatic snapshot before database reset with auto-rollback on import failure
+- **Multi-WordPress Detection** - Detects ambiguous migrations when multiple WordPress share a database, requires user confirmation
+- **Backup Verification** - Validates backup existence, size, and non-emptiness before destructive operations
+- **Dry-run Safety** - All file operations check `$DRY_RUN` flag, ensuring zero-impact previews
+
+**WP-CLI Error Recovery (v2.9.0):**
+- All WP-CLI commands use `--skip-plugins --skip-themes` automatically
+- Prevents plugin/theme errors from breaking migrations or rollbacks
+- Safe for all operations (script uses only low-level database/filesystem commands)
+- Consistent behavior between local and remote WP-CLI operations
+
 **Push mode:**
 - Creates timestamped backup of destination wp-content before replacement
 - Enables maintenance mode on both servers during migration
@@ -231,7 +245,8 @@ Always runs under `set -e` - if enabling/disabling fails, script aborts to preve
 
 - `--preserve-dest-plugins` - Restores unique destination plugins/themes from backup
 - `--stellarsites` - Managed hosting mode (enables preservation + excludes mu-plugins/)
-- Filters WordPress drop-ins and managed plugins from preservation list
+- **WordPress Drop-in Filtering (v2.8.3)** - Automatically filters drop-ins (advanced-cache.php, db.php, db-error.php) from plugin preservation to prevent false restoration warnings
+- **Managed Plugin Filtering (v2.8.3)** - In `--stellarsites` mode, filters managed hosting plugins (e.g., stellarsites-cloud) from preservation
 
 ## Special Considerations
 
@@ -244,10 +259,14 @@ Use `--stellarsites` flag to:
 
 ### WP-CLI Skip Flags
 
-Recent feature (v2.8.0+) adds automatic error recovery using WP-CLI skip flags:
-- `--skip-themes` - Skip problematic theme code during operations
-- `--skip-plugins` - Skip problematic plugin code during operations
-- Automatically used when appropriate for resilience
+**Automatic error recovery feature (v2.9.0)** - All WP-CLI commands use skip flags:
+- `wp_local()` and `wp_remote()` both use `--skip-plugins --skip-themes` automatically
+- **Why it's safe:** The script only uses low-level WP-CLI commands (database queries, option updates, filesystem operations) that don't require plugin/theme code to function
+- **What it prevents:** Plugin or theme errors that would otherwise break migrations, imports, or rollbacks
+- **When it helps:** Migrations succeed even if destination has problematic plugins; rollbacks work even if migration introduced broken code
+- **Transparency:** Added NOTES section to help text explaining this behavior
+
+Note: There's also `wp_local_full()` function for specific operations that DO need plugins loaded (e.g., Object Cache Pro redis flush via `wp redis` command provided by plugin)
 
 ### Table Prefix Alignment
 
