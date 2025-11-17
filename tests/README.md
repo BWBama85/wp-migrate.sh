@@ -2,17 +2,30 @@
 
 ## Overview
 
-The test suite validates argument parsing, error handling, and code quality without requiring WordPress installations.
+The test suite validates argument parsing, error handling, code quality, and archive format detection without requiring WordPress installations or actual migrations.
 
 ## Running Tests
 
+### Unit Tests (Argument Parsing and Validation)
 ```bash
 ./test-wp-migrate.sh
 ```
 
+### Integration Tests (Archive Format Detection)
+```bash
+cd integration
+./test-archive-detection.sh
+```
+
+### All Tests
+```bash
+make test  # Runs unit tests + shellcheck validation
+```
+
 ## Test Coverage
 
-The test suite validates:
+### Unit Tests
+The unit test suite validates:
 
 1. **Help message** - `--help` displays without errors
 2. **WordPress root validation** - Checks for `wp-config.php`
@@ -23,6 +36,27 @@ The test suite validates:
 7. **URL override validation** - `--dest-home-url` and `--dest-site-url` require values
 8. **Bash syntax** - Script parses without syntax errors
 9. **File permissions** - Script is executable
+
+### Integration Tests
+The integration test suite validates:
+
+1. **Archive format detection** - Correctly identifies wp-migrate, Duplicator, Jetpack, Solid Backups Legacy, and Solid Backups NextGen formats
+2. **Adapter validation** - Each adapter's validation function works correctly
+3. **Format signature recognition** - Proper detection of format-specific signature files
+4. **Test fixtures** - Minimal test archives for each supported format (see `tests/fixtures/README.md`)
+
+### What's NOT Tested
+The following scenarios require actual WordPress installations and are tested manually:
+
+- **Actual database migrations** - Real WordPress database imports and exports
+- **wp-content transfers** - Real file synchronization operations
+- **SSH connections** - Actual remote server operations
+- **Live archive extraction** - Full archive extraction (tests use pre-extracted samples)
+- **WP-CLI operations** - WordPress installation requirements prevent automated testing
+- **URL search-replace** - Requires live WordPress database
+- **Rollback operations** - Requires migration artifacts from real migrations
+
+For manual testing procedures, see the relevant GitHub issues or PR descriptions.
 
 ## Requirements
 
