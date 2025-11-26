@@ -297,6 +297,28 @@ else
   fail "TAR: Should block /etc/passwd"
 fi
 
+# Windows drive with forward slash (C:/)
+MALICIOUS_ZIP="$TEMP_DIR/win-forward-slash.zip"
+create_malicious_zip "$MALICIOUS_ZIP" \
+  'C:/Windows/System32/config/SAM'
+
+if ! validate_archive_paths "$MALICIOUS_ZIP"; then
+  pass 'ZIP: Blocks C:/Windows/... (forward slash)'
+else
+  fail 'ZIP: Should block Windows drive with forward slash'
+fi
+
+# UNC path with backslashes (\\server\share)
+MALICIOUS_ZIP="$TEMP_DIR/unc-backslash.zip"
+create_malicious_zip "$MALICIOUS_ZIP" \
+  '\\\\server\\share\\file.txt'
+
+if ! validate_archive_paths "$MALICIOUS_ZIP"; then
+  pass 'ZIP: Blocks \\\\server\\share (UNC path)'
+else
+  fail 'ZIP: Should block UNC path'
+fi
+
 # -------------------------------------------------------------------
 # Test: Mixed safe and malicious entries - malicious should be caught
 # -------------------------------------------------------------------

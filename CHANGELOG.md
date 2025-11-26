@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **Windows-style path traversal detection**: Added detection for Windows backslash-based path traversal attempts (`..\`) in addition to Unix-style (`../`). Also added detection for Windows absolute paths (`C:\`).
+- **Windows-style path traversal detection**: Added detection for Windows backslash-based path traversal attempts (`..\`) in addition to Unix-style (`../`).
+- **Comprehensive absolute path detection**: Added detection for all Windows absolute path forms including drive letters with backslash (`C:\`), drive letters with forward slash (`C:/`), and UNC paths (`\\server\share`).
 
 ### Added
 

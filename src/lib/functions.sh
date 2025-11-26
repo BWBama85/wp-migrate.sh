@@ -86,8 +86,12 @@ validate_archive_paths() {
   # List archive contents and check each entry
   if [[ "$archive_type" == "zip" ]]; then
     while IFS= read -r entry; do
-      # Check for absolute paths (Unix / or Windows drive letter C:\)
-      if [[ "$entry" =~ ^/ ]] || [[ "$entry" =~ ^[A-Za-z]:\\ ]]; then
+      # Check for absolute paths:
+      #   - Unix: /etc/passwd
+      #   - Windows drive with backslash: C:\Windows
+      #   - Windows drive with forward slash: C:/Windows
+      #   - UNC paths: \\server\share or //server/share
+      if [[ "$entry" =~ ^/ ]] || [[ "$entry" =~ ^[A-Za-z]:[/\\] ]] || [[ "$entry" =~ ^\\\\ ]]; then
         log_warning "SECURITY: Archive contains absolute path: $entry"
         dangerous_found=true
       fi
@@ -105,8 +109,12 @@ validate_archive_paths() {
     done < <(unzip -l "$archive" 2>/dev/null | awk 'NR>3 {if ($1 ~ /^-+$/) exit; if (NF >= 4) {for(i=4;i<=NF;i++) printf "%s%s", $i, (i<NF?" ":""); print ""}}')
   elif [[ "$archive_type" == "tar" ]]; then
     while IFS= read -r entry; do
-      # Check for absolute paths (Unix / or Windows drive letter C:\)
-      if [[ "$entry" =~ ^/ ]] || [[ "$entry" =~ ^[A-Za-z]:\\ ]]; then
+      # Check for absolute paths:
+      #   - Unix: /etc/passwd
+      #   - Windows drive with backslash: C:\Windows
+      #   - Windows drive with forward slash: C:/Windows
+      #   - UNC paths: \\server\share or //server/share
+      if [[ "$entry" =~ ^/ ]] || [[ "$entry" =~ ^[A-Za-z]:[/\\] ]] || [[ "$entry" =~ ^\\\\ ]]; then
         log_warning "SECURITY: Archive contains absolute path: $entry"
         dangerous_found=true
       fi
