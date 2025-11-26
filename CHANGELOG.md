@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.2] - 2025-11-25
+
+### Fixed
+
+- **Zip Slip false positives on filenames with double periods**: Fixed overly broad path traversal detection that incorrectly flagged legitimate filenames containing `..` (e.g., `John-Smith-Jr..jpg` where a name ending in "Jr." or "Sr." is followed by a file extension). The fix now only detects actual path traversal attempts (`../`, `/../`, `/..`) rather than any occurrence of `..` in the filename.
+
 ## [2.10.1] - 2025-11-17
 
 **📚 Documentation Updates**

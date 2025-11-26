@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-VERSION="2.10.1"  # wp-migrate version
+VERSION="2.10.2"  # wp-migrate version
 
 # -------------------------------------------------------------------
 # WordPress wp-content migration (PUSH mode) + DB dump transfer
@@ -1760,14 +1760,10 @@ validate_archive_paths() {
         dangerous_found=true
       fi
 
-      # Check for parent directory references (..)
-      if [[ "$entry" =~ \.\. ]]; then
-        log_warning "SECURITY: Archive contains parent directory reference: $entry"
-        dangerous_found=true
-      fi
-
-      # Check for paths that would escape (crude but effective)
-      if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]]; then
+      # Check for parent directory traversal (..) as a path component
+      # Only matches when .. is used for directory traversal, not when it appears
+      # in filenames like "John-Smith-Jr..jpg" (name ending in period + extension)
+      if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]] || [[ "$entry" == ".." ]]; then
         log_warning "SECURITY: Archive contains path traversal attempt: $entry"
         dangerous_found=true
       fi
@@ -1780,14 +1776,10 @@ validate_archive_paths() {
         dangerous_found=true
       fi
 
-      # Check for parent directory references
-      if [[ "$entry" =~ \.\. ]]; then
-        log_warning "SECURITY: Archive contains parent directory reference: $entry"
-        dangerous_found=true
-      fi
-
-      # Check for path traversal
-      if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]]; then
+      # Check for parent directory traversal (..) as a path component
+      # Only matches when .. is used for directory traversal, not when it appears
+      # in filenames like "John-Smith-Jr..jpg" (name ending in period + extension)
+      if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]] || [[ "$entry" == ".." ]]; then
         log_warning "SECURITY: Archive contains path traversal attempt: $entry"
         dangerous_found=true
       fi

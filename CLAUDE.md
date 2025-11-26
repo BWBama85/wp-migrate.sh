@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. **Archive Mode**: Imports backup archives (Duplicator, Jetpack Backup, Solid Backups)
 3. **Backup Mode**: Creates portable WordPress backups locally or remotely
 
-Current version: 2.10.0
+Current version: 2.10.2
 
 ## Critical Build Workflow
 
@@ -55,10 +55,13 @@ ln -s ../../.githooks/pre-commit .git/hooks/pre-commit
 ### Testing
 
 ```bash
-# Run all tests (includes shellcheck validation)
+# Run shellcheck validation + build
 make test
 
-# Build script
+# Run integration tests (archive format detection)
+./tests/integration/test-archive-detection.sh
+
+# Build script only
 make build
 
 # Clean build artifacts
