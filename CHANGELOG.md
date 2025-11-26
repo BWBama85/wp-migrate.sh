@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.7] - 2025-11-26
+
+### Fixed
+
+- **Pre-rsync source validation for archive imports**: Added safeguards to catch scenarios where the extracted wp-content directory is missing or incomplete before rsync runs. Validates directory existence and file count (minimum 10 files), with detailed error messages and recovery instructions pointing to the backup location.
+
+### Changed
+
+- **Improved rsync error handling**: Wrapped rsync command in explicit error checking to detect and report sync failures rather than silently continuing.
+
 ## [2.10.6] - 2025-11-26
 
 ### Fixed
