@@ -5788,9 +5788,45 @@ else
 
   # Sync wp-content from archive to destination
   # Excluded items (mu-plugins, object-cache.php) are preserved in destination
+
+  # Verify source directory exists and has content before rsync
+  if [[ ! -d "$ARCHIVE_WP_CONTENT" ]]; then
+    err "CRITICAL: Archive wp-content directory no longer exists: $ARCHIVE_WP_CONTENT
+
+The extracted wp-content directory was deleted or moved before rsync could run.
+This may indicate:
+  • macOS cleaned up the temp directory
+  • Another process modified the extraction directory
+  • Disk space issues caused cleanup
+
+The database has been imported but wp-content was NOT synced.
+To recover, restore from the backup: $DEST_WP_CONTENT_BACKUP"
+  fi
+
+  source_file_count=$(find "$ARCHIVE_WP_CONTENT" -type f 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$source_file_count" -lt 10 ]]; then
+    err "CRITICAL: Archive wp-content directory appears empty or nearly empty ($source_file_count files)
+
+Expected thousands of files but found very few. This may indicate:
+  • Extraction failed silently
+  • Archive was corrupted
+  • Temp directory was partially cleaned
+
+The database has been imported but wp-content was NOT synced.
+To recover, restore from the backup: $DEST_WP_CONTENT_BACKUP"
+  fi
+
+  log_verbose "  Source file count: $source_file_count"
   log_trace "rsync ${RSYNC_OPTS[*]} ${RSYNC_EXCLUDES[*]} $ARCHIVE_WP_CONTENT/ $DEST_WP_CONTENT/"
-  rsync "${RSYNC_OPTS[@]}" "${RSYNC_EXCLUDES[@]}" \
-    "$ARCHIVE_WP_CONTENT/" "$DEST_WP_CONTENT/" | tee -a "$LOG_FILE"
+
+  # Run rsync and capture exit status (pipefail ensures we catch rsync failures)
+  if ! rsync "${RSYNC_OPTS[@]}" "${RSYNC_EXCLUDES[@]}" \
+    "$ARCHIVE_WP_CONTENT/" "$DEST_WP_CONTENT/" 2>&1 | tee -a "$LOG_FILE"; then
+    err "rsync failed to sync wp-content from archive.
+
+The database has been imported but wp-content sync failed.
+To recover, restore from the backup: $DEST_WP_CONTENT_BACKUP"
+  fi
 
   log "wp-content synced successfully (object-cache.php excluded to preserve destination caching)"
 
