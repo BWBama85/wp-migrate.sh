@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.6] - 2025-11-26
+
+### Fixed
+
+- **False positive security warnings during extraction**: Fixed post-extraction path validation that incorrectly flagged all extracted files as "outside extraction directory" due to path format mismatch (double slash `//` vs normalized paths).
+
+### Security
+
+- **Sibling directory attack prevention**: Improved post-extraction validation to use directory boundary checking instead of naive prefix matching. Prevents attacks where `/tmp/extract-123-malicious/file` would incorrectly match `/tmp/extract-123`.
+
 ## [2.10.5] - 2025-11-26
 
 ### Fixed
