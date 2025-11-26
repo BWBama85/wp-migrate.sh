@@ -4,12 +4,11 @@ set -Eeuo pipefail
 # -------------------------------------------------------------------
 # Integration Test: Zip Slip Path Traversal Protection
 # -------------------------------------------------------------------
+# End-to-end tests that call the actual validate_archive_paths function
+# from the production script on real test archives.
+#
 # Tests that path traversal attempts are blocked while legitimate
 # filenames containing ".." (like "Jr..jpg") are allowed.
-#
-# This is a regression test for the fix that prevents false positives
-# on filenames like "John-Smith-Jr..jpg" while still blocking actual
-# path traversal attacks like "../../../etc/passwd".
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -47,28 +46,77 @@ TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
 # -------------------------------------------------------------------
-# Helper: Create test zip archive with specific filenames
+# Source production code to get validate_archive_paths function
 # -------------------------------------------------------------------
-create_test_zip() {
+# We need to source just enough of the script to get the function
+# without triggering main() execution
+
+# Create stub functions for dependencies (called by extracted production code)
+# shellcheck disable=SC2329
+log_verbose() { :; }
+# shellcheck disable=SC2329
+log_warning() { :; }
+# shellcheck disable=SC2329
+err() { echo "ERROR: $*" >&2; return 1; }
+
+# Extract validate_archive_paths function from the built script
+# shellcheck source=/dev/null
+eval "$(sed -n '/^validate_archive_paths()/,/^}/p' "$SCRIPT")"
+
+# Verify we have the function
+if ! declare -f validate_archive_paths > /dev/null 2>&1; then
+  echo "FATAL: Could not extract validate_archive_paths from $SCRIPT"
+  exit 1
+fi
+
+# -------------------------------------------------------------------
+# Helper: Create test zip with specific path entries using Python
+# -------------------------------------------------------------------
+# We use Python's zipfile module because it allows creating entries
+# with arbitrary paths that standard zip tools would reject/sanitize
+create_malicious_zip() {
   local zip_path="$1"
   shift
-  local files=("$@")
+  local entries=("$@")
 
-  local work_dir="$TEMP_DIR/work-$$"
-  mkdir -p "$work_dir"
+  python3 - "$zip_path" "${entries[@]}" << 'PYTHON_SCRIPT'
+import sys
+import zipfile
 
-  for file in "${files[@]}"; do
-    # Create directory structure if needed
-    local dir
-    dir=$(dirname "$file")
-    if [[ "$dir" != "." ]]; then
-      mkdir -p "$work_dir/$dir"
-    fi
-    echo "test content" > "$work_dir/$file"
-  done
+zip_path = sys.argv[1]
+entries = sys.argv[2:]
 
-  (cd "$work_dir" && zip -q -r "$zip_path" .)
-  rm -rf "$work_dir"
+with zipfile.ZipFile(zip_path, 'w') as zf:
+    for entry in entries:
+        # Write a minimal file for each entry path
+        zf.writestr(entry, "test content\n")
+PYTHON_SCRIPT
+}
+
+# -------------------------------------------------------------------
+# Helper: Create test tar.gz with specific path entries
+# -------------------------------------------------------------------
+create_malicious_tar() {
+  local tar_path="$1"
+  shift
+  local entries=("$@")
+
+  python3 - "$tar_path" "${entries[@]}" << 'PYTHON_SCRIPT'
+import sys
+import tarfile
+import io
+
+tar_path = sys.argv[1]
+entries = sys.argv[2:]
+
+with tarfile.open(tar_path, 'w:gz') as tf:
+    for entry in entries:
+        # Create a TarInfo with the exact path we want
+        info = tarfile.TarInfo(name=entry)
+        content = b"test content\n"
+        info.size = len(content)
+        tf.addfile(info, io.BytesIO(content))
+PYTHON_SCRIPT
 }
 
 # -------------------------------------------------------------------
@@ -77,19 +125,29 @@ create_test_zip() {
 test_header "Test: Legitimate double-period filenames (Jr..jpg, Sr..png)"
 
 SAFE_ZIP="$TEMP_DIR/safe-double-period.zip"
-create_test_zip "$SAFE_ZIP" \
+create_malicious_zip "$SAFE_ZIP" \
   "wp-content/uploads/John-Smith-Jr..jpg" \
   "wp-content/uploads/Mary-Jones-Sr..png" \
   "wp-content/uploads/Robert-H.-Turner-Jr..jpeg" \
+  "wp-content/uploads/file..with..dots.txt" \
   "wp-content/uploads/normal-file.jpg"
 
-output=$("$SCRIPT" --archive "$SAFE_ZIP" --verbose 2>&1 || true)
-
-# Should NOT contain "path traversal" warnings for these files
-if echo "$output" | grep -q "path traversal attempt.*Jr\.\.\|path traversal attempt.*Sr\.\."; then
-  fail "False positive: legitimate Jr./Sr. filenames incorrectly flagged as traversal"
+if validate_archive_paths "$SAFE_ZIP"; then
+  pass "ZIP: Legitimate double-period filenames allowed"
 else
-  pass "Legitimate double-period filenames allowed (Jr..jpg, Sr..png)"
+  fail "ZIP: False positive - legitimate filenames incorrectly blocked"
+fi
+
+SAFE_TAR="$TEMP_DIR/safe-double-period.tar.gz"
+create_malicious_tar "$SAFE_TAR" \
+  "wp-content/uploads/John-Smith-Jr..jpg" \
+  "wp-content/uploads/Mary-Jones-Sr..png" \
+  "wp-content/uploads/normal-file.jpg"
+
+if validate_archive_paths "$SAFE_TAR"; then
+  pass "TAR: Legitimate double-period filenames allowed"
+else
+  fail "TAR: False positive - legitimate filenames incorrectly blocked"
 fi
 
 # -------------------------------------------------------------------
@@ -97,118 +155,164 @@ fi
 # -------------------------------------------------------------------
 test_header "Test: Unix path traversal (../) blocked"
 
-# We can't easily create a malicious zip with standard tools,
-# so we test by checking the script's validation logic directly.
-# Create a zip and manually verify the patterns would be caught.
+# Test ../etc/passwd (starts with ../)
+MALICIOUS_ZIP="$TEMP_DIR/unix-traversal-start.zip"
+create_malicious_zip "$MALICIOUS_ZIP" \
+  "../etc/passwd" \
+  "safe-file.txt"
 
-# Test the regex patterns used in the script
-test_unix_traversal() {
-  local entry="$1"
-  local expected="$2"  # "block" or "allow"
-
-  local blocked=false
-  if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]] || \
-     [[ "$entry" =~ ^\.\.\\  ]] || [[ "$entry" =~ \\\.\.\\  ]] || [[ "$entry" =~ \\\.\.$ ]] || \
-     [[ "$entry" == ".." ]]; then
-    blocked=true
-  fi
-
-  if [[ "$expected" == "block" ]] && $blocked; then
-    return 0
-  elif [[ "$expected" == "allow" ]] && ! $blocked; then
-    return 0
-  else
-    return 1
-  fi
-}
-
-# Unix-style traversal attempts (should be BLOCKED)
-if test_unix_traversal "../etc/passwd" "block"; then
-  pass "Blocks: ../etc/passwd"
+if ! validate_archive_paths "$MALICIOUS_ZIP"; then
+  pass "ZIP: Blocks ../etc/passwd"
 else
-  fail "Should block: ../etc/passwd"
+  fail "ZIP: Should block ../etc/passwd"
 fi
 
-if test_unix_traversal "foo/../../../etc/passwd" "block"; then
-  pass "Blocks: foo/../../../etc/passwd"
+# Test foo/../../../etc/passwd (contains /../)
+MALICIOUS_ZIP="$TEMP_DIR/unix-traversal-mid.zip"
+create_malicious_zip "$MALICIOUS_ZIP" \
+  "foo/../../../etc/passwd"
+
+if ! validate_archive_paths "$MALICIOUS_ZIP"; then
+  pass "ZIP: Blocks foo/../../../etc/passwd"
 else
-  fail "Should block: foo/../../../etc/passwd"
+  fail "ZIP: Should block foo/../../../etc/passwd"
 fi
 
-if test_unix_traversal "wp-content/../../../etc/passwd" "block"; then
-  pass "Blocks: wp-content/../../../etc/passwd"
+# Test foo/.. (ends with /..)
+MALICIOUS_ZIP="$TEMP_DIR/unix-traversal-end.zip"
+create_malicious_zip "$MALICIOUS_ZIP" \
+  "foo/.."
+
+if ! validate_archive_paths "$MALICIOUS_ZIP"; then
+  pass "ZIP: Blocks foo/.."
 else
-  fail "Should block: wp-content/../../../etc/passwd"
+  fail "ZIP: Should block foo/.."
 fi
 
-if test_unix_traversal ".." "block"; then
-  pass "Blocks: .. (bare parent reference)"
+# Test bare .. entry
+MALICIOUS_ZIP="$TEMP_DIR/unix-traversal-bare.zip"
+create_malicious_zip "$MALICIOUS_ZIP" \
+  ".."
+
+if ! validate_archive_paths "$MALICIOUS_ZIP"; then
+  pass "ZIP: Blocks bare .."
 else
-  fail "Should block: .."
+  fail "ZIP: Should block bare .."
 fi
 
-if test_unix_traversal "foo/.." "block"; then
-  pass "Blocks: foo/.."
+# Same tests for TAR
+MALICIOUS_TAR="$TEMP_DIR/unix-traversal.tar.gz"
+create_malicious_tar "$MALICIOUS_TAR" \
+  "../etc/passwd"
+
+if ! validate_archive_paths "$MALICIOUS_TAR"; then
+  pass "TAR: Blocks ../etc/passwd"
 else
-  fail "Should block: foo/.."
+  fail "TAR: Should block ../etc/passwd"
+fi
+
+MALICIOUS_TAR="$TEMP_DIR/unix-traversal-mid.tar.gz"
+create_malicious_tar "$MALICIOUS_TAR" \
+  "wp-content/../../../etc/passwd"
+
+if ! validate_archive_paths "$MALICIOUS_TAR"; then
+  pass "TAR: Blocks wp-content/../../../etc/passwd"
+else
+  fail "TAR: Should block wp-content/../../../etc/passwd"
 fi
 
 # -------------------------------------------------------------------
 # Test: Windows path traversal (..\) should be BLOCKED
 # -------------------------------------------------------------------
-test_header "Test: Windows path traversal (..\\) blocked"
+test_header "Test: Windows path traversal (..\\\) blocked"
 
-if test_unix_traversal '..\\evil.php' "block"; then
-  pass 'Blocks: ..\\evil.php'
+# Test ..\evil.php (starts with ..\)
+MALICIOUS_ZIP="$TEMP_DIR/win-traversal-start.zip"
+create_malicious_zip "$MALICIOUS_ZIP" \
+  '..\\evil.php'
+
+if ! validate_archive_paths "$MALICIOUS_ZIP"; then
+  pass 'ZIP: Blocks ..\\evil.php'
 else
-  fail 'Should block: ..\\evil.php'
+  fail 'ZIP: Should block ..\\evil.php'
 fi
 
-if test_unix_traversal 'foo\\..\\..\\evil.php' "block"; then
-  pass 'Blocks: foo\\..\\..\\evil.php'
+# Test foo\..\..\..\evil.php (contains \..\)
+MALICIOUS_ZIP="$TEMP_DIR/win-traversal-mid.zip"
+create_malicious_zip "$MALICIOUS_ZIP" \
+  'foo\\..\\..\\evil.php'
+
+if ! validate_archive_paths "$MALICIOUS_ZIP"; then
+  pass 'ZIP: Blocks foo\\..\\..\\evil.php'
 else
-  fail 'Should block: foo\\..\\..\\evil.php'
+  fail 'ZIP: Should block foo\\..\\..\\evil.php'
 fi
 
-if test_unix_traversal 'wp-content\\..\\..\\etc\\passwd' "block"; then
-  pass 'Blocks: wp-content\\..\\..\\etc\\passwd'
-else
-  fail 'Should block: wp-content\\..\\..\\etc\\passwd'
-fi
+# Test foo\.. (ends with \..)
+MALICIOUS_ZIP="$TEMP_DIR/win-traversal-end.zip"
+create_malicious_zip "$MALICIOUS_ZIP" \
+  'foo\\..'
 
-if test_unix_traversal 'foo\\..' "block"; then
-  pass 'Blocks: foo\\..'
+if ! validate_archive_paths "$MALICIOUS_ZIP"; then
+  pass 'ZIP: Blocks foo\\..'
 else
-  fail 'Should block: foo\\..'
+  fail 'ZIP: Should block foo\\..'
 fi
 
 # -------------------------------------------------------------------
-# Test: Legitimate filenames should be ALLOWED
+# Test: Absolute paths should be BLOCKED
 # -------------------------------------------------------------------
-test_header "Test: Legitimate filenames allowed"
+test_header "Test: Absolute paths blocked"
 
-if test_unix_traversal "John-Smith-Jr..jpg" "allow"; then
-  pass "Allows: John-Smith-Jr..jpg"
+# Unix absolute path
+MALICIOUS_ZIP="$TEMP_DIR/unix-absolute.zip"
+create_malicious_zip "$MALICIOUS_ZIP" \
+  "/etc/passwd"
+
+if ! validate_archive_paths "$MALICIOUS_ZIP"; then
+  pass "ZIP: Blocks /etc/passwd (Unix absolute)"
 else
-  fail "Should allow: John-Smith-Jr..jpg"
+  fail "ZIP: Should block /etc/passwd"
 fi
 
-if test_unix_traversal "wp-content/uploads/Mary-Sr..png" "allow"; then
-  pass "Allows: wp-content/uploads/Mary-Sr..png"
+# Windows absolute path
+MALICIOUS_ZIP="$TEMP_DIR/win-absolute.zip"
+create_malicious_zip "$MALICIOUS_ZIP" \
+  'C:\\Windows\\System32\\config\\SAM'
+
+if ! validate_archive_paths "$MALICIOUS_ZIP"; then
+  pass 'ZIP: Blocks C:\\Windows\\... (Windows absolute)'
 else
-  fail "Should allow: wp-content/uploads/Mary-Sr..png"
+  fail 'ZIP: Should block Windows absolute path'
 fi
 
-if test_unix_traversal "file..with..multiple..dots.txt" "allow"; then
-  pass "Allows: file..with..multiple..dots.txt"
+# TAR with absolute path
+MALICIOUS_TAR="$TEMP_DIR/unix-absolute.tar.gz"
+create_malicious_tar "$MALICIOUS_TAR" \
+  "/etc/passwd"
+
+if ! validate_archive_paths "$MALICIOUS_TAR"; then
+  pass "TAR: Blocks /etc/passwd (Unix absolute)"
 else
-  fail "Should allow: file..with..multiple..dots.txt"
+  fail "TAR: Should block /etc/passwd"
 fi
 
-if test_unix_traversal "normal/path/to/file.jpg" "allow"; then
-  pass "Allows: normal/path/to/file.jpg"
+# -------------------------------------------------------------------
+# Test: Mixed safe and malicious entries - malicious should be caught
+# -------------------------------------------------------------------
+test_header "Test: Mixed archives (safe + malicious)"
+
+MIXED_ZIP="$TEMP_DIR/mixed.zip"
+create_malicious_zip "$MIXED_ZIP" \
+  "wp-content/uploads/safe.jpg" \
+  "wp-content/uploads/John-Jr..jpg" \
+  "../../../etc/passwd" \
+  "wp-content/themes/theme.css"
+
+if ! validate_archive_paths "$MIXED_ZIP"; then
+  pass "ZIP: Catches malicious entry among safe entries"
 else
-  fail "Should allow: normal/path/to/file.jpg"
+  fail "ZIP: Should catch ../../../etc/passwd in mixed archive"
 fi
 
 # -------------------------------------------------------------------
