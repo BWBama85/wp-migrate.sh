@@ -738,7 +738,15 @@ else
 
   log "Transferring DB dump to destination..."
   ssh_cmd_db="$(ssh_cmd_string)"
-  rsync -ah --info=stats2 --info=progress2 --partial -e "$ssh_cmd_db" \
+
+  # Build rsync options with version-compatible flags
+  db_rsync_opts=(-ah --partial)
+  db_stats_opt=$(get_rsync_stats_opts)
+  db_progress_opt=$(get_rsync_progress_opts)
+  [[ -n "$db_stats_opt" ]] && db_rsync_opts+=("$db_stats_opt")
+  [[ -n "$db_progress_opt" ]] && db_rsync_opts+=("$db_progress_opt")
+
+  rsync "${db_rsync_opts[@]}" -e "$ssh_cmd_db" \
     "$DUMP_TO_SEND" "$DEST_HOST":"$DEST_IMPORT_DIR"/ | tee -a "$LOG_FILE"
 
   if $IMPORT_DB; then
@@ -875,14 +883,23 @@ DST_WP_CONTENT_BACKUP="$(backup_remote_wp_content "$DEST_HOST" "$DST_WP_CONTENT"
 # Build rsync options
 # ---------------------
 log_verbose "Building rsync options..."
-RS_OPTS=( -a -h -z --info=stats2 --partial --links --prune-empty-dirs --no-perms --no-owner --no-group )
+
+# Detect rsync capabilities (macOS openrsync lacks --info= options)
+rsync_stats_opt=$(get_rsync_stats_opts)
+rsync_progress_opt=$(get_rsync_progress_opts)
+
+RS_OPTS=( -a -h -z --partial --links --prune-empty-dirs --no-perms --no-owner --no-group )
+if [[ -n "$rsync_stats_opt" ]]; then
+  RS_OPTS+=( "$rsync_stats_opt" )
+fi
+
 # Add progress indicator for real runs (shows current file being transferred)
 if $DRY_RUN; then
   RS_OPTS+=( -n --itemize-changes )
   log_verbose "  Dry-run mode: added -n --itemize-changes"
 else
-  RS_OPTS+=( --info=progress2 )
-  log_verbose "  Live mode: added --info=progress2"
+  RS_OPTS+=( "$rsync_progress_opt" )
+  log_verbose "  Live mode: added $rsync_progress_opt"
 fi
 
 # Exclude object-cache.php drop-in to prevent caching infrastructure incompatibility
@@ -1834,8 +1851,12 @@ else
   # Build rsync command with appropriate options
   # Always use --delete to ensure destination matches archive (removes stale files)
   log_verbose "Building rsync options for archive sync..."
-  RSYNC_OPTS=(-a --delete --info=progress2)
-  log_verbose "  Base options: -a --delete --info=progress2"
+
+  # Detect rsync capabilities (macOS openrsync lacks --info=progress2)
+  rsync_progress_opt=$(get_rsync_progress_opts)
+
+  RSYNC_OPTS=(-a --delete "$rsync_progress_opt")
+  log_verbose "  Base options: -a --delete $rsync_progress_opt"
 
   # Use root-anchored exclusions (leading /) to only match files at wp-content root
   # Without /, rsync would exclude these filenames at ANY depth (e.g., plugins/foo/object-cache.php)
@@ -1884,10 +1905,15 @@ To recover, restore from the backup: $DEST_WP_CONTENT_BACKUP"
   log_verbose "  Source file count: $source_file_count"
   log_trace "rsync ${RSYNC_OPTS[*]} ${RSYNC_EXCLUDES[*]} $ARCHIVE_WP_CONTENT/ $DEST_WP_CONTENT/"
 
-  # Run rsync and capture exit status (pipefail ensures we catch rsync failures)
-  if ! rsync "${RSYNC_OPTS[@]}" "${RSYNC_EXCLUDES[@]}" \
-    "$ARCHIVE_WP_CONTENT/" "$DEST_WP_CONTENT/" 2>&1 | tee -a "$LOG_FILE"; then
-    err "rsync failed to sync wp-content from archive.
+  # Run rsync and capture exit status
+  # Note: pipefail doesn't help here because tee always succeeds
+  # Use PIPESTATUS to check rsync's actual exit code
+  rsync "${RSYNC_OPTS[@]}" "${RSYNC_EXCLUDES[@]}" \
+    "$ARCHIVE_WP_CONTENT/" "$DEST_WP_CONTENT/" 2>&1 | tee -a "$LOG_FILE"
+  rsync_status=${PIPESTATUS[0]}
+
+  if [[ $rsync_status -ne 0 ]]; then
+    err "rsync failed (exit code $rsync_status) to sync wp-content from archive.
 
 The database has been imported but wp-content sync failed.
 To recover, restore from the backup: $DEST_WP_CONTENT_BACKUP"
