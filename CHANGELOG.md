@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.4] - 2025-11-25
+
+### Fixed
+
+- **Extraction progress in verbose/trace mode**: When `--verbose` or `--trace` is enabled, extraction commands now show file-by-file progress instead of running silently. Previously, `unzip -q` suppressed all output even with `--trace`, making large archive extractions appear frozen.
+
 ## [2.10.3] - 2025-11-25
 
 ### Security
