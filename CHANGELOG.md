@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.8] - 2025-11-26
+
+### Fixed
+
+- **macOS rsync compatibility**: Fixed "unrecognized option `--info=progress2`" error on macOS by detecting rsync capabilities and falling back to `--progress` for macOS's openrsync. Also falls back from `--info=stats2` to `--stats` where needed.
+- **Rsync error detection**: Fixed silent rsync failures where errors were masked by the `tee` pipeline. Now uses `PIPESTATUS` to properly detect and report rsync exit codes.
+
 ## [2.10.7] - 2025-11-26
 
 ### Fixed
