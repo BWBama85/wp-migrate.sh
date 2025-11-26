@@ -215,7 +215,8 @@ version_compare() {
 rsync_supports_option() {
   local option="$1"
   # Test the option with --dry-run against /dev/null to see if rsync accepts it
-  rsync --dry-run "$option" /dev/null /dev/null 2>/dev/null
+  # Suppress both stdout and stderr (some builds print "skipping non-regular file")
+  rsync --dry-run "$option" /dev/null /dev/null >/dev/null 2>&1
 }
 
 # Get rsync progress options compatible with the local rsync version
