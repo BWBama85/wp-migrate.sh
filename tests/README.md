@@ -13,8 +13,12 @@ The test suite validates argument parsing, error handling, code quality, and arc
 
 ### Integration Tests (Archive Format Detection)
 ```bash
-cd integration
-./test-archive-detection.sh
+./tests/integration/test-archive-detection.sh
+```
+
+### Security Tests (Zip Slip Protection)
+```bash
+./tests/integration/test-zip-slip-protection.sh
 ```
 
 ### All Tests
@@ -44,6 +48,14 @@ The integration test suite validates:
 2. **Adapter validation** - Each adapter's validation function works correctly
 3. **Format signature recognition** - Proper detection of format-specific signature files
 4. **Test fixtures** - Minimal test archives for each supported format (see `tests/fixtures/README.md`)
+
+### Security Tests
+The Zip Slip protection test suite (`test-zip-slip-protection.sh`) validates:
+
+1. **Legitimate filenames allowed** - Files with `..` in the name (e.g., `John-Smith-Jr..jpg`) are not flagged
+2. **Unix path traversal blocked** - Patterns like `../`, `/../`, `/..` are detected and blocked
+3. **Windows path traversal blocked** - Patterns like `..\`, `\..\`, `\..` are detected and blocked
+4. **Absolute paths blocked** - Both Unix (`/etc/passwd`) and Windows (`C:\`) absolute paths are blocked
 
 ### What's NOT Tested
 The following scenarios require actual WordPress installations and are tested manually:
