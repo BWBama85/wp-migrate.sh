@@ -1046,6 +1046,15 @@ Next steps:
   # SECURITY: Validate extracted files don't escape extraction directory (Zip Slip protection)
   log_verbose "Validating extracted file paths..."
   local extracted_file realpath_result validation_failed=false
+
+  # Normalize the extraction directory path (resolve symlinks, remove double slashes)
+  local normalized_extract_dir
+  if ! normalized_extract_dir=$(readlink -f "$ARCHIVE_EXTRACT_DIR" 2>/dev/null); then
+    if ! normalized_extract_dir=$(realpath "$ARCHIVE_EXTRACT_DIR" 2>/dev/null); then
+      normalized_extract_dir="$ARCHIVE_EXTRACT_DIR"
+    fi
+  fi
+
   while IFS= read -r -d '' extracted_file; do
     # Get absolute path, following symlinks
     if ! realpath_result=$(readlink -f "$extracted_file" 2>/dev/null); then
@@ -1057,7 +1066,9 @@ Next steps:
     fi
 
     # Check if resolved path is within extraction directory
-    if [[ "$realpath_result" != "$ARCHIVE_EXTRACT_DIR"* ]]; then
+    # Use trailing slash to ensure directory boundary match (prevents sibling dir attacks)
+    # e.g., /tmp/extract-123-malicious/file should NOT match /tmp/extract-123/
+    if [[ "$realpath_result" != "$normalized_extract_dir" && "$realpath_result" != "$normalized_extract_dir"/* ]]; then
       log_warning "SECURITY: Archive contains path outside extraction directory: $extracted_file"
       validation_failed=true
     fi
