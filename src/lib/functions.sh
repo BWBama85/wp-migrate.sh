@@ -77,6 +77,8 @@ validate_archive_paths() {
   if [[ "$archive" =~ \.zip$ ]] || unzip -l "$archive" >/dev/null 2>&1; then
     archive_type="zip"
   elif [[ "$archive" =~ \.(tar\.gz|tgz)$ ]] || tar -tzf "$archive" >/dev/null 2>&1; then
+    archive_type="tar.gz"
+  elif [[ "$archive" =~ \.tar$ ]] || tar -tf "$archive" >/dev/null 2>&1; then
     archive_type="tar"
   else
     log_warning "Could not detect archive type for security validation"
@@ -107,7 +109,11 @@ validate_archive_paths() {
         dangerous_found=true
       fi
     done < <(unzip -l "$archive" 2>/dev/null | awk 'NR>3 {if ($1 ~ /^-+$/) exit; if (NF >= 4) {for(i=4;i<=NF;i++) printf "%s%s", $i, (i<NF?" ":""); print ""}}')
-  elif [[ "$archive_type" == "tar" ]]; then
+  elif [[ "$archive_type" == "tar.gz" ]] || [[ "$archive_type" == "tar" ]]; then
+    # Use appropriate tar flags: -tzf for compressed, -tf for uncompressed
+    local tar_flags="-tf"
+    [[ "$archive_type" == "tar.gz" ]] && tar_flags="-tzf"
+
     while IFS= read -r entry; do
       # Check for absolute paths:
       #   - Unix: /etc/passwd
@@ -129,7 +135,7 @@ validate_archive_paths() {
         log_warning "SECURITY: Archive contains path traversal attempt: $entry"
         dangerous_found=true
       fi
-    done < <(tar -tzf "$archive" 2>/dev/null)
+    done < <(tar $tar_flags "$archive" 2>/dev/null)
   fi
 
   if $dangerous_found; then
