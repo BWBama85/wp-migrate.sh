@@ -521,6 +521,119 @@ adapter_base_get_archive_type() {
   fi
 }
 
+# Extract a ZIP archive with progress feedback for large files
+# Usage: adapter_base_extract_zip <archive_path> <dest_dir>
+# Returns: 0 on success, 1 on failure
+# Note: For archives >500MB, logs a message about expected duration
+adapter_base_extract_zip() {
+  local archive="$1" dest="$2"
+  local archive_size start_time
+
+  archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+  local archive_mb=$((archive_size / 1024 / 1024))
+
+  # Try bsdtar with progress if available (supports stdin for progress bar)
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
+    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
+      return 1
+    fi
+  else
+    # Fallback to unzip (no progress - unzip doesn't support stdin)
+    # For large archives, warn user this may take a while
+    if [[ $archive_mb -gt 500 ]]; then
+      log "Extracting ${archive_mb}MB archive (this may take several minutes)..."
+    fi
+    log_trace "unzip -q \"$archive\" -d \"$dest\""
+    start_time=$(date +%s)
+    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
+      return 1
+    fi
+    local end_time elapsed_min
+    end_time=$(date +%s)
+    elapsed_min=$(( (end_time - start_time) / 60 ))
+    if [[ $elapsed_min -gt 0 ]]; then
+      log_verbose "Extraction completed in ${elapsed_min} minute(s)"
+    fi
+  fi
+
+  return 0
+}
+
+# Extract a TAR.GZ archive with progress feedback for large files
+# Usage: adapter_base_extract_tar_gz <archive_path> <dest_dir>
+# Returns: 0 on success, 1 on failure
+adapter_base_extract_tar_gz() {
+  local archive="$1" dest="$2"
+  local archive_size start_time
+
+  archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+  local archive_mb=$((archive_size / 1024 / 1024))
+
+  # Try pv with progress if available
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+    log_trace "pv \"$archive\" | tar -xzf - -C \"$dest\""
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xzf - -C "$dest" 2>/dev/null; then
+      return 1
+    fi
+  else
+    # Fallback to plain tar
+    if [[ $archive_mb -gt 500 ]]; then
+      log "Extracting ${archive_mb}MB archive (this may take several minutes)..."
+    fi
+    log_trace "tar -xzf \"$archive\" -C \"$dest\""
+    start_time=$(date +%s)
+    if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
+      return 1
+    fi
+    local end_time elapsed_min
+    end_time=$(date +%s)
+    elapsed_min=$(( (end_time - start_time) / 60 ))
+    if [[ $elapsed_min -gt 0 ]]; then
+      log_verbose "Extraction completed in ${elapsed_min} minute(s)"
+    fi
+  fi
+
+  return 0
+}
+
+# Extract an uncompressed TAR archive with progress feedback for large files
+# Usage: adapter_base_extract_tar <archive_path> <dest_dir>
+# Returns: 0 on success, 1 on failure
+adapter_base_extract_tar() {
+  local archive="$1" dest="$2"
+  local archive_size start_time
+
+  archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+  local archive_mb=$((archive_size / 1024 / 1024))
+
+  # Try pv with progress if available
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+    log_trace "pv \"$archive\" | tar -xf - -C \"$dest\""
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xf - -C "$dest" 2>/dev/null; then
+      return 1
+    fi
+  else
+    # Fallback to plain tar
+    if [[ $archive_mb -gt 500 ]]; then
+      log "Extracting ${archive_mb}MB archive (this may take several minutes)..."
+    fi
+    log_trace "tar -xf \"$archive\" -C \"$dest\""
+    start_time=$(date +%s)
+    if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
+      return 1
+    fi
+    local end_time elapsed_min
+    end_time=$(date +%s)
+    elapsed_min=$(( (end_time - start_time) / 60 ))
+    if [[ $elapsed_min -gt 0 ]]; then
+      log_verbose "Extraction completed in ${elapsed_min} minute(s)"
+    fi
+  fi
+
+  return 0
+}
+
 # Consolidate multiple SQL files into a single database dump
 # Usage: adapter_base_consolidate_database <sql_dir> <output_file> [maxdepth] [verbose]
 # Args:
@@ -640,24 +753,7 @@ adapter_wpmigrate_validate() {
 # Returns: 0 on success, 1 on failure
 adapter_wpmigrate_extract() {
   local archive="$1" dest="$2"
-
-  # Try bsdtar with progress if available (supports stdin)
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
-    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
-    local archive_size
-    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
-      return 1
-    fi
-  else
-    # Fallback to unzip (no progress - unzip doesn't support stdin)
-    log_trace "unzip -q \"$archive\" -d \"$dest\""
-    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-      return 1
-    fi
-  fi
-
-  return 0
+  adapter_base_extract_zip "$archive" "$dest"
 }
 
 # Find database file in extracted wp-migrate archive
@@ -759,29 +855,10 @@ adapter_duplicator_validate() {
 # Extract Duplicator archive
 # Usage: adapter_duplicator_extract <archive_path> <dest_dir>
 # Returns: 0 on success, 1 on failure
+# Note: Security validation is performed by validate_archive_paths() before extraction
 adapter_duplicator_extract() {
   local archive="$1" dest="$2"
-
-  # Try bsdtar with progress if available (supports stdin)
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
-    log_trace "pv \"$archive\" | bsdtar -xf - --no-absolute-filenames -C \"$dest\""
-    local archive_size
-    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    # SECURITY: --no-absolute-filenames strips leading / from paths
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - --no-absolute-filenames -C "$dest" 2>/dev/null; then
-      return 1
-    fi
-  else
-    # Fallback to unzip (no progress - unzip doesn't support stdin)
-    # SECURITY: unzip has no built-in flag to prevent path traversal
-    # Pre-extraction validation in validate_archive_paths() provides protection
-    log_trace "unzip -q \"$archive\" -d \"$dest\""
-    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-      return 1
-    fi
-  fi
-
-  return 0
+  adapter_base_extract_zip "$archive" "$dest"
 }
 
 # Find database file in extracted Duplicator archive
@@ -836,10 +913,10 @@ adapter_duplicator_get_dependencies() {
 # -----------------------
 # Jetpack Backup Archive Adapter
 # -----------------------
-# Handles Jetpack Backup archives (ZIP or TAR.GZ format, or extracted directory)
+# Handles Jetpack Backup archives (ZIP, TAR, or TAR.GZ format, or extracted directory)
 #
 # Archive Structure:
-#   - Format: ZIP, TAR.GZ, or already-extracted directory
+#   - Format: ZIP, TAR, TAR.GZ, or already-extracted directory
 #   - Database: sql/*.sql (multiple files, one per table)
 #   - wp-content: wp-content/ at root level
 #   - Metadata: meta.json (contains WordPress version, plugins, themes)
@@ -928,66 +1005,19 @@ adapter_jetpack_extract() {
     return 0
   fi
 
-  # Extract based on archive type
+  # Extract based on archive type using shared helpers
   local archive_type
   archive_type=$(adapter_base_get_archive_type "$archive")
 
-  # Determine if we can use bsdtar with progress
-  local use_bsdtar_progress=false
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
-    use_bsdtar_progress=true
-  fi
-
-  # If bsdtar is available with progress, use it for all formats (supports stdin)
-  if $use_bsdtar_progress; then
-    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
-    local archive_size
-    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
-      return 1
-    fi
-  # Otherwise use format-specific extractors
-  elif [[ "$archive_type" == "zip" ]]; then
-    # unzip doesn't support stdin, so no progress
-    log_trace "unzip -q \"$archive\" -d \"$dest\""
-    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-      return 1
-    fi
+  if [[ "$archive_type" == "zip" ]]; then
+    adapter_base_extract_zip "$archive" "$dest"
   elif [[ "$archive_type" == "tar.gz" ]]; then
-    # tar supports stdin, so we can show progress
-    if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
-      log_trace "pv \"$archive\" | tar -xzf - -C \"$dest\""
-      local archive_size
-      archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-      if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xzf - -C "$dest" 2>/dev/null; then
-        return 1
-      fi
-    else
-      log_trace "tar -xzf \"$archive\" -C \"$dest\""
-      if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
-        return 1
-      fi
-    fi
+    adapter_base_extract_tar_gz "$archive" "$dest"
   elif [[ "$archive_type" == "tar" ]]; then
-    # tar supports stdin, so we can show progress
-    if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
-      log_trace "pv \"$archive\" | tar -xf - -C \"$dest\""
-      local archive_size
-      archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-      if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xf - -C "$dest" 2>/dev/null; then
-        return 1
-      fi
-    else
-      log_trace "tar -xf \"$archive\" -C \"$dest\""
-      if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
-        return 1
-      fi
-    fi
+    adapter_base_extract_tar "$archive" "$dest"
   else
     return 1
   fi
-
-  return 0
 }
 
 # Find database files in extracted Jetpack archive and consolidate them
@@ -1186,24 +1216,8 @@ adapter_solidbackups_extract() {
     return 0
   fi
 
-  # Extract ZIP archive
-  # Try bsdtar with progress if available (supports stdin)
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
-    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
-    local archive_size
-    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
-      return 1
-    fi
-  else
-    # Fallback to unzip (no progress - unzip doesn't support stdin)
-    log_trace "unzip -q \"$archive\" -d \"$dest\""
-    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-      return 1
-    fi
-  fi
-
-  return 0
+  # Extract ZIP archive using shared helper
+  adapter_base_extract_zip "$archive" "$dest"
 }
 
 # Find database files in extracted Solid Backups archive and consolidate them
@@ -1416,24 +1430,8 @@ adapter_solidbackups_nextgen_extract() {
     return 0
   fi
 
-  # Extract ZIP archive
-  # Try bsdtar with progress if available (supports stdin)
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
-    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
-    local archive_size
-    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
-      return 1
-    fi
-  else
-    # Fallback to unzip (no progress - unzip doesn't support stdin)
-    log_trace "unzip -q \"$archive\" -d \"$dest\""
-    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-      return 1
-    fi
-  fi
-
-  return 0
+  # Extract ZIP archive using shared helper
+  adapter_base_extract_zip "$archive" "$dest"
 }
 
 # Find database files in extracted Solid Backups NextGen archive and consolidate them
@@ -1745,6 +1743,8 @@ validate_archive_paths() {
   if [[ "$archive" =~ \.zip$ ]] || unzip -l "$archive" >/dev/null 2>&1; then
     archive_type="zip"
   elif [[ "$archive" =~ \.(tar\.gz|tgz)$ ]] || tar -tzf "$archive" >/dev/null 2>&1; then
+    archive_type="tar.gz"
+  elif [[ "$archive" =~ \.tar$ ]] || tar -tf "$archive" >/dev/null 2>&1; then
     archive_type="tar"
   else
     log_warning "Could not detect archive type for security validation"
@@ -1775,7 +1775,11 @@ validate_archive_paths() {
         dangerous_found=true
       fi
     done < <(unzip -l "$archive" 2>/dev/null | awk 'NR>3 {if ($1 ~ /^-+$/) exit; if (NF >= 4) {for(i=4;i<=NF;i++) printf "%s%s", $i, (i<NF?" ":""); print ""}}')
-  elif [[ "$archive_type" == "tar" ]]; then
+  elif [[ "$archive_type" == "tar.gz" ]] || [[ "$archive_type" == "tar" ]]; then
+    # Use appropriate tar flags: -tzf for compressed, -tf for uncompressed
+    local tar_flags="-tf"
+    [[ "$archive_type" == "tar.gz" ]] && tar_flags="-tzf"
+
     while IFS= read -r entry; do
       # Check for absolute paths:
       #   - Unix: /etc/passwd
@@ -1797,7 +1801,7 @@ validate_archive_paths() {
         log_warning "SECURITY: Archive contains path traversal attempt: $entry"
         dangerous_found=true
       fi
-    done < <(tar -tzf "$archive" 2>/dev/null)
+    done < <(tar $tar_flags "$archive" 2>/dev/null)
   fi
 
   if $dangerous_found; then

@@ -1,10 +1,10 @@
 # -----------------------
 # Jetpack Backup Archive Adapter
 # -----------------------
-# Handles Jetpack Backup archives (ZIP or TAR.GZ format, or extracted directory)
+# Handles Jetpack Backup archives (ZIP, TAR, or TAR.GZ format, or extracted directory)
 #
 # Archive Structure:
-#   - Format: ZIP, TAR.GZ, or already-extracted directory
+#   - Format: ZIP, TAR, TAR.GZ, or already-extracted directory
 #   - Database: sql/*.sql (multiple files, one per table)
 #   - wp-content: wp-content/ at root level
 #   - Metadata: meta.json (contains WordPress version, plugins, themes)
@@ -93,66 +93,19 @@ adapter_jetpack_extract() {
     return 0
   fi
 
-  # Extract based on archive type
+  # Extract based on archive type using shared helpers
   local archive_type
   archive_type=$(adapter_base_get_archive_type "$archive")
 
-  # Determine if we can use bsdtar with progress
-  local use_bsdtar_progress=false
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
-    use_bsdtar_progress=true
-  fi
-
-  # If bsdtar is available with progress, use it for all formats (supports stdin)
-  if $use_bsdtar_progress; then
-    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
-    local archive_size
-    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
-      return 1
-    fi
-  # Otherwise use format-specific extractors
-  elif [[ "$archive_type" == "zip" ]]; then
-    # unzip doesn't support stdin, so no progress
-    log_trace "unzip -q \"$archive\" -d \"$dest\""
-    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-      return 1
-    fi
+  if [[ "$archive_type" == "zip" ]]; then
+    adapter_base_extract_zip "$archive" "$dest"
   elif [[ "$archive_type" == "tar.gz" ]]; then
-    # tar supports stdin, so we can show progress
-    if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
-      log_trace "pv \"$archive\" | tar -xzf - -C \"$dest\""
-      local archive_size
-      archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-      if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xzf - -C "$dest" 2>/dev/null; then
-        return 1
-      fi
-    else
-      log_trace "tar -xzf \"$archive\" -C \"$dest\""
-      if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
-        return 1
-      fi
-    fi
+    adapter_base_extract_tar_gz "$archive" "$dest"
   elif [[ "$archive_type" == "tar" ]]; then
-    # tar supports stdin, so we can show progress
-    if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
-      log_trace "pv \"$archive\" | tar -xf - -C \"$dest\""
-      local archive_size
-      archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-      if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xf - -C "$dest" 2>/dev/null; then
-        return 1
-      fi
-    else
-      log_trace "tar -xf \"$archive\" -C \"$dest\""
-      if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
-        return 1
-      fi
-    fi
+    adapter_base_extract_tar "$archive" "$dest"
   else
     return 1
   fi
-
-  return 0
 }
 
 # Find database files in extracted Jetpack archive and consolidate them

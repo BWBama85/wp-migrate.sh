@@ -88,24 +88,8 @@ adapter_solidbackups_extract() {
     return 0
   fi
 
-  # Extract ZIP archive
-  # Try bsdtar with progress if available (supports stdin)
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
-    log_trace "pv \"$archive\" | bsdtar -xf - -C \"$dest\""
-    local archive_size
-    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - -C "$dest" 2>/dev/null; then
-      return 1
-    fi
-  else
-    # Fallback to unzip (no progress - unzip doesn't support stdin)
-    log_trace "unzip -q \"$archive\" -d \"$dest\""
-    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-      return 1
-    fi
-  fi
-
-  return 0
+  # Extract ZIP archive using shared helper
+  adapter_base_extract_zip "$archive" "$dest"
 }
 
 # Find database files in extracted Solid Backups archive and consolidate them

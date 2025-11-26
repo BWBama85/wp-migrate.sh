@@ -51,29 +51,10 @@ adapter_duplicator_validate() {
 # Extract Duplicator archive
 # Usage: adapter_duplicator_extract <archive_path> <dest_dir>
 # Returns: 0 on success, 1 on failure
+# Note: Security validation is performed by validate_archive_paths() before extraction
 adapter_duplicator_extract() {
   local archive="$1" dest="$2"
-
-  # Try bsdtar with progress if available (supports stdin)
-  if ! $QUIET_MODE && has_pv && [[ -t 1 ]] && command -v bsdtar >/dev/null 2>&1; then
-    log_trace "pv \"$archive\" | bsdtar -xf - --no-absolute-filenames -C \"$dest\""
-    local archive_size
-    archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
-    # SECURITY: --no-absolute-filenames strips leading / from paths
-    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | bsdtar -xf - --no-absolute-filenames -C "$dest" 2>/dev/null; then
-      return 1
-    fi
-  else
-    # Fallback to unzip (no progress - unzip doesn't support stdin)
-    # SECURITY: unzip has no built-in flag to prevent path traversal
-    # Pre-extraction validation in validate_archive_paths() provides protection
-    log_trace "unzip -q \"$archive\" -d \"$dest\""
-    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-      return 1
-    fi
-  fi
-
-  return 0
+  adapter_base_extract_zip "$archive" "$dest"
 }
 
 # Find database file in extracted Duplicator archive

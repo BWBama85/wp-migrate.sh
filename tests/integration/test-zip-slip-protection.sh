@@ -120,6 +120,33 @@ PYTHON_SCRIPT
 }
 
 # -------------------------------------------------------------------
+# Helper: Create uncompressed test .tar with specific path entries
+# -------------------------------------------------------------------
+create_malicious_plain_tar() {
+  local tar_path="$1"
+  shift
+  local entries=("$@")
+
+  python3 - "$tar_path" "${entries[@]}" << 'PYTHON_SCRIPT'
+import sys
+import tarfile
+import io
+
+tar_path = sys.argv[1]
+entries = sys.argv[2:]
+
+# 'w' mode creates uncompressed tar (not 'w:gz')
+with tarfile.open(tar_path, 'w') as tf:
+    for entry in entries:
+        # Create a TarInfo with the exact path we want
+        info = tarfile.TarInfo(name=entry)
+        content = b"test content\n"
+        info.size = len(content)
+        tf.addfile(info, io.BytesIO(content))
+PYTHON_SCRIPT
+}
+
+# -------------------------------------------------------------------
 # Test: Legitimate filenames with double periods should be ALLOWED
 # -------------------------------------------------------------------
 test_header "Test: Legitimate double-period filenames (Jr..jpg, Sr..png)"
@@ -317,6 +344,45 @@ if ! validate_archive_paths "$MALICIOUS_ZIP"; then
   pass 'ZIP: Blocks \\\\server\\share (UNC path)'
 else
   fail 'ZIP: Should block UNC path'
+fi
+
+# -------------------------------------------------------------------
+# Test: Plain .tar (uncompressed) validation
+# -------------------------------------------------------------------
+test_header "Test: Plain .tar (uncompressed) archives"
+
+# Safe files in plain tar
+SAFE_PLAIN_TAR="$TEMP_DIR/safe.tar"
+create_malicious_plain_tar "$SAFE_PLAIN_TAR" \
+  "wp-content/uploads/John-Smith-Jr..jpg" \
+  "wp-content/uploads/normal-file.jpg"
+
+if validate_archive_paths "$SAFE_PLAIN_TAR"; then
+  pass "Plain TAR: Legitimate filenames allowed"
+else
+  fail "Plain TAR: False positive on legitimate filenames"
+fi
+
+# Path traversal in plain tar
+MALICIOUS_PLAIN_TAR="$TEMP_DIR/traversal.tar"
+create_malicious_plain_tar "$MALICIOUS_PLAIN_TAR" \
+  "../etc/passwd"
+
+if ! validate_archive_paths "$MALICIOUS_PLAIN_TAR"; then
+  pass "Plain TAR: Blocks ../etc/passwd"
+else
+  fail "Plain TAR: Should block path traversal"
+fi
+
+# Absolute path in plain tar
+MALICIOUS_PLAIN_TAR="$TEMP_DIR/absolute.tar"
+create_malicious_plain_tar "$MALICIOUS_PLAIN_TAR" \
+  "/etc/passwd"
+
+if ! validate_archive_paths "$MALICIOUS_PLAIN_TAR"; then
+  pass "Plain TAR: Blocks /etc/passwd (absolute)"
+else
+  fail "Plain TAR: Should block absolute path"
 fi
 
 # -------------------------------------------------------------------
