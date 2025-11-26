@@ -101,7 +101,7 @@ validate_archive_paths() {
       # in filenames like "John-Smith-Jr..jpg" (name ending in period + extension)
       # Checks both Unix (/) and Windows (\) path separators for cross-platform safety
       if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]] || \
-         [[ "$entry" =~ ^\.\.\\  ]] || [[ "$entry" =~ \\\.\.\\  ]] || [[ "$entry" =~ \\\.\.$ ]] || \
+         [[ "$entry" =~ ^\.\.\\ ]] || [[ "$entry" =~ \\\.\.\\ ]] || [[ "$entry" =~ \\\.\.$ ]] || \
          [[ "$entry" == ".." ]]; then
         log_warning "SECURITY: Archive contains path traversal attempt: $entry"
         dangerous_found=true
@@ -124,7 +124,7 @@ validate_archive_paths() {
       # in filenames like "John-Smith-Jr..jpg" (name ending in period + extension)
       # Checks both Unix (/) and Windows (\) path separators for cross-platform safety
       if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]] || \
-         [[ "$entry" =~ ^\.\.\\  ]] || [[ "$entry" =~ \\\.\.\\  ]] || [[ "$entry" =~ \\\.\.$ ]] || \
+         [[ "$entry" =~ ^\.\.\\ ]] || [[ "$entry" =~ \\\.\.\\ ]] || [[ "$entry" =~ \\\.\.$ ]] || \
          [[ "$entry" == ".." ]]; then
         log_warning "SECURITY: Archive contains path traversal attempt: $entry"
         dangerous_found=true
