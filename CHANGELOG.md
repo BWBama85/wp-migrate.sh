@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Progress feedback for large archive extraction**: Archives over 500MB now display a message indicating extraction may take several minutes, with elapsed time logged upon completion. Uses `pv` with progress bar when available, otherwise falls back to status messages.
+
+### Changed
+
+- **Refactored adapter extraction code**: Consolidated duplicate extraction logic from all adapters into shared `adapter_base_extract_zip()` and `adapter_base_extract_tar_gz()` helper functions in `base.sh`, reducing code duplication and ensuring consistent progress feedback across all backup formats.
+
 ## [2.10.2] - 2025-11-25
 
 ### Fixed
