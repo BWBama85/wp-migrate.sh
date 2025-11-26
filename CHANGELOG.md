@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.5] - 2025-11-26
+
+### Fixed
+
+- **Auto-overwrite duplicate files during zip extraction**: Archives containing duplicate filenames no longer cause the script to hang waiting for user input. Added `-o` flag to unzip commands to automatically overwrite duplicates.
+
 ## [2.10.4] - 2025-11-25
 
 ### Fixed
