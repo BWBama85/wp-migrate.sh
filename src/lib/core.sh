@@ -208,6 +208,44 @@ version_compare() {
   return 1
 }
 
+# Check if local rsync supports a specific option
+# Usage: rsync_supports_option <option>
+# Returns: 0 if supported, 1 otherwise
+# Note: macOS ships with openrsync which lacks many GNU rsync features
+rsync_supports_option() {
+  local option="$1"
+  # Test the option with --dry-run against /dev/null to see if rsync accepts it
+  rsync --dry-run "$option" /dev/null /dev/null 2>/dev/null
+}
+
+# Get rsync progress options compatible with the local rsync version
+# Usage: get_rsync_progress_opts
+# Returns: Space-separated list of options for progress display
+# Note: GNU rsync 3.1+ supports --info=progress2 for aggregate progress
+#       macOS openrsync only supports --progress (per-file progress)
+get_rsync_progress_opts() {
+  if rsync_supports_option "--info=progress2"; then
+    echo "--info=progress2"
+  else
+    # Fall back to --progress for macOS openrsync and older rsync versions
+    echo "--progress"
+  fi
+}
+
+# Get rsync stats options compatible with the local rsync version
+# Usage: get_rsync_stats_opts
+# Returns: Space-separated list of options for stats display, or empty string
+get_rsync_stats_opts() {
+  if rsync_supports_option "--info=stats2"; then
+    echo "--info=stats2"
+  else
+    # macOS openrsync doesn't support --info=stats2, use --stats instead
+    if rsync_supports_option "--stats"; then
+      echo "--stats"
+    fi
+  fi
+}
+
 validate_url() {
   local url="$1" flag_name="$2"
   # Basic URL validation: must start with http:// or https://
