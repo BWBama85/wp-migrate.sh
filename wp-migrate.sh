@@ -1754,8 +1754,8 @@ validate_archive_paths() {
   # List archive contents and check each entry
   if [[ "$archive_type" == "zip" ]]; then
     while IFS= read -r entry; do
-      # Check for absolute paths (start with /)
-      if [[ "$entry" =~ ^/ ]]; then
+      # Check for absolute paths (Unix / or Windows drive letter C:\)
+      if [[ "$entry" =~ ^/ ]] || [[ "$entry" =~ ^[A-Za-z]:\\ ]]; then
         log_warning "SECURITY: Archive contains absolute path: $entry"
         dangerous_found=true
       fi
@@ -1763,15 +1763,18 @@ validate_archive_paths() {
       # Check for parent directory traversal (..) as a path component
       # Only matches when .. is used for directory traversal, not when it appears
       # in filenames like "John-Smith-Jr..jpg" (name ending in period + extension)
-      if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]] || [[ "$entry" == ".." ]]; then
+      # Checks both Unix (/) and Windows (\) path separators for cross-platform safety
+      if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]] || \
+         [[ "$entry" =~ ^\.\.\\  ]] || [[ "$entry" =~ \\\.\.\\  ]] || [[ "$entry" =~ \\\.\.$ ]] || \
+         [[ "$entry" == ".." ]]; then
         log_warning "SECURITY: Archive contains path traversal attempt: $entry"
         dangerous_found=true
       fi
     done < <(unzip -l "$archive" 2>/dev/null | awk 'NR>3 {if ($1 ~ /^-+$/) exit; if (NF >= 4) {for(i=4;i<=NF;i++) printf "%s%s", $i, (i<NF?" ":""); print ""}}')
   elif [[ "$archive_type" == "tar" ]]; then
     while IFS= read -r entry; do
-      # Check for absolute paths
-      if [[ "$entry" =~ ^/ ]]; then
+      # Check for absolute paths (Unix / or Windows drive letter C:\)
+      if [[ "$entry" =~ ^/ ]] || [[ "$entry" =~ ^[A-Za-z]:\\ ]]; then
         log_warning "SECURITY: Archive contains absolute path: $entry"
         dangerous_found=true
       fi
@@ -1779,7 +1782,10 @@ validate_archive_paths() {
       # Check for parent directory traversal (..) as a path component
       # Only matches when .. is used for directory traversal, not when it appears
       # in filenames like "John-Smith-Jr..jpg" (name ending in period + extension)
-      if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]] || [[ "$entry" == ".." ]]; then
+      # Checks both Unix (/) and Windows (\) path separators for cross-platform safety
+      if [[ "$entry" =~ ^\.\./ ]] || [[ "$entry" =~ /\.\./ ]] || [[ "$entry" =~ /\.\.$ ]] || \
+         [[ "$entry" =~ ^\.\.\\  ]] || [[ "$entry" =~ \\\.\.\\  ]] || [[ "$entry" =~ \\\.\.$ ]] || \
+         [[ "$entry" == ".." ]]; then
         log_warning "SECURITY: Archive contains path traversal attempt: $entry"
         dangerous_found=true
       fi

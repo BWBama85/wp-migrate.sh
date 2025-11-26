@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Zip Slip false positives on filenames with double periods**: Fixed overly broad path traversal detection that incorrectly flagged legitimate filenames containing `..` (e.g., `John-Smith-Jr..jpg` where a name ending in "Jr." or "Sr." is followed by a file extension). The fix now only detects actual path traversal attempts (`../`, `/../`, `/..`) rather than any occurrence of `..` in the filename.
 
+### Security
+
+- **Windows-style path traversal detection**: Added detection for Windows backslash-based path traversal attempts (`..\`) in addition to Unix-style (`../`). Also added detection for Windows absolute paths (`C:\`).
+
+### Added
+
+- **Zip Slip regression tests**: New integration test suite (`tests/integration/test-zip-slip-protection.sh`) validates that path traversal attacks are blocked while legitimate filenames with `..` are allowed.
+
 ## [2.10.1] - 2025-11-17
 
 **📚 Documentation Updates**
