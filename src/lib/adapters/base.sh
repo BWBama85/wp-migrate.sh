@@ -130,15 +130,26 @@ adapter_base_extract_zip() {
       return 1
     fi
   else
-    # Fallback to unzip (no progress - unzip doesn't support stdin)
-    # For large archives, warn user this may take a while
-    if [[ $archive_mb -gt 500 ]]; then
-      log "Extracting ${archive_mb}MB archive (this may take several minutes)..."
-    fi
-    log_trace "unzip -q \"$archive\" -d \"$dest\""
+    # Fallback to unzip
+    # Show file-by-file progress when:
+    #   - --verbose or --trace is enabled (user wants to see details)
+    #   - Large archives (>500MB) without quiet mode
     start_time=$(date +%s)
-    if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
-      return 1
+    if $VERBOSE || $TRACE_MODE || { [[ $archive_mb -gt 500 ]] && ! $QUIET_MODE; }; then
+      if [[ $archive_mb -gt 500 ]]; then
+        log "Extracting ${archive_mb}MB archive (this may take several minutes)..."
+      fi
+      log_trace "unzip \"$archive\" -d \"$dest\""
+      # Show file-by-file progress (no -q flag)
+      if ! unzip "$archive" -d "$dest"; then
+        return 1
+      fi
+    else
+      # Small archives in non-verbose mode: use quiet mode
+      log_trace "unzip -q \"$archive\" -d \"$dest\""
+      if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
+        return 1
+      fi
     fi
     local end_time elapsed_min
     end_time=$(date +%s)
@@ -169,13 +180,21 @@ adapter_base_extract_tar_gz() {
     fi
   else
     # Fallback to plain tar
-    if [[ $archive_mb -gt 500 ]]; then
-      log "Extracting ${archive_mb}MB archive (this may take several minutes)..."
-    fi
-    log_trace "tar -xzf \"$archive\" -C \"$dest\""
+    # Show file-by-file progress when --verbose or --trace is enabled, or for large archives
     start_time=$(date +%s)
-    if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
-      return 1
+    if $VERBOSE || $TRACE_MODE || { [[ $archive_mb -gt 500 ]] && ! $QUIET_MODE; }; then
+      if [[ $archive_mb -gt 500 ]]; then
+        log "Extracting ${archive_mb}MB archive (this may take several minutes)..."
+      fi
+      log_trace "tar -xzvf \"$archive\" -C \"$dest\""
+      if ! tar -xzvf "$archive" -C "$dest"; then
+        return 1
+      fi
+    else
+      log_trace "tar -xzf \"$archive\" -C \"$dest\""
+      if ! tar -xzf "$archive" -C "$dest" 2>/dev/null; then
+        return 1
+      fi
     fi
     local end_time elapsed_min
     end_time=$(date +%s)
@@ -206,13 +225,21 @@ adapter_base_extract_tar() {
     fi
   else
     # Fallback to plain tar
-    if [[ $archive_mb -gt 500 ]]; then
-      log "Extracting ${archive_mb}MB archive (this may take several minutes)..."
-    fi
-    log_trace "tar -xf \"$archive\" -C \"$dest\""
+    # Show file-by-file progress when --verbose or --trace is enabled, or for large archives
     start_time=$(date +%s)
-    if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
-      return 1
+    if $VERBOSE || $TRACE_MODE || { [[ $archive_mb -gt 500 ]] && ! $QUIET_MODE; }; then
+      if [[ $archive_mb -gt 500 ]]; then
+        log "Extracting ${archive_mb}MB archive (this may take several minutes)..."
+      fi
+      log_trace "tar -xvf \"$archive\" -C \"$dest\""
+      if ! tar -xvf "$archive" -C "$dest"; then
+        return 1
+      fi
+    else
+      log_trace "tar -xf \"$archive\" -C \"$dest\""
+      if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
+        return 1
+      fi
     fi
     local end_time elapsed_min
     end_time=$(date +%s)
