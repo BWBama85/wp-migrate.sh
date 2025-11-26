@@ -7,13 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.3] - 2025-11-25
+
+### Security
+
+- **Plain .tar archive Zip Slip validation**: Fixed security bypass where uncompressed `.tar` archives skipped path traversal validation entirely. The `validate_archive_paths()` function now properly detects and validates plain tar files using `tar -tf` in addition to compressed archives.
+
 ### Added
 
 - **Progress feedback for large archive extraction**: Archives over 500MB now display a message indicating extraction may take several minutes, with elapsed time logged upon completion. Uses `pv` with progress bar when available, otherwise falls back to status messages.
+- **Plain .tar archive support for Jetpack**: Restored support for uncompressed `.tar` Jetpack backup archives that was accidentally removed during refactoring.
+- **New security tests**: Added 3 tests for plain `.tar` archive validation (20 total Zip Slip tests).
 
 ### Changed
 
-- **Refactored adapter extraction code**: Consolidated duplicate extraction logic from all adapters into shared `adapter_base_extract_zip()` and `adapter_base_extract_tar_gz()` helper functions in `base.sh`, reducing code duplication and ensuring consistent progress feedback across all backup formats.
+- **Refactored adapter extraction code**: Consolidated duplicate extraction logic from all adapters into shared helper functions (`adapter_base_extract_zip()`, `adapter_base_extract_tar_gz()`, `adapter_base_extract_tar()`) in `base.sh`, reducing code duplication and ensuring consistent progress feedback across all backup formats.
 
 ## [2.10.2] - 2025-11-25
 
