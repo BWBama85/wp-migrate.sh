@@ -188,6 +188,43 @@ adapter_base_extract_tar_gz() {
   return 0
 }
 
+# Extract an uncompressed TAR archive with progress feedback for large files
+# Usage: adapter_base_extract_tar <archive_path> <dest_dir>
+# Returns: 0 on success, 1 on failure
+adapter_base_extract_tar() {
+  local archive="$1" dest="$2"
+  local archive_size start_time
+
+  archive_size=$(stat -f%z "$archive" 2>/dev/null || stat -c%s "$archive" 2>/dev/null)
+  local archive_mb=$((archive_size / 1024 / 1024))
+
+  # Try pv with progress if available
+  if ! $QUIET_MODE && has_pv && [[ -t 1 ]]; then
+    log_trace "pv \"$archive\" | tar -xf - -C \"$dest\""
+    if ! pv -N "Extracting archive" -s "$archive_size" "$archive" | tar -xf - -C "$dest" 2>/dev/null; then
+      return 1
+    fi
+  else
+    # Fallback to plain tar
+    if [[ $archive_mb -gt 500 ]]; then
+      log "Extracting ${archive_mb}MB archive (this may take several minutes)..."
+    fi
+    log_trace "tar -xf \"$archive\" -C \"$dest\""
+    start_time=$(date +%s)
+    if ! tar -xf "$archive" -C "$dest" 2>/dev/null; then
+      return 1
+    fi
+    local end_time elapsed_min
+    end_time=$(date +%s)
+    elapsed_min=$(( (end_time - start_time) / 60 ))
+    if [[ $elapsed_min -gt 0 ]]; then
+      log_verbose "Extraction completed in ${elapsed_min} minute(s)"
+    fi
+  fi
+
+  return 0
+}
+
 # Consolidate multiple SQL files into a single database dump
 # Usage: adapter_base_consolidate_database <sql_dir> <output_file> [maxdepth] [verbose]
 # Args:

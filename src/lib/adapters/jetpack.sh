@@ -1,10 +1,10 @@
 # -----------------------
 # Jetpack Backup Archive Adapter
 # -----------------------
-# Handles Jetpack Backup archives (ZIP or TAR.GZ format, or extracted directory)
+# Handles Jetpack Backup archives (ZIP, TAR, or TAR.GZ format, or extracted directory)
 #
 # Archive Structure:
-#   - Format: ZIP, TAR.GZ, or already-extracted directory
+#   - Format: ZIP, TAR, TAR.GZ, or already-extracted directory
 #   - Database: sql/*.sql (multiple files, one per table)
 #   - wp-content: wp-content/ at root level
 #   - Metadata: meta.json (contains WordPress version, plugins, themes)
@@ -101,6 +101,8 @@ adapter_jetpack_extract() {
     adapter_base_extract_zip "$archive" "$dest"
   elif [[ "$archive_type" == "tar.gz" ]]; then
     adapter_base_extract_tar_gz "$archive" "$dest"
+  elif [[ "$archive_type" == "tar" ]]; then
+    adapter_base_extract_tar "$archive" "$dest"
   else
     return 1
   fi
