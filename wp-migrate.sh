@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-VERSION="2.10.6"  # wp-migrate version
+VERSION="2.10.7"  # wp-migrate version
 
 # -------------------------------------------------------------------
 # WordPress wp-content migration (PUSH mode) + DB dump transfer
