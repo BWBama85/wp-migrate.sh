@@ -135,19 +135,20 @@ adapter_base_extract_zip() {
     #   - --verbose or --trace is enabled (user wants to see details)
     #   - Large archives (>500MB) without quiet mode
     start_time=$(date +%s)
+    # -o: overwrite without prompting (archives may contain duplicates)
     if $VERBOSE || $TRACE_MODE || { [[ $archive_mb -gt 500 ]] && ! $QUIET_MODE; }; then
       if [[ $archive_mb -gt 500 ]]; then
         log "Extracting ${archive_mb}MB archive (this may take several minutes)..."
       fi
-      log_trace "unzip \"$archive\" -d \"$dest\""
+      log_trace "unzip -o \"$archive\" -d \"$dest\""
       # Show file-by-file progress (no -q flag)
-      if ! unzip "$archive" -d "$dest"; then
+      if ! unzip -o "$archive" -d "$dest"; then
         return 1
       fi
     else
       # Small archives in non-verbose mode: use quiet mode
-      log_trace "unzip -q \"$archive\" -d \"$dest\""
-      if ! unzip -q "$archive" -d "$dest" 2>/dev/null; then
+      log_trace "unzip -oq \"$archive\" -d \"$dest\""
+      if ! unzip -oq "$archive" -d "$dest" 2>/dev/null; then
         return 1
       fi
     fi
