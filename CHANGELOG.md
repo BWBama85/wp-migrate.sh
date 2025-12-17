@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Fixed
 
-- **Plugin filtering automated tests** (Issue #76): New test suite `tests/unit/test-plugin-filtering.sh` with 41 tests covering `should_exclude_plugin()` unit tests and `detect_dest_plugins_local()` integration tests with mocked WP-CLI. Covers drop-in filtering, StellarSites managed plugin filtering, dry-run mode (Issue #75 regression), edge cases, and graceful degradation.
+- **PHP 8.4 deprecation warnings polluting database table listings**: Fixed issue where WP-CLI deprecation warnings (from `react/promise` and `php-cli-tools` libraries) were being included in `SHOW TABLES` output, causing table counts to be incorrect and table drop operations to fail with "Could not drop Deprecated: ..." errors. All database table queries now filter out warning lines.
 
 ## [2.10.9] - 2025-12-17
 
