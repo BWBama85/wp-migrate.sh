@@ -2663,14 +2663,19 @@ trap 'exit_cleanup' EXIT
 
 # Filter output to only absolute paths - PHP deprecation warnings from WP-CLI
 # can pollute stdout (e.g., react/promise library warnings in PHP 8.4+)
-# Uses || true to prevent pipefail crash when grep finds no matches (returns empty for validation)
+# stderr redirected to suppress warnings; validation in main.sh catches empty results
+# Uses head -1 (not tail -1) because WP_CONTENT_DIR output appears first, before any
+# stray output that might also start with / (e.g., paths in error messages)
+# Uses || true to prevent pipefail crash when grep finds no matches
 discover_wp_content_local() { wp_local eval 'echo WP_CONTENT_DIR;' 2>/dev/null | grep '^/' | head -1 || true; }
 
 discover_wp_content_remote() {
   local host="$1" root="$2"
   # Use wp_remote so quoted args survive
   # Filter output to only absolute paths - PHP deprecation warnings can pollute stdout
-  # Uses || true to prevent pipefail crash when grep finds no matches (returns empty for validation)
+  # stderr redirected to suppress warnings; validation in main.sh catches empty results
+  # Uses head -1 (not tail -1) because WP_CONTENT_DIR output appears first
+  # Uses || true to prevent pipefail crash when grep finds no matches
   wp_remote "$host" "$root" eval 'echo WP_CONTENT_DIR;' 2>/dev/null | grep '^/' | head -1 || true
 }
 
@@ -3203,9 +3208,18 @@ detect_archive_themes() {
 # Restore unique destination plugins/themes (push mode)
 restore_dest_content_push() {
   local host="$1" root="$2" backup_path="$3"
+  local wp_content_path
 
   if [[ ${#UNIQUE_DEST_PLUGINS[@]} -eq 0 && ${#UNIQUE_DEST_THEMES[@]} -eq 0 ]]; then
     return 0
+  fi
+
+  # Pre-validate wp-content path before restoration to prevent writing to wrong location
+  # If discover_wp_content_remote returns empty, cp would write to "/plugins/" (root filesystem!)
+  wp_content_path="$(discover_wp_content_remote "$host" "$root")"
+  if [[ -z "$wp_content_path" ]]; then
+    log_warning "Cannot restore plugins/themes: wp-content path discovery failed on remote host"
+    return 1
   fi
 
   log "Restoring destination plugins/themes not in source..."
@@ -3218,7 +3232,7 @@ restore_dest_content_push() {
         log "[dry-run]   Would restore plugin: $plugin"
       else
         log "    Restoring plugin: $plugin"
-        ssh_run "$host" "cp -a \"$backup_path/plugins/$plugin\" \"$(discover_wp_content_remote "$host" "$root")/plugins/\" 2>/dev/null" || {
+        ssh_run "$host" "cp -a \"$backup_path/plugins/$plugin\" \"$wp_content_path/plugins/\" 2>/dev/null" || {
           log_warning "Failed to restore plugin: $plugin"
         }
       fi
@@ -3245,7 +3259,7 @@ restore_dest_content_push() {
         log "[dry-run]   Would restore theme: $theme"
       else
         log "    Restoring theme: $theme"
-        ssh_run "$host" "cp -a \"$backup_path/themes/$theme\" \"$(discover_wp_content_remote "$host" "$root")/themes/\" 2>/dev/null" || {
+        ssh_run "$host" "cp -a \"$backup_path/themes/$theme\" \"$wp_content_path/themes/\" 2>/dev/null" || {
           log_warning "Failed to restore theme: $theme"
         }
       fi
@@ -4589,6 +4603,7 @@ if [[ -z "$SRC_WP_CONTENT" ]]; then
 WP-CLI did not return a valid wp-content path. Possible causes:
   - WordPress not properly installed
   - WP-CLI not found or misconfigured
+  - Custom WordPress directory structure
   - PHP errors preventing WP-CLI execution
 
 Try running manually:
@@ -4612,12 +4627,37 @@ if [[ -z "$DST_WP_CONTENT" ]]; then
 WP-CLI did not return a valid wp-content path on remote host. Possible causes:
   - WordPress not properly installed on destination
   - WP-CLI not found or misconfigured on destination
+  - Custom WordPress directory structure
   - PHP errors preventing WP-CLI execution
 
 Try running manually:
   ssh $DEST_HOST 'cd $DEST_ROOT && wp eval \"echo WP_CONTENT_DIR;\"'
 
 If this fails, verify WordPress installation on destination is functional."
+fi
+
+# Validate destination wp-content exists and is writable (remote checks via SSH)
+if ! ssh_run "$DEST_HOST" "test -d \"$DST_WP_CONTENT\""; then
+  err "Destination wp-content path is not a directory: $DST_WP_CONTENT
+
+Path discovered but does not exist or is not a directory on remote host.
+
+Check filesystem:
+  ssh $DEST_HOST \"ls -ld '$DST_WP_CONTENT'\" 2>&1"
+fi
+
+if ! ssh_run "$DEST_HOST" "test -w \"$DST_WP_CONTENT\""; then
+  err "Destination wp-content directory is not writable: $DST_WP_CONTENT
+
+Migration requires write access to wp-content directory on destination.
+
+Check permissions:
+  ssh $DEST_HOST \"ls -ld '$DST_WP_CONTENT'\"
+
+Fix permissions (if appropriate):
+  ssh $DEST_HOST \"sudo chown -R \\\$(whoami) '$DST_WP_CONTENT'\"
+  # or
+  ssh $DEST_HOST \"sudo chmod -R u+w '$DST_WP_CONTENT'\""
 fi
 
 # Size check (approx)

@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **PHP 8.4 WP-CLI deprecation warnings polluting paths**: Fixed issue where PHP deprecation warnings from WP-CLI (e.g., `react/promise` library's semicolon syntax warnings) were captured along with the wp-content path, causing "wp-content path is not a directory" errors. Path discovery functions now filter output to only valid absolute paths.
 - **Grep pipeline crash with pipefail**: Fixed script crash when WP-CLI returns only warnings with no valid path. Added `|| true` to grep pipeline to allow empty results to reach validation logic instead of crashing with exit code 1.
-- **Missing wp-content validation in push mode**: Added validation for `SRC_WP_CONTENT` and `DST_WP_CONTENT` in push mode (previously only archive mode validated these). Prevents undefined behavior when path discovery fails silently.
+- **Missing wp-content validation in push mode**: Added comprehensive validation for `SRC_WP_CONTENT` and `DST_WP_CONTENT` in push mode (previously only archive mode validated these). Now validates empty paths, directory existence, and remote writability. Prevents undefined behavior when path discovery fails silently.
+- **Plugin restoration path safety**: Fixed potential issue in `restore_dest_content_push()` where inline path discovery could write to wrong location if WP-CLI fails. Now pre-validates wp-content path before restoration operations.
 
 ## [2.10.8] - 2025-11-26
 

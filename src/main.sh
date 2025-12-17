@@ -610,6 +610,7 @@ if [[ -z "$SRC_WP_CONTENT" ]]; then
 WP-CLI did not return a valid wp-content path. Possible causes:
   - WordPress not properly installed
   - WP-CLI not found or misconfigured
+  - Custom WordPress directory structure
   - PHP errors preventing WP-CLI execution
 
 Try running manually:
@@ -633,12 +634,37 @@ if [[ -z "$DST_WP_CONTENT" ]]; then
 WP-CLI did not return a valid wp-content path on remote host. Possible causes:
   - WordPress not properly installed on destination
   - WP-CLI not found or misconfigured on destination
+  - Custom WordPress directory structure
   - PHP errors preventing WP-CLI execution
 
 Try running manually:
   ssh $DEST_HOST 'cd $DEST_ROOT && wp eval \"echo WP_CONTENT_DIR;\"'
 
 If this fails, verify WordPress installation on destination is functional."
+fi
+
+# Validate destination wp-content exists and is writable (remote checks via SSH)
+if ! ssh_run "$DEST_HOST" "test -d \"$DST_WP_CONTENT\""; then
+  err "Destination wp-content path is not a directory: $DST_WP_CONTENT
+
+Path discovered but does not exist or is not a directory on remote host.
+
+Check filesystem:
+  ssh $DEST_HOST \"ls -ld '$DST_WP_CONTENT'\" 2>&1"
+fi
+
+if ! ssh_run "$DEST_HOST" "test -w \"$DST_WP_CONTENT\""; then
+  err "Destination wp-content directory is not writable: $DST_WP_CONTENT
+
+Migration requires write access to wp-content directory on destination.
+
+Check permissions:
+  ssh $DEST_HOST \"ls -ld '$DST_WP_CONTENT'\"
+
+Fix permissions (if appropriate):
+  ssh $DEST_HOST \"sudo chown -R \\\$(whoami) '$DST_WP_CONTENT'\"
+  # or
+  ssh $DEST_HOST \"sudo chmod -R u+w '$DST_WP_CONTENT'\""
 fi
 
 # Size check (approx)
