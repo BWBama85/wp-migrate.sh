@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **PHP 8.4 deprecation warnings polluting database table listings**: Fixed issue where WP-CLI deprecation warnings (from `react/promise` and `php-cli-tools` libraries) were being included in `SHOW TABLES` output, causing table counts to be incorrect and table drop operations to fail with "Could not drop Deprecated: ..." errors. All database table queries now filter out warning lines.
+
 ## [2.10.9] - 2025-12-17
 
 ### Fixed
