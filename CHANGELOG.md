@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.9] - 2025-12-17
+
 ### Fixed
 
 - **PHP 8.4 WP-CLI deprecation warnings polluting paths**: Fixed issue where PHP deprecation warnings from WP-CLI (e.g., `react/promise` library's semicolon syntax warnings) were captured along with the wp-content path, causing "wp-content path is not a directory" errors. Path discovery functions now filter output to only valid absolute paths.
