@@ -928,12 +928,15 @@ exit_cleanup() {
 
 trap 'exit_cleanup' EXIT
 
-discover_wp_content_local() { wp_local eval 'echo WP_CONTENT_DIR;'; }
+# Filter output to only absolute paths - PHP deprecation warnings from WP-CLI
+# can pollute stdout (e.g., react/promise library warnings in PHP 8.4+)
+discover_wp_content_local() { wp_local eval 'echo WP_CONTENT_DIR;' 2>/dev/null | grep '^/' | tail -1; }
 
 discover_wp_content_remote() {
   local host="$1" root="$2"
   # Use wp_remote so quoted args survive
-  wp_remote "$host" "$root" eval 'echo WP_CONTENT_DIR;'
+  # Filter output to only absolute paths - PHP deprecation warnings can pollute stdout
+  wp_remote "$host" "$root" eval 'echo WP_CONTENT_DIR;' 2>/dev/null | grep '^/' | tail -1
 }
 
 check_disk_space_for_archive() {
