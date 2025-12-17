@@ -2663,13 +2663,15 @@ trap 'exit_cleanup' EXIT
 
 # Filter output to only absolute paths - PHP deprecation warnings from WP-CLI
 # can pollute stdout (e.g., react/promise library warnings in PHP 8.4+)
-discover_wp_content_local() { wp_local eval 'echo WP_CONTENT_DIR;' 2>/dev/null | grep '^/' | tail -1; }
+# Uses || true to prevent pipefail crash when grep finds no matches (returns empty for validation)
+discover_wp_content_local() { wp_local eval 'echo WP_CONTENT_DIR;' 2>/dev/null | grep '^/' | head -1 || true; }
 
 discover_wp_content_remote() {
   local host="$1" root="$2"
   # Use wp_remote so quoted args survive
   # Filter output to only absolute paths - PHP deprecation warnings can pollute stdout
-  wp_remote "$host" "$root" eval 'echo WP_CONTENT_DIR;' 2>/dev/null | grep '^/' | tail -1
+  # Uses || true to prevent pipefail crash when grep finds no matches (returns empty for validation)
+  wp_remote "$host" "$root" eval 'echo WP_CONTENT_DIR;' 2>/dev/null | grep '^/' | head -1 || true
 }
 
 check_disk_space_for_archive() {
@@ -4579,6 +4581,44 @@ SRC_WP_CONTENT="$(discover_wp_content_local)"
 DST_WP_CONTENT="$(discover_wp_content_remote "$DEST_HOST" "$DEST_ROOT")"
 log "Source WP_CONTENT_DIR: $SRC_WP_CONTENT"
 log "Dest   WP_CONTENT_DIR: $DST_WP_CONTENT"
+
+# SAFETY: Validate wp-content paths before use (Issue #122)
+if [[ -z "$SRC_WP_CONTENT" ]]; then
+  err "Failed to discover source wp-content directory
+
+WP-CLI did not return a valid wp-content path. Possible causes:
+  - WordPress not properly installed
+  - WP-CLI not found or misconfigured
+  - PHP errors preventing WP-CLI execution
+
+Try running manually:
+  wp eval 'echo WP_CONTENT_DIR;'
+
+If this fails, verify WordPress installation is functional."
+fi
+
+if [[ ! -d "$SRC_WP_CONTENT" ]]; then
+  err "Source wp-content path is not a directory: $SRC_WP_CONTENT
+
+Path discovered but does not exist or is not a directory.
+
+Check filesystem:
+  ls -ld \"$SRC_WP_CONTENT\" 2>&1"
+fi
+
+if [[ -z "$DST_WP_CONTENT" ]]; then
+  err "Failed to discover destination wp-content directory
+
+WP-CLI did not return a valid wp-content path on remote host. Possible causes:
+  - WordPress not properly installed on destination
+  - WP-CLI not found or misconfigured on destination
+  - PHP errors preventing WP-CLI execution
+
+Try running manually:
+  ssh $DEST_HOST 'cd $DEST_ROOT && wp eval \"echo WP_CONTENT_DIR;\"'
+
+If this fails, verify WordPress installation on destination is functional."
+fi
 
 # Size check (approx)
 SRC_SIZE=$(du -sh "$SRC_WP_CONTENT" 2>/dev/null | cut -f1 || echo "unknown")
