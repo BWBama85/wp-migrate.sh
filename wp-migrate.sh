@@ -5383,8 +5383,8 @@ else
   # Reset database to clean state to prevent duplicate key errors
   log "Resetting database to clean state..."
 
-  # Count tables before reset
-  tables_before=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+  # Count tables before reset (filter out PHP deprecation warnings)
+  tables_before=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | grep -cvE '^Deprecated:|php-cli-tools' || echo 0)
   log "  Tables before reset: $tables_before"
 
   # SAFETY: Create emergency database snapshot before destructive operations
@@ -5415,7 +5415,8 @@ else
 
   # Verify reset actually worked by checking table count
   # This catches both: command failures AND silent failures where command succeeds but tables remain
-  tables_after=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+  # Filter out PHP deprecation warnings that pollute WP-CLI stdout (PHP 8.4+)
+  tables_after=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | grep -cvE '^Deprecated:|php-cli-tools' || echo 0)
   log "  Tables after reset: $tables_after"
 
   if [[ $tables_after -gt 0 ]]; then
@@ -5436,10 +5437,11 @@ else
           log "    WARNING: Could not drop $table"
         fi
       fi
-    done < <(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null)
+    # Filter out PHP deprecation warnings that pollute WP-CLI stdout (PHP 8.4+)
+    done < <(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | grep -vE '^Deprecated:|php-cli-tools')
 
-    # Verify again
-    tables_final=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+    # Verify again (filter out PHP deprecation warnings)
+    tables_final=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | grep -cvE '^Deprecated:|php-cli-tools' || echo 0)
     if [[ $tables_final -gt 0 ]]; then
       log "ERROR: Could not reset database. $tables_final tables remain."
       log "Please manually reset the database or check database permissions."
@@ -5495,8 +5497,8 @@ If automatic restore fails, the snapshot will be preserved at:
   $EMERGENCY_DB_SNAPSHOT"
   fi
 
-  # Verify import actually created tables
-  imported_tables=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | wc -l)
+  # Verify import actually created tables (filter out PHP deprecation warnings)
+  imported_tables=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | grep -cvE '^Deprecated:|php-cli-tools' || echo 0)
   if [[ $imported_tables -eq 0 ]]; then
     err "Database import produced no tables
 
@@ -5529,8 +5531,8 @@ If automatic restore fails, the snapshot will be preserved at:
   # This ensures we identify the actual WordPress prefix, not plugin tables like wp_statistics_options
   IMPORTED_DB_PREFIX=""
 
-  # Get all tables from the database
-  all_tables=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null)
+  # Get all tables from the database (filter out PHP deprecation warnings)
+  all_tables=$(wp_local db query "SHOW TABLES" --skip-column-names 2>/dev/null | grep -vE '^Deprecated:|php-cli-tools')
 
   if [[ -n "$all_tables" ]]; then
     # Define core WordPress table suffixes that must all exist
