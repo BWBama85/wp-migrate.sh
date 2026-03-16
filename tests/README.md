@@ -16,6 +16,11 @@ The test suite validates argument parsing, error handling, code quality, and arc
 ./tests/integration/test-archive-detection.sh
 ```
 
+### Plugin Filtering Tests
+```bash
+./tests/unit/test-plugin-filtering.sh
+```
+
 ### Security Tests (Zip Slip Protection)
 ```bash
 ./tests/integration/test-zip-slip-protection.sh
@@ -56,6 +61,26 @@ The Zip Slip protection test suite (`test-zip-slip-protection.sh`) validates:
 2. **Unix path traversal blocked** - Patterns like `../`, `/../`, `/..` are detected and blocked
 3. **Windows path traversal blocked** - Patterns like `..\`, `\..\`, `\..` are detected and blocked
 4. **Absolute paths blocked** - Both Unix (`/etc/passwd`) and Windows (`C:\`) absolute paths are blocked
+
+### Plugin Filtering Tests
+The plugin filtering test suite (`tests/unit/test-plugin-filtering.sh`) validates:
+
+**Phase 1 — `should_exclude_plugin()` unit tests:**
+1. **Drop-in filtering** — `advanced-cache.php`, `db.php`, `db-error.php` excluded and tracked in `FILTERED_DROPINS`
+2. **Normal plugin preservation** — `akismet`, `jetpack`, `woocommerce` not filtered
+3. **Similar name edge cases** — `advanced-cache` (without `.php`), `db`, partial matches preserved
+4. **StellarSites managed filtering** — `stellarsites-cloud` excluded when `STELLARSITES_MODE=true`, preserved when `false`
+5. **Drop-ins + StellarSites interaction** — drop-ins tracked in correct array regardless of mode
+6. **Accumulation** — multiple exclusions build up in tracking arrays
+
+**Phase 2 — `detect_dest_plugins_local()` integration tests (mocked WP-CLI):**
+1. **Mixed plugins and drop-ins** — drop-ins filtered, real plugins preserved
+2. **StellarSites mode ON** — managed plugins + drop-ins filtered
+3. **StellarSites mode OFF** — managed plugins preserved
+4. **Dry-run mode** — detection and filtering still run (Issue #75 regression test)
+5. **Empty plugin list** — graceful handling
+6. **All plugins are drop-ins** — all filtered, empty result
+7. **WP-CLI failure** — graceful degradation, no crash
 
 ### What's NOT Tested
 The following scenarios require actual WordPress installations and are tested manually:
