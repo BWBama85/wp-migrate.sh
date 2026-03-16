@@ -352,6 +352,13 @@ get_rsync_stats_opts() {
   fi
 }
 
+# Check if colored output should be used
+# Returns: 0 if colors should be used, 1 if not
+# Respects NO_COLOR env var (https://no-color.org) and terminal detection
+use_color() {
+  [[ -z "${NO_COLOR:-}" ]] && [[ -t 2 ]]
+}
+
 validate_url() {
   local url="$1" flag_name="$2"
   # Basic URL validation: must start with http:// or https://
@@ -404,11 +411,10 @@ log_warning() {
   # Always write plain text to log file
   printf "%s\n" "$plain_msg" >> "$LOG_FILE"
 
-  # Write colored output to stderr (check fd 2, not fd 1)
-  if [[ -t 2 ]]; then
+  # Write colored output to stderr if supported (respects NO_COLOR)
+  if use_color; then
     printf "%s ${yellow}WARNING:${reset} %s\n" "$timestamp" "$*" >&2
   else
-    # Non-interactive, just echo the plain message to stderr
     printf "%s\n" "$plain_msg" >&2
   fi
 }
@@ -437,11 +443,10 @@ log_trace() {
     # Always write plain text to log file
     printf "%s\n" "$plain_msg" >> "$LOG_FILE"
 
-    # Write colored output to stderr (check fd 2, not fd 1)
-    if [[ -t 2 ]]; then
+    # Write colored output to stderr if supported (respects NO_COLOR)
+    if use_color; then
       printf "%s ${cyan}+${reset} %s\n" "$timestamp" "$*" >&2
     else
-      # Non-interactive, write plain message to stderr
       printf "%s\n" "$plain_msg" >&2
     fi
   fi
@@ -3987,6 +3992,9 @@ NOTES:
   - This prevents plugin errors from breaking migrations or rollbacks
   - Migration operations use low-level database and filesystem commands
   - If you need WP-CLI with plugins loaded, use 'wp' command directly
+
+ENVIRONMENT:
+  NO_COLOR    Set to any value to disable colored output (https://no-color.org)
 
 USAGE
 }
