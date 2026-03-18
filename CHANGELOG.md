@@ -7,13 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **Remove eval from database consolidation**: Replaced `eval`-based `find` command construction in `adapter_base_consolidate_database()` with a safer array-based approach, eliminating unnecessary shell re-parsing.
-
-### Changed
-
-- **CI security scan coverage**: Extended unsafe-practices check to scan `src/lib/adapters/*.sh` in addition to `src/*.sh` and `src/lib/*.sh`.
+- **NO_COLOR environment variable support**: Respect the `NO_COLOR` convention ([no-color.org](https://no-color.org)) to disable ANSI color codes in warning and trace output. Useful for CI pipelines, log aggregation, and scripted usage.
 
 ## [2.10.9] - 2025-12-17
 
