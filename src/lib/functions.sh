@@ -2255,6 +2255,9 @@ NOTES:
   - Migration operations use low-level database and filesystem commands
   - If you need WP-CLI with plugins loaded, use 'wp' command directly
 
+ENVIRONMENT:
+  NO_COLOR    Set to any value to disable colored output (https://no-color.org)
+
 USAGE
 }
 
