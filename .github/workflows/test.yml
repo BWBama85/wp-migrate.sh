@@ -290,6 +290,12 @@ jobs:
           chmod +x tests/integration/test-archive-detection.sh
           ./tests/integration/test-archive-detection.sh
 
+      - name: Run plugin filtering tests
+        shell: bash {0}
+        run: |
+          chmod +x tests/unit/test-plugin-filtering.sh
+          ./tests/unit/test-plugin-filtering.sh
+
   summary:
     name: Test Summary
     runs-on: ubuntu-latest

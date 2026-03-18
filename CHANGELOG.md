@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **NO_COLOR environment variable support**: Respect the `NO_COLOR` convention ([no-color.org](https://no-color.org)) to disable ANSI color codes in warning and trace output. Useful for CI pipelines, log aggregation, and scripted usage.
+- **Plugin filtering automated tests** (Issue #76): New test suite `tests/unit/test-plugin-filtering.sh` with 41 tests covering `should_exclude_plugin()` unit tests and `detect_dest_plugins_local()` integration tests with mocked WP-CLI. Covers drop-in filtering, StellarSites managed plugin filtering, dry-run mode (Issue #75 regression), edge cases, and graceful degradation.
 
 ## [2.10.9] - 2025-12-17
 
