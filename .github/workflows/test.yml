@@ -143,14 +143,14 @@ jobs:
       - name: Check for unsafe practices
         run: |
           # Check for eval usage (can be dangerous)
-          if grep -n "eval " src/*.sh src/lib/*.sh 2>/dev/null | grep -v "wp eval"; then
+          if grep -rn "eval " src/*.sh src/lib/*.sh src/lib/adapters/*.sh 2>/dev/null | grep -v "wp eval"; then
             echo "WARNING: Direct eval usage found (non-wp-cli)"
             echo "Review these instances for security implications"
             # Don't fail, just warn
           fi
 
           # Check for curl/wget without validation
-          if grep -n -E "(curl|wget).*\|.*bash" src/*.sh src/lib/*.sh 2>/dev/null; then
+          if grep -rn -E "(curl|wget).*\|.*bash" src/*.sh src/lib/*.sh src/lib/adapters/*.sh 2>/dev/null; then
             echo "ERROR: Piping curl/wget to bash is unsafe"
             exit 1
           fi

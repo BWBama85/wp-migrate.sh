@@ -272,17 +272,17 @@ adapter_base_consolidate_database() {
 
   $enable_verbose && log_verbose "  Consolidating SQL files from: $sql_dir"
 
-  # Build find command with optional maxdepth
-  local find_cmd="find \"$sql_dir\""
-  [[ -n "$maxdepth" ]] && find_cmd="$find_cmd -maxdepth $maxdepth"
-  find_cmd="$find_cmd -type f -name \"*.sql\" -print0 2>/dev/null"
+  # Build find arguments array with optional maxdepth
+  local find_args=("$sql_dir")
+  [[ -n "$maxdepth" ]] && find_args+=("-maxdepth" "$maxdepth")
+  find_args+=("-type" "f" "-name" "*.sql" "-print0")
 
   # Find all SQL files and concatenate them (Bash 3.2 + BSD compatible)
   # Collect files into array, then sort (BSD sort doesn't support -z)
   local sql_files=()
   while IFS= read -r -d '' file; do
     sql_files+=("$file")
-  done < <(eval "$find_cmd")
+  done < <(find "${find_args[@]}" 2>/dev/null)
 
   if [[ ${#sql_files[@]} -eq 0 ]]; then
     $enable_verbose && log_verbose "  No SQL files found in $sql_dir"
