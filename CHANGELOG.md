@@ -7,9 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-03-17
+
+### Added
+
+- **NO_COLOR environment variable support**: Respect the `NO_COLOR` convention ([no-color.org](https://no-color.org)) to disable ANSI color codes in warning and trace output. Useful for CI pipelines, log aggregation, and scripted usage.
+- **Plugin filtering automated tests** (Issue #76): New test suite `tests/unit/test-plugin-filtering.sh` with 41 tests covering `should_exclude_plugin()` unit tests and `detect_dest_plugins_local()` integration tests with mocked WP-CLI. Covers drop-in filtering, StellarSites managed plugin filtering, dry-run mode (Issue #75 regression), edge cases, and graceful degradation.
+
 ### Fixed
 
 - **PHP 8.4 deprecation warnings polluting database table listings**: Fixed issue where WP-CLI deprecation warnings (from `react/promise` and `php-cli-tools` libraries) were being included in `SHOW TABLES` output, causing table counts to be incorrect and table drop operations to fail with "Could not drop Deprecated: ..." errors. All database table queries now filter out warning lines.
+- **Remove eval from database consolidation**: Replaced `eval`-based `find` command construction in `adapter_base_consolidate_database()` with a safer array-based approach, eliminating unnecessary shell re-parsing.
+
+### Changed
+
+- **CI security scan coverage**: Extended unsafe-practices check to scan `src/lib/adapters/*.sh` in addition to `src/*.sh` and `src/lib/*.sh`.
 
 ## [2.10.9] - 2025-12-17
 

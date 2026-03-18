@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. **Archive Mode**: Imports backup archives (Duplicator, Jetpack Backup, Solid Backups)
 3. **Backup Mode**: Creates portable WordPress backups locally or remotely
 
-Current version: 2.10.9
+Current version: 2.11.0
 
 ## Critical Build Workflow
 
